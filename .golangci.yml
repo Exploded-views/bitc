@@ -1,0 +1,23 @@
+version: "2"
+linters:
+  default: standard
+  enable: [errorlint, gosec, misspell, unconvert, bodyclose]
+  settings:
+    errcheck:
+      exclude-functions:
+        # unlocking a flock only fails on a closed fd; the fd is closed right after
+        - (*github.com/Exploded-views/bitc/internal/lock.File).Unlock
+    gosec:
+      excludes:
+        - G204 # bitc runs user argv by design
+        - G304 # bitc reads user-named paths by design
+        - G107 # tool, agent and API URLs come from config by design
+        - G115 # fd and pid conversions (int32(f.Fd()) and the like) fit by construction
+        - G110 # decompression: tools and artifacts go through bitc's own size-capped readers (2.2b, 2.6b)
+        - G305 # archive extraction: every entry name is validated before it is written (2.2b, 2.6b)
+        - G104 # unchecked errors: a duplicate of errcheck, which has its own exclusions (v2 moved this to the legacy preset)
+  exclusions:
+    presets: [std-error-handling, common-false-positives]
+    rules:
+      - path: '(_test\.go|^conformance/|/runpodfake/|/spritesfake/|/fakeapi/)'
+        linters: [gosec]

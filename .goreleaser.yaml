@@ -1,0 +1,40 @@
+version: 2
+project_name: bitc
+builds:
+  - id: bitc
+    main: ./cmd/bitc
+    binary: bitc
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    goos: [linux]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X github.com/Exploded-views/bitc/internal/version.Version={{.Version}}
+      - -X github.com/Exploded-views/bitc/internal/version.Commit={{.ShortCommit}}
+      - -X github.com/Exploded-views/bitc/internal/version.Release={{ if .IsSnapshot }}false{{ else }}true{{ end }}
+archives:
+  - id: tarball
+    ids: [bitc]
+    formats: [tar.gz]
+    name_template: "bitc_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: [LICENSE, README.md]
+  # the bare binary: the agent source "release" downloads bitc_<ver>_linux_<arch> and checks the
+  # sha256 that checksums.txt lists for it (providers delta C.4)
+  - id: raw
+    ids: [bitc]
+    formats: [binary]
+    name_template: "bitc_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+# Published only by the owner (docs/RELEASING.md); draft keeps a pushed tag from going public
+# before the release page is reviewed.
+release:
+  github:
+    owner: Exploded-views
+    name: bitc
+  draft: true
+  prerelease: auto

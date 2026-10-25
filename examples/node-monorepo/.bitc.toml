@@ -1,0 +1,30 @@
+# Repo config for the neutral node-monorepo example.
+version = 1
+vars = { db_port_base = 47410, db_container_prefix = "demo-db-", stack_slot_base = 30, heavy_heap_mb = 3072, coverage_heap_mb = 2560, e2e_heap_mb = 2048, build_heap_mb = 3072 }
+
+[defaults]
+env = { TEST_MAX_WORKERS = "2", DATABASE_URL = "postgresql://localhost:47411/demo", TEST_DB_PORT = "47411", TEST_DB_CONTAINER = "demo-db-1" }
+env_unset = ["NODE_OPTIONS", "NODE_HEAP_MB"]
+
+[pools.db]
+env = { DATABASE_URL = "postgresql://localhost:{slot+db_port_base}/demo", TEST_DB_PORT = "{slot+db_port_base}", TEST_DB_CONTAINER = "{db_container_prefix}{slot}" }
+
+[pools.coverage]
+env = { DATABASE_URL = "postgresql://localhost:{slot+db_port_base}/demo", TEST_DB_PORT = "{slot+db_port_base}", TEST_DB_CONTAINER = "{db_container_prefix}{slot}", NODE_OPTIONS = "--max-old-space-size={coverage_heap_mb}", NODE_HEAP_MB = "{build_heap_mb}" }
+
+[pools.heavy]
+env = { NODE_OPTIONS = "--max-old-space-size={heavy_heap_mb}", NODE_HEAP_MB = "{heavy_heap_mb}" }
+
+[pools.e2e]
+on_signal = "forward-and-wait"
+env = { NODE_OPTIONS = "--max-old-space-size={e2e_heap_mb}", NODE_HEAP_MB = "{build_heap_mb}", APP_POOL_SLOT = "e2e.{slot}", APP_POOL_HOLD = "{hold}", APP_STACK_TOKEN_FILE = "{state_dir}/e2e-stack.{slot+stack_slot_base}" }
+env_default = { E2E_WORKERS = "3" }
+env_unset = ["DATABASE_URL", "TEST_DB_PORT", "TEST_DB_CONTAINER", "APP_STACK_REUSE"]
+hooks.env = { argv = ["scripts/stack-env.sh", "{slot+stack_slot_base}"], timeout = "60s", refuse_exit = [64] }
+
+[pools.lint]
+refuse = [
+  { tool = "eslint", when = "repo-wide", unless_args = ["--stdin", "--version", "-v", "--help", "-h", "--print-config", "--init", "--inspect-config", "--env-info", "--debug-info", "--mcp"], skip_option_values = ["-c", "--config", "--max-warnings", "--fix-type", "--ignore-path", "--suppress-rule", "--format", "-f", "--stdin-filename", "--rule", "--parser", "--plugin", "--ext", "--cache-location", "--rulesdir", "-o", "--output-file", "--resolve-plugins-relative-to", "--parser-options", "--ignore-pattern", "--env", "--global", "--cache-strategy", "--report-unused-disable-directives-severity", "--suppressions-location", "--concurrency", "--flag"], reason = "lint only changed files here; repo-wide lint runs in the heavy pool" },
+  { tool = "tsc", when = "always", unless_args = ["-v", "--version", "-h", "--help", "--init", "--showConfig"], reason = "typecheck runs in the heavy pool" },
+  { npm_script = ["lint", "lint:fix", "lint:ci", "typecheck", "check:types", "test:types"], reason = "repo-wide lint and typecheck run in the heavy pool" },
+]

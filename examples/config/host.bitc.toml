@@ -1,0 +1,44 @@
+# Example host config: ~/.config/bitc/bitc.toml (spec 5). CI checks it with `bitc config check`.
+version = 1
+defaults = { slots = 1, wait = "10m" }
+detach = { wait_timeout = "9m" }
+priority = { high_cwd_contains = ["/worktrees/urgent-"], high_cwd = [] }  # substrings / globs
+groups = { bigmem = { units = 1 } }
+
+[host]
+state_dir = "~/.local/state/bitc"  # BITC_DIR / --state-dir override
+poll = "2s"                     # admission poll; inotify wakes earlier
+memory_floor = "6GiB"           # for pools that set `memory`; "0GiB" disables
+
+[pools]
+lint = { slots = 1 }
+db = { slots = 2, wait = "30m" }
+e2e = { slots = 1, wait = "1h", groups = { bigmem = 1 } }
+
+[pools.heavy]
+slots = 1
+wait = "1h"
+memory = "8GiB"                 # admission reservation, not a heap size or limit
+groups = { bigmem = 1 }
+providers = ["runpod", "local"] # preference order
+remote_limits = { size = { runpod = "cpu8" }, timeout = "60m" }
+
+[remote_limits]                 # every remote provider
+worktrees = ["**/worktrees/agent-*"]   # only these work trees may go remote
+forward_env_allow = ["CI", "TZ"]       # repo forward_env is intersected with this
+on_failure = "next"
+
+[[repos]]                       # host grants per repo; first match wins
+match = "**/src/app*"
+clone_url = "git@github.com:example/app.git"  # default: derived from transport.remote (8.4)
+deploy_secret = "app_deploy_key"  # provider secret: read-only deploy key
+root_steps = false              # repo setup/services may run as root
+# config = "~/.config/bitc/repos/app.toml"   # repo file for trees without .bitc.toml
+
+[providers.runpod]              # section name = provider type
+api_key_file = "~/.config/bitc/runpod.key"   # bare key, one line, 0600; or api_key = "..." here
+daily_usd = 25                  # account-wide for this provider account; same value on every host (8.3)
+max_live = 6
+image = "docker.io/library/debian:bookworm-slim"   # RunPod keys from here down (8.7)
+data_center = "EU-RO-1"
+sizes = { cpu8 = { cpu_type = "cpu3c", vcpu = 8, usd_per_hour = 0.24 } }

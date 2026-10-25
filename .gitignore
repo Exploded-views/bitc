@@ -1,0 +1,16 @@
+# Build and test output
+/dist/
+/bin/
+*.test
+*.out
+/coverage/
+coverage.*
+
+# bitc state inside work trees (artifact staging)
+.bitc/
+
+# Editor and OS files
+.idea/
+.vscode/
+*.swp
+.DS_Store

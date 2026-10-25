@@ -1,0 +1,34 @@
+name: Feature request
+description: Something bitc should do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What you are trying to do
+      description: The situation first, before the solution.
+    validations: { required: true }
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you would like bitc to do
+    validations: { required: true }
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried instead
+      description: Other tools or config you considered, and why they were not enough.
+    validations: { required: false }
+  - type: textarea
+    id: version
+    attributes:
+      label: Output of `bitc version --json`
+      render: json
+    validations: { required: true }
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant config
+      description: Remove credentials first.
+      render: toml
+    validations: { required: false }

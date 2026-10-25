@@ -1,0 +1,18 @@
+# Deliberate changes from the reference pool. A `changed` row in behaviours.toml names one key.
+# Each entry carries `anchor`, a phrase that must appear in spec 12.1 (checked by TestMetaRegister), or `unlisted`,
+# a visible marker that 12.1 still lacks the bullet.
+changes = [
+  { key = "config-78", anchor = "Config errors exit 78", text = "Config errors exit 78 (reference 64); no last-known-good config; an empty string never means the default (spec 5.1, 5.2, 12.1, 15.5)" },
+  { key = "unknown-pools", anchor = "Unknown pools are refused", text = "Unknown pools are refused; unknown_pools = \"default\" restores one slot and the default wait (12.1)" },
+  { key = "wait-exit", anchor = "RESULT starved exits 75 under --exit zero", text = "wait: RESULT starved exits 75 under --exit zero; a command's own 75 shows RESULT exit 75 (12.1)" },
+  { key = "detached-logs", anchor = "Detached logs live in the state dir unless --log", text = "Detached logs live in the state dir unless --log; an uncreatable log exits 64; pre_run of a detached job runs after started (12.1)" },
+  { key = "remote-text", anchor = "Remote text: notes are", text = "Remote notes are bitc: <provider>: ...; the launch line names job and size key; STARVED is (<provider>: <why>) (12.1)" },
+  { key = "artifacts-subset", anchor = "BITC_ARTIFACTS may only select declared paths", text = "BITC_ARTIFACTS may only select declared paths (12.1)" },
+  { key = "starved-wording", anchor = "admission is FIFO per class", text = "STARVED reasons for groups and memory use the spec 4 wording; admission is FIFO per class (12.1)" },
+  { key = "stragglers", anchor = "Processes left in a hold's group are killed", text = "Processes left in a hold's group are killed at its end (12.1)" },
+  { key = "sweep-owner", anchor = "Sweep tears down only resources with this install's owner tag", text = "Sweep tears down only resources with this install's owner tag; others need --foreign (12.1)" },
+  { key = "sampler-dropped", anchor = "The host sampler is dropped", text = "The host sampler is dropped (12.1)" },
+  { key = "internal-69", anchor = "Internal errors (bitc's own bugs) exit 69", text = "Internal errors exit 69 with bitc: internal error: <msg> (12.1)" },
+  { key = "state-dir", anchor = "State lives in ~/.local/state/bitc", text = "State lives in $XDG_STATE_HOME/bitc (~/.local/state/bitc) (15.5)" },
+  { key = "remote-money-safety", anchor = "A create that left a resource", text = "A create that left a resource is 75, never a local run; the retry wait and later signals do not outlive a signal (12.1, 8.2, 15.8)" },
+]

@@ -1,0 +1,17 @@
+# Host config for the neutral node-monorepo example (used by the conformance suite).
+version = 1
+defaults = { slots = 1, wait = "10m" }
+groups = { bigmem = { units = 1 } }
+
+[host]
+memory_floor = "3GiB"
+
+[pools]
+lint = { slots = 1 }
+vitest = { slots = 2 }
+db = { slots = 2, wait = "30m" }
+git = { slots = 1 }
+release-tag = { slots = 1, wait = "5m" }
+heavy = { slots = 1, wait = "1h", memory = "4GiB", groups = { bigmem = 1 } }
+coverage = { slots = 1, wait = "1h", memory = "3GiB", groups = { bigmem = 1 } }
+e2e = { slots = 1, wait = "1h", memory = "2GiB", groups = { bigmem = 1 } }

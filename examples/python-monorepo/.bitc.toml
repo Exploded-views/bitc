@@ -1,0 +1,30 @@
+# Repo config for the neutral python-monorepo example: project behaviour only. Capacities,
+# providers and grants stay in the host file.
+version = 1
+vars = { db_port_base = 55430 }
+
+[defaults]
+env = { PYTHONDONTWRITEBYTECODE = "1" }
+env_unset = ["PYTHONPATH"]
+
+# Two pytest slots: slot 1 uses port 55431, slot 2 uses 55432.
+[pools.pytest]
+env = { TEST_DATABASE_URL = "postgresql://localhost:{slot+db_port_base}/app_test", TEST_DB_PORT = "{slot+db_port_base}" }
+
+[pools.mypy]
+refuse = [
+  { tool = "mypy", when = "repo-wide", unless_args = ["--version", "-V", "--help", "-h"], reason = "type-check changed files here; the whole repository runs in the heavy pool" },
+]
+
+[pools.heavy]
+wait = "45m"
+
+[pools.heavy.remote]
+allow = [["python", "-m", "mypy", "."], ["python", "-m", "pytest"]]
+timeout = "45m"
+
+[remote]
+forward_env = ["CI", "TZ"]
+packages = ["git"]
+tools = [{ name = "uv", url = "https://example.com/tools/uv-x86_64-unknown-linux-gnu.tar.gz", sha256 = "0000000000000000000000000000000000000000000000000000000000000000" }]  # replace sha256 with the tarball's
+setup = [{ name = "deps", run_as = "job", argv = ["uv", "sync", "--frozen"] }]

@@ -1,0 +1,71 @@
+{
+  "agent_sha256": "1212121212121212121212121212121212121212121212121212121212121212",
+  "agent_url": "https://x/agent",
+  "argv": [
+    "npm",
+    "test"
+  ],
+  "artifacts": [
+    {
+      "path": "out",
+      "replace": true
+    }
+  ],
+  "bearer": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+  "clone_url": "git@example.com:o/r.git",
+  "created": "2026-10-23T05:00:00Z",
+  "cwd": "sub",
+  "deadline": "2026-10-23T06:00:00Z",
+  "env": [
+    "CI=1",
+    "A=b=c"
+  ],
+  "expiry": "2026-10-23T07:15:00Z",
+  "install": "0123456789abcdef",
+  "job": "j1",
+  "mac_key": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
+  "name": "bitc-0123456789abcdef-heavy-cpu8-deadbeef-1793000100",
+  "nonce": "0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d",
+  "owner": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef",
+  "packages": [
+    "git"
+  ],
+  "pool": "heavy",
+  "ref": "refs/bitc/jobs/j1",
+  "repo_id": "repo1",
+  "root_steps": true,
+  "services": [
+    {
+      "argv": [
+        "pg"
+      ],
+      "name": "pg",
+      "ready": [
+        "pg_isready"
+      ],
+      "ready_timeout_s": 30,
+      "run_as": "root"
+    }
+  ],
+  "setup": [
+    {
+      "argv": [
+        "npm",
+        "ci"
+      ],
+      "name": "deps",
+      "run_as": "job"
+    }
+  ],
+  "sha": "abababababababababababababababababababab",
+  "size_key": "cpu8",
+  "timeout_s": 5400,
+  "tools": [
+    {
+      "arch": "amd64",
+      "name": "go",
+      "sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "url": "https://x/go.tgz"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "bitc status --json",
+  "type": "object",
+  "required": ["version", "time", "pools", "groups", "memory"],
+  "properties": {
+    "version": {"type": "string"},
+    "time": {"type": "string"},
+    "pools": {"type": "array", "items": {"type": "object", "required": ["name", "slots", "holders", "waiters"],
+      "properties": {
+        "name": {"type": "string"}, "slots": {"type": "integer"}, "last_starved": {"type": "string"},
+        "holders": {"type": "array", "items": {"type": "object", "required": ["job", "slot", "pid", "cwd", "argv", "provider", "nested", "since"],
+          "properties": {"job": {"type": "string"}, "slot": {"type": "integer"}, "pid": {"type": "integer"}, "cwd": {"type": "string"},
+            "argv": {"type": "array", "items": {"type": "string"}}, "provider": {"type": "string"}, "nested": {"type": "boolean"}, "since": {"type": "string"}}}},
+        "waiters": {"type": "array", "items": {"type": "object", "required": ["job", "class", "pid", "since"],
+          "properties": {"job": {"type": "string"}, "class": {"enum": ["high", "normal"]}, "pid": {"type": "integer"}, "since": {"type": "string"}, "group_wait": {"type": "string"}}}}
+      }}},
+    "groups": {"type": "array", "items": {"type": "object", "required": ["name", "units", "held"],
+      "properties": {"name": {"type": "string"}, "units": {"type": "integer"}, "held": {"type": "array", "items": {"type": "integer"}}}}},
+    "memory": {"type": "object", "required": ["available_mib", "readable", "source", "floor_mib"],
+      "properties": {"available_mib": {"type": "integer"}, "readable": {"type": "boolean"}, "source": {"type": "string"}, "floor_mib": {"type": "integer"}}},
+    "legacy": {"type": "array", "items": {"type": "string"}},
+    "remote": {"type": "object", "additionalProperties": {"type": "object",
+      "required": ["own", "foreign", "spend_usd", "ledger_usd", "breaker"],
+      "properties": {
+        "own": {"type": "array", "items": {"type": "object", "required": ["id", "name", "pool", "expires"],
+          "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "pool": {"type": "string"}, "expires": {"type": "string"}}}},
+        "foreign": {"type": "array", "items": {"type": "object", "required": ["id", "name", "pool", "expires"],
+          "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "pool": {"type": "string"}, "expires": {"type": "string"}}}},
+        "spend_usd": {"type": "string"}, "ledger_usd": {"type": "string"}, "est_usd_today": {"type": "string"}, "last_sweep": {"type": "string"}, "foreign_org": {"type": "string"}, "breaker": {"type": "string"}, "error": {"type": "string"},
+        "slots": {"type": "object", "required": ["total", "busy", "free", "held"],
+          "properties": {"total": {"type": "integer"}, "busy": {"type": "integer"}, "free": {"type": "integer"},
+            "held": {"type": "array", "items": {"type": "object", "required": ["slots", "name", "own", "until"],
+              "properties": {"slots": {"type": "array", "items": {"type": "integer"}}, "name": {"type": "string"}, "own": {"type": "boolean"}, "until": {"type": "string"}}}}}}}}}
+  }
+}

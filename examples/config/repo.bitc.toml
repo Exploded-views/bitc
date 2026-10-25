@@ -1,0 +1,40 @@
+# Example repo config: .bitc.toml at a work tree's top (spec 5). CI checks it with `bitc config check`.
+version = 1
+min_version = "1.0.0"
+vars = { db_port_base = 55431, heavy_heap_mb = 8192 }
+defaults = { env = { TEST_MAX_WORKERS = "2" }, env_unset = ["NODE_OPTIONS"] }  # all pools
+
+[pools.heavy]
+wait = "45m"                             # narrow only
+env = { NODE_OPTIONS = "--max-old-space-size={heavy_heap_mb}" }
+
+[pools.heavy.remote]
+allow = [["npm", "run", "lint", "--"], ["npm", "run", "coverage", "--"]]   # argv prefixes (8.4)
+artifacts = [{ path = "coverage" }]      # replace = true by default
+timeout = "45m"                          # narrow only
+
+[pools.lint]
+refuse = [{ tool = "eslint", when = "repo-wide", reason = "lint changed files; repo-wide lint is heavy" },
+          { tool = "tsc", unless_args = ["--version", "--help"], reason = "typecheck runs in heavy" },
+          { npm_script = ["lint", "typecheck"], reason = "use the heavy pool" }]
+
+[pools.db]                               # slot 1 -> port 55432, slot 2 -> 55433
+env = { DATABASE_URL = "postgresql://localhost:{slot+db_port_base}/app_test" }
+hooks.pre_run = { argv = ["scripts/check-db.sh"] }
+hooks.wrap = [{ when_worktree = "**/worktrees/agent-*", argv = ["scripts/with-private-db.sh", "{worktree}"] }]
+
+[pools.e2e]
+on_signal = "forward-and-wait"           # terminate (default) | forward-and-wait
+env = { APP_POOL_HOLD = "{hold}" }
+env_default = { E2E_WORKERS = "3" }      # only if the caller has not set it
+hooks.env = { argv = ["scripts/e2e-stack-env.sh", "{slot}"], timeout = "60s", refuse_exit = [64] }
+
+[remote]                                 # remote profile for every pool of this repo
+forward_env = ["CI", "TZ"]
+forbid_ignored = [".env", ".env.*"]      # refuse remote if these git-ignored files exist
+allow_ignored = [".env.example"]
+env = { DATABASE_URL = "postgresql://localhost:5432/app_test" }
+packages = ["git", "xz-utils"]
+tools = [{ name = "node", url = "https://nodejs.org/dist/v22.11.0/node-v22.11.0-linux-x64.tar.xz", sha256 = "0000000000000000000000000000000000000000000000000000000000000000" }]  # replace sha256 with the tarball's
+setup = [{ name = "deps", run_as = "job", argv = ["npm", "ci"] }]
+services = [{ name = "postgres", run_as = "root", argv = ["docker-entrypoint.sh", "postgres"], ready = ["pg_isready"], ready_timeout = "120s" }]

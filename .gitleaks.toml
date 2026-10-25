@@ -1,0 +1,24 @@
+# gitleaks configuration for `make secrets` (scripts/secrets.sh).
+title = "bitc"
+
+[extend]
+useDefault = true
+
+# Fake credentials used by the tests, listed by their exact fake value. None is a real secret;
+# the tests use them to check that bitc keeps secrets out of argv, logs and output.
+[[allowlists]]
+description = "fake API keys in tests and in the plan's test listings (sk-test-..., sk-live-..., sk-pt-... with the digits 0123456789)"
+regexTarget = "secret"
+regexes = ['''^sk-(test|live|pt)-0123456789(abcdef)?$''']
+
+[[allowlists]]
+description = "fake key material in the agent boot payload tests"
+regexTarget = "secret"
+regexes = ['''^(PRIVATE-)?KEY(-MATERIAL)?-(0123|7f3a)$''', '''^KEYMATERIAL-0123$''']
+
+# The SSH provider test builds an OpenSSH-looking key block from random bytes at run time to
+# test the key-file permission and format checks; there is no real key in the file.
+[[allowlists]]
+description = "generated fake private key block in the SSH provider test"
+targetRules = ["private-key"]
+paths = ['''^conformance/provider/ssh_test\.go$''']
