@@ -1,1 +1,15 @@
 * @gitgat
+
+# Review call-outs, not enforced by branch rules. Later lines win, so these come after the
+# catch-all; every entry names the same owner on purpose, to mark the paths that need a careful read.
+/internal/agent/ @gitgat
+/internal/provider/ @gitgat
+# Credential handling: the API clients that hold remote-provider keys, and the log redaction.
+/internal/provider/runpod/client.go @gitgat
+/internal/provider/sprites/client.go @gitgat
+/internal/redact/ @gitgat
+/internal/remote/rails/ @gitgat
+/.github/workflows/ @gitgat
+/scripts/dev.sh @gitgat
+/.goreleaser.yaml @gitgat
+/coverage-floors.json @gitgat

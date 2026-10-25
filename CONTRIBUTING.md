@@ -13,7 +13,7 @@ run the Makefile directly, or use the pinned toolchain container, which needs on
 
 ```sh
 make tools-ci               # once: golangci-lint and goreleaser, at the pinned versions
-make ci                     # lint, unit tests, conformance suite (also with -race), examples, link check
+make ci                     # lint, unit tests, coverage floors, conformance suite (also with -race), examples, link check
 
 scripts/dev.sh make ci      # the same, inside one pinned toolchain image; nothing else to install
 ```
@@ -23,6 +23,22 @@ one package. `make ci` must pass before a pull request is ready; CI runs the sam
 `make vuln` (govulncheck) is run by the maintainers at checkpoints and before a release.
 
 Tests never touch the network beyond loopback and never call a real provider.
+
+## Coverage ratchet
+
+`coverage-floors.json` holds a minimum statement coverage (percent, one decimal) for every Go
+package that `make test` runs. `make ci` fails when:
+
+- a package is below its floor;
+- a package has no entry (a new package needs one: add it with `make coverage-ratchet`, or by
+  hand at its current value; a package with no test files is listed at `0.0`);
+- an entry names a package that no longer exists (remove it, or run
+  `make coverage-ratchet DROP=--drop-removed`).
+
+Floors only go up. After you add tests, run `make coverage-ratchet`: it runs the tests and raises
+each floor to the current coverage, rounded down to 0.1, and refuses (exit 1, nothing written) if
+any package is below its floor. Commit the changed file with your change. Do not lower a floor to
+make a build pass; add the missing tests instead. `scripts/coverage-floors.sh` has the details.
 
 ## The conformance register
 

@@ -4,13 +4,28 @@ PKG     := github.com/Exploded-views/bitc
 LDFLAGS := -s -w -X $(PKG)/internal/version.Version=$(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//' || echo dev) \
            -X $(PKG)/internal/version.Commit=$(shell git rev-parse --short=12 HEAD 2>/dev/null)
 
-.PHONY: build test conformance conformance-race lint vuln ci tools tools-ci snapshot release-check examples fuzz privileged secrets linkcheck
+.PHONY: build test coverage coverage-ratchet conformance conformance-race lint vuln ci tools tools-ci snapshot release-check examples fuzz privileged secrets linkcheck
 
 build:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $(BIN) ./cmd/bitc
 
+# The one unit-test run: its output is kept in $(COVER_OUT) for `make coverage`, so ci does not run the
+# tests a second time.
+COVER_OUT := dist/test-cover.txt
 test:
-	$(GO) test -race ./internal/... ./cmd/...
+	@mkdir -p dist
+	@$(GO) test -race -cover ./internal/... ./cmd/... >$(COVER_OUT) 2>&1; rc=$$?; cat $(COVER_OUT); exit $$rc
+
+# Per-package statement coverage may not fall below coverage-floors.json (scripts/coverage-floors.sh).
+# Reads the output of the last `make test`; the script's own self-check runs first.
+coverage:
+	sh scripts/coverage-floors_test.sh
+	sh scripts/coverage-floors.sh check $(COVER_OUT)
+
+# Raises the floors to the current coverage (rounded down to 0.1; never lowers one). Runs the tests.
+# Add DROP=--drop-removed to also drop entries of packages that no longer exist.
+coverage-ratchet: test
+	sh scripts/coverage-floors.sh ratchet $(DROP) $(COVER_OUT)
 
 conformance: build
 	$(GO) test -race -timeout 20m ./conformance/... -bin=$(BIN)
@@ -44,7 +59,7 @@ examples: build
 linkcheck:
 	sh scripts/linkcheck.sh
 
-ci: lint test conformance conformance-race examples linkcheck
+ci: lint test coverage conformance conformance-race examples linkcheck
 
 # Every Fuzz* target for FUZZTIME each (not part of ci; ci's go test runs the seed corpora).
 fuzz:

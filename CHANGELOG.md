@@ -8,6 +8,8 @@ yet, so everything below is unreleased.
 
 ## [Unreleased]
 
+## [0.1.0] - UNRELEASED
+
 ### Added
 
 - The local gate: named pools with N slots, FIFO tickets, priority lanes, groups shared across
@@ -31,3 +33,8 @@ yet, so everything below is unreleased.
 - A conformance suite with a register of behaviours (`conformance/behaviours.toml`).
 - Release pipeline configuration (GoReleaser) for linux amd64 and arm64 with sha256 checksums.
 - Project documentation, contribution guide, code of conduct and security policy.
+
+### Fixed
+
+- The agent now keeps inherited file descriptors out of the job and its setup steps. Found by the
+  first public CI run; covered by a regression test that leaks fds into the agent.
