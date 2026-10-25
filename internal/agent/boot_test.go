@@ -16,8 +16,9 @@ import (
 
 // runFakePod drives the real binary (stage 1, re-exec, stage 2) as a fake pod: unprivileged,
 // TestRoot set, port 0. env is the child's whole environment (production passes no PATH to
-// stage 1's env beyond the pod's own; tests choose). It returns the job's out.log and the log.
-func runFakePod(t *testing.T, f *agenttest.Fixture, env []string) (string, string) {
+// stage 1's env beyond the pod's own; tests choose). leak, when set, is passed to the agent as
+// an inherited fd (as a CI runner leaks its pipes). It returns the job's out.log and the log.
+func runFakePod(t *testing.T, f *agenttest.Fixture, env []string, leak ...*os.File) (string, string) {
 	t.Helper()
 	bin := filepath.Join(t.TempDir(), "bitc")
 	if out, err := exec.Command("go", "build", "-o", bin, "../../cmd/bitc").CombinedOutput(); err != nil {
@@ -32,6 +33,9 @@ func runFakePod(t *testing.T, f *agenttest.Fixture, env []string) (string, strin
 	child := exec.Command(bin, "__agent")
 	child.Env = append([]string{"BITC_SPEC=" + enc, "BITC_PROVIDER_TYPE=none",
 		"BITC_DEADLINE=" + strconv.FormatInt(time.Now().Add(time.Hour).Unix(), 10)}, env...)
+	if len(leak) > 0 { // fd 40 and up, clear of the fds the boot passes on purpose
+		child.ExtraFiles = append(make([]*os.File, 37), leak...)
+	}
 	stdout, err := child.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -65,7 +69,13 @@ func TestBinaryJobInheritsOnlyStdFds(t *testing.T) {
 	f := agenttest.NewFixture(t, "#!/bin/sh\n")
 	// ls lists the shell's fds (its own dir fd is the shell's child's, not listed)
 	f.Spec.Argv = []string{"sh", "-c", `ls -l /proc/$$/fd`}
-	out, log := runFakePod(t, f, []string{"PATH=/usr/bin:/bin"})
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+	out, log := runFakePod(t, f, []string{"PATH=/usr/bin:/bin"}, r, w)
 	var fds []string
 	for _, l := range strings.Split(out, "\n") {
 		if pre, _, ok := strings.Cut(l, " -> "); ok {

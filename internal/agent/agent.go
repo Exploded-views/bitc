@@ -76,6 +76,7 @@ type Secrets struct {
 
 // Run is stage 2: one job, then serve until torn down (spec 8.4 steps 2-7).
 func Run(ctx context.Context, o Options, s Spec, sec Secrets) int {
+	cloexecInherited()
 	if o.KeepAlive != nil { // the renewal goroutine prints too
 		o.Stdout = &syncWriter{w: o.Stdout}
 	}

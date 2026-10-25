@@ -367,11 +367,17 @@ func TestSH36_DirSwappedBetweenMkdirAndOpenIsRaced(t *testing.T) {
 	if ents, _ := os.ReadDir(r.outside); len(ents) != 0 {
 		t.Errorf("something was written through the swapped link: %v", ents)
 	}
-	// swapped for a real directory of someone else: the inode check catches it
+	// swapped for a real directory of someone else: the inode check catches it. The made dir is
+	// renamed aside, not removed: a removed inode can be reused at once (tmpfs, overlayfs), and a
+	// new dir with the same uid, dev and ino is indistinguishable by design.
 	r = newUpRig(t)
 	r.env.Raced = func() {
-		_ = os.Remove(r.upload())
-		_ = os.Mkdir(r.upload(), 0o750)
+		if err := os.Rename(r.upload(), r.upload()+".aside"); err != nil {
+			t.Error(err)
+		}
+		if err := os.Mkdir(r.upload(), 0o750); err != nil {
+			t.Error(err)
+		}
 	}
 	r.refused(io.MultiReader(bytes.NewReader(r.frame(goodCode(body), upNow.Add(time.Hour))), bytes.NewReader(body)), "upload dir raced")
 }

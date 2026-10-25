@@ -489,8 +489,10 @@ func (f *Fake) cutAll(s *sprite) {
 }
 
 func (f *Fake) coldDrop(s *sprite) {
-	f.killAll(s)
+	// cut first: a cold drop ends every session without an exit status, and a process killed
+	// first could be reaped and its 137 sent before the cut on a slow machine
 	f.cutAll(s)
+	f.killAll(s)
 	s.status = "cold"
 	s.tasks = map[string]task{}
 }
