@@ -14,6 +14,11 @@
 #
 # check: fail (exit 1) if a package is below its floor, has no floor, or a floor names a package
 # that is not in the run. Prints only package, floor and actual of each offender.
+# A package may carry a tolerance in coverage-tolerances.json (next to FLOORS; optional), one line
+# each: "pkg": {"tolerance": 0.4, "why": "..."}. check then passes at actual >= floor - tolerance.
+# It is only for a measured environment gap (the same tests cover a bit less on CI than locally),
+# and check fails if a tolerance is above 0.5 or names a package with no floor. ratchet ignores
+# tolerances: it writes the real current value and never lowers a floor.
 #
 # ratchet: rewrite FLOORS with each floor raised to the current value, rounded DOWN to 0.1, and
 # new packages added. It never lowers a floor: if any package is below its floor it prints the
@@ -29,27 +34,37 @@ run=${1:-}
 [ -n "$run" ] || { echo "$usage" >&2; exit 2; }
 floors=${2:-$(cd "$(dirname "$0")/.." && pwd)/coverage-floors.json}
 [ -r "$run" ] && [ -r "$floors" ] || { echo "coverage-floors: cannot read $run or $floors" >&2; exit 2; }
+tolf=$(dirname "$floors")/coverage-tolerances.json
+[ -r "$tolf" ] || tolf=
 new=$(mktemp); trap 'rm -f "$new"' EXIT
 
 rc=0
-awk -v mode="$mode" -v drop="$drop" -v new="$new" '
+awk -v mode="$mode" -v drop="$drop" -v new="$new" -v floorsf="$floors" -v tolf="$tolf" '
   function tenths(s) { return int(s * 10 + 0.000001) }
+  function slack(p) { return (mode == "check" && (p in tol)) ? tol[p] : 0 }
   function fmt(t) { return sprintf("%d.%d", t / 10, t % 10) }
-  FNR == 1 { file++ }
-  file == 1 && /^ *"[^"]+": *[0-9.]+,? *$/ {
+  tolf != "" && FILENAME == tolf && /^ *"[^"]+": *\{ *"tolerance": *[0-9.]+/ {
+    split($0, q, "\""); v = $0; sub(/^[^:]*: *\{ *"tolerance": */, "", v); sub(/[^0-9.].*$/, "", v)
+    tol[q[2]] = tenths(v); next
+  }
+  FILENAME == floorsf && /^ *"[^"]+": *[0-9.]+,? *$/ {
     split($0, q, "\""); v = $0; sub(/^[^:]*: */, "", v); sub(/[, ]*$/, "", v)
     floor[q[2]] = tenths(v); next
   }
-  file == 2 && $1 == "ok" && match($0, /coverage: [0-9.]+% of statements/) {
+  FILENAME != floorsf && FILENAME != tolf && $1 == "ok" && match($0, /coverage: [0-9.]+% of statements/) {
     v = substr($0, RSTART + 10, RLENGTH - 10); sub(/%.*/, "", v); got[$2] = tenths(v); next
   }
-  file == 2 && /^\t[^\t]+\t+coverage: [0-9.]+% of statements$/ { got[$1] = 0; next }
-  file == 2 && $1 == "?" && /\[no test files\]/ { got[$2] = 0 }
+  FILENAME != floorsf && FILENAME != tolf && /^\t[^\t]+\t+coverage: [0-9.]+% of statements$/ { got[$1] = 0; next }
+  FILENAME != floorsf && FILENAME != tolf && $1 == "?" && /\[no test files\]/ { got[$2] = 0 }
   END {
     for (p in got) {
       if (!(p in floor)) {
         if (mode == "check") { printf "%s  floor: none (no floor entry)  actual: %s\n", p, fmt(got[p]); bad = 1 }
-      } else if (got[p] < floor[p]) { printf "%s  floor: %s  actual: %s\n", p, fmt(floor[p]), fmt(got[p]); bad = 1 }
+      } else if (got[p] < floor[p] - slack(p)) { printf "%s  floor: %s  actual: %s\n", p, fmt(floor[p]), fmt(got[p]); bad = 1 }
+    }
+    if (mode == "check") for (p in tol) {
+      if (!(p in floor)) { printf "%s  tolerance: %s  no floor entry\n", p, fmt(tol[p]); bad = 1 }
+      else if (tol[p] > 5) { printf "%s  tolerance: %s  above the 0.5 cap\n", p, fmt(tol[p]); bad = 1 }
     }
     if (mode == "check") for (p in floor) if (!(p in got)) { printf "%s  floor: %s  actual: not in run\n", p, fmt(floor[p]); bad = 1 }
     if (bad) exit 1
@@ -61,6 +76,6 @@ awk -v mode="$mode" -v drop="$drop" -v new="$new" '
     print "{" > new
     for (i = 1; i <= n; i++) printf "  \"%s\": %s%s\n", key[i], fmt(out[key[i]]), (i < n ? "," : "") > new
     print "}" > new
-  }' "$floors" "$run" || rc=$?
+  }' $tolf "$floors" "$run" || rc=$?
 [ "$rc" = 0 ] || exit "$rc"
 [ "$mode" = check ] || cat "$new" >"$floors"

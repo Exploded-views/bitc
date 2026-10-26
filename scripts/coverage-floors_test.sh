@@ -119,4 +119,39 @@ same '{
   "ex/a": 85.3,
   "ex/nt": 0.0
 }'
+# --- tolerances: coverage-tolerances.json next to the floors file ---
+floors '{
+  "ex/a": 85.3,
+  "ex/b": 40.0
+}'
+tol() { printf '{\n%s\n}\n' "$1" >"$t/coverage-tolerances.json"; }
+tol '  "ex/a": {"tolerance": 0.4, "why": "runner measures lower"}'
+B2='ok  	ex/b	0.1s	coverage: 40.0% of statements'
+run 'ok  	ex/a	0.1s	coverage: 84.9% of statements' "$B2"
+want 0 check "$t/run.txt" "$t/floors.json"                  # 85.3 - 0.4 = 84.9: within tolerance
+run 'ok  	ex/a	0.1s	coverage: 84.8% of statements' "$B2"
+want 1 check "$t/run.txt" "$t/floors.json"; has 'ex/a'; has '85.3'; has '84.8'      # beyond it
+run 'ok  	ex/a	0.1s	coverage: 85.3% of statements' 'ok  	ex/b	0.1s	coverage: 39.9% of statements'
+want 1 check "$t/run.txt" "$t/floors.json"; has 'ex/b'                               # no tolerance for other packages
+tol '  "ex/a": {"tolerance": 0.6, "why": "too generous"}'
+run "$A" "$B2"
+want 1 check "$t/run.txt" "$t/floors.json"; has 'ex/a'; has 'tolerance'              # over 0.5 is refused even when passing
+tol '  "ex/a": {"tolerance": 0.5, "why": "at the cap"}'
+want 0 check "$t/run.txt" "$t/floors.json"
+tol '  "ex/zzz": {"tolerance": 0.1, "why": "no such floor"}'
+want 1 check "$t/run.txt" "$t/floors.json"; has 'ex/zzz'; has 'no floor'             # tolerance without a floor is refused
+tol '  "ex/a": {"tolerance": 0.4, "why": "runner measures lower"}'
+run 'ok  	ex/a	0.1s	coverage: 85.0% of statements' "$B2"
+want 1 ratchet "$t/run.txt" "$t/floors.json"; has 'ex/a'                              # ratchet ignores tolerance: still never lowers
+same '{
+  "ex/a": 85.3,
+  "ex/b": 40.0
+}'
+run 'ok  	ex/a	0.1s	coverage: 86.0% of statements' "$B2"
+want 0 ratchet "$t/run.txt" "$t/floors.json"
+same '{
+  "ex/a": 86.0,
+  "ex/b": 40.0
+}'                                                          # writes the real value, not value minus tolerance
+rm -f "$t/coverage-tolerances.json"
 echo "coverage-floors_test: ok"

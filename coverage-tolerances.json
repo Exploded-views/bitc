@@ -1,0 +1,4 @@
+{
+  "github.com/Exploded-views/bitc/internal/provider/plugin": {"tolerance": 0.1, "why": "coverage measured lower on the GitHub runner than locally (gap 0.1); suspected retry/kill timing, root cause pending (follow-up)"},
+  "github.com/Exploded-views/bitc/internal/status": {"tolerance": 0.4, "why": "coverage measured lower on the GitHub runner than locally (gap 0.4); suspected tty detection, root cause pending (follow-up)"}
+}

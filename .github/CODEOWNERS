@@ -13,3 +13,4 @@
 /scripts/dev.sh @gitgat
 /.goreleaser.yaml @gitgat
 /coverage-floors.json @gitgat
+/coverage-tolerances.json @gitgat

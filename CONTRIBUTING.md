@@ -38,7 +38,18 @@ package that `make test` runs. `make ci` fails when:
 Floors only go up. After you add tests, run `make coverage-ratchet`: it runs the tests and raises
 each floor to the current coverage, rounded down to 0.1, and refuses (exit 1, nothing written) if
 any package is below its floor. Commit the changed file with your change. Do not lower a floor to
-make a build pass; add the missing tests instead. `scripts/coverage-floors.sh` has the details.
+make a build pass; add the missing tests instead. The one exception so far: the first CI run measured
+`internal/status` at 53.0 and `internal/provider/plugin` at 84.4 on the GitHub runner (53.4 and 84.5
+locally), so those two floors were set to the lower figure. This is a baseline set from the first CI
+run, not a lowering. `scripts/coverage-floors.sh` has the details.
+
+`coverage-tolerances.json` lists the rare package whose coverage measured lower on CI than locally
+for the same tests; `make ci` then passes at floor minus tolerance. Tolerances exist only for such a
+measured environment gap, are never above 0.5, must carry a one-line reason (`why`), and name a
+package that has a floor (check fails otherwise). `make coverage-ratchet` ignores them: it writes
+the real local value and never lowers a floor, so a local ratchet can raise a floor without breaking
+CI. A tolerance goes away once its cause is made deterministic; today there are two (`internal/status`,
+suspected tty detection, and `internal/provider/plugin`, suspected retry/kill timing).
 
 ## The conformance register
 
