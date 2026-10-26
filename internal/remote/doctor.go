@@ -50,6 +50,10 @@ func Doctor(e *config.Effective, out io.Writer) (failed, unusable bool) {
 		if core.APIKey != "" {
 			line("ok", typ+" credentials", "<redacted>")
 		}
+		if core.CleanupOnly { // jobs refused: list only, through the cleanup-only handle
+			doctorCleanup(ctx, typ, core, e, line)
+			continue
+		}
 		p, err := NewProvider(ctx, typ, core, e, provider.Runtime{Red: redact.New(), Stderr: os.Stderr, Debug: e.LogLevel == "debug"})
 		if err != nil {
 			var ec *provider.ErrConfig
@@ -154,4 +158,31 @@ func Doctor(e *config.Effective, out io.Writer) (failed, unusable bool) {
 		}
 	}
 	return failed, unusable
+}
+
+// doctorCleanup is doctor --remote for a type whose jobs are refused (config.Provider.CleanupOnly):
+// it says so, lists through the cleanup-only handle (no other call) and checks the sweep timer.
+func doctorCleanup(ctx context.Context, typ string, core *config.Provider, e *config.Effective, line func(level, check, detail string)) {
+	line("warn", typ+" jobs", "refused in this release; bitc sweep only lists, owner-checks and deletes Sprites")
+	c, err := sweepHandle(ctx, typ, core, e)
+	if err != nil {
+		line("fail", typ+" config", err.Error())
+		return
+	}
+	if list, err := c.List(ctx, []string{core.NamePrefix + "-"}); err != nil {
+		line("fail", typ+" api", err.Error())
+	} else {
+		line("ok", typ+" api", fmt.Sprintf("%d live %s- resources", len(list), core.NamePrefix))
+	}
+	if sr, ok := c.(provider.SweepRules); ok && sr.SweepRules().TimerRequired {
+		var dir string
+		if acct, err := state.AccountDir(e); err == nil {
+			dir = filepath.Join(acct, "remote", typ)
+		}
+		if last, ok := LastSweep(dir); !ok || time.Since(last) > 30*time.Minute {
+			line("fail", typ+" sweep timer", "no sweep has run in the last 30 minutes; "+typ+" has no self-delete, so the sweep timer is mandatory: docs/sweep-timer.md")
+		} else {
+			line("ok", typ+" sweep timer", "the last sweep was "+strconv.Itoa(int(time.Since(last).Minutes()))+"m ago")
+		}
+	}
 }

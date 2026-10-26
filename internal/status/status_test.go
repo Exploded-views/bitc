@@ -96,7 +96,8 @@ func TestDoctorFlockProbeIsPrivate(t *testing.T) {
 		t.Fatal("cannot lock")
 	}
 	var out bytes.Buffer
-	Doctor(&config.Effective{}, l, &out)
+	// an accounting dir of its own: doctor looks for remote leftovers, never in this account's
+	Doctor(&config.Effective{Test: &config.Test{AccountingDir: t.TempDir()}}, l, &out)
 	if !strings.Contains(out.String(), "ok flock:") {
 		t.Fatalf("%s", out.String())
 	}

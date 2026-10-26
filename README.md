@@ -25,6 +25,9 @@ Host file, `~/.config/bitc/bitc.toml`:
 ```toml
 version = 1
 
+[host]
+experimental_remote = true             # remote providers are off by default (see Known issues)
+
 [pools.heavy]
 slots = 1
 providers = ["runpod", "local"]        # preference order; local is the fallback
@@ -39,7 +42,7 @@ daily_usd = 25                         # the spend cap for this provider account
 image = "docker.io/library/debian:bookworm-slim"
 sizes = { cpu8 = { cpu_type = "cpu3c", vcpu = 8, usd_per_hour = 0.24 } }
 # The pod downloads the bitc agent from a URL you host. The default source, "release", needs a
-# release build of bitc, and none has been published yet.
+# release build of bitc; this example uses a URL instead.
 agent = { source = "url", url = "https://example.com/bitc_linux_{arch}", path = "/opt/bitc/bitc" }
 ```
 
@@ -100,39 +103,59 @@ memory: 12230 MiB available (MemAvailable), floor 6144 MiB
 - **Two config layers with a trust split.** The host file sets capacities, spend caps and
   providers. A repository's `.bitc.toml` can only narrow those limits, never widen them.
 
-**Maturity, plainly:** the local gate is the mature part. Every remote provider is pre-release;
+**Maturity, plainly:** the local gate is the mature part. Every remote provider is experimental;
 read the Providers and Status sections before pointing one at a real account.
 
 ## Install
 
-bitc runs on Linux (amd64 or arm64). macOS (Apple silicon or Intel) gets a client build that runs
-local pools; the Linux-only features below are refused there. To install from source you need
-Go 1.26 or newer (CI tests 1.27.3):
+bitc v0.1.0 is released: <https://github.com/Exploded-views/bitc/releases/tag/v0.1.0>. It runs on
+Linux (amd64 or arm64). The macOS builds (Apple silicon or Intel) run local pools only; see
+[macOS status](#macos-status) below.
+
+Each release publishes a tarball `bitc_0.1.0_<os>_<arch>.tar.gz` (`<os>` is `linux` or `darwin`,
+`<arch>` is `amd64` or `arm64`; it holds `bitc`, `LICENSE` and `README.md`), the bare binary
+`bitc_0.1.0_<os>_<arch>`, and `checksums.txt`. Download an asset and `checksums.txt` and verify the
+asset before use:
 
 ```sh
-go install github.com/Exploded-views/bitc/cmd/bitc@latest
+curl -LO https://github.com/Exploded-views/bitc/releases/download/v0.1.0/bitc_0.1.0_linux_amd64.tar.gz
+curl -LO https://github.com/Exploded-views/bitc/releases/download/v0.1.0/checksums.txt
+grep bitc_0.1.0_linux_amd64.tar.gz checksums.txt | sha256sum -c -
+tar -xzf bitc_0.1.0_linux_amd64.tar.gz bitc
+install -m 0755 bitc ~/.local/bin/bitc      # or any other directory on your PATH
+bitc version --json
 ```
 
-Release tarballs for linux and darwin (amd64 and arm64), bare binaries and a `checksums.txt` are published at
-<https://github.com/Exploded-views/bitc/releases> once a release exists (no release has been
-tagged yet). Download the asset and `checksums.txt` into one directory and verify before use:
+`bitc version --json` prints one compact JSON line, for example
+`{"commit":"225a43a","config_schema":1,"release":true,"state_schema":1,"version":"0.1.0"}`.
+`release` is `true` only for release builds. Checksums are unsigned for now; signed checksums are
+planned after 1.0. [docs/RELEASING.md](docs/RELEASING.md) describes what a release contains.
+
+To build from source you need Go 1.26 or newer (CI tests 1.27.3):
 
 ```sh
-sha256sum -c --ignore-missing checksums.txt
+go install github.com/Exploded-views/bitc/cmd/bitc@v0.1.0
 ```
 
-Checksums are unsigned for now; signed checksums are planned after 1.0.
-[docs/RELEASING.md](docs/RELEASING.md) describes what a release contains.
+A build made this way reports `"release":false`.
 
-### macOS client build
+### macOS status
 
-The darwin build runs local pools: slots, queues, groups, priority lanes, nested holds, detached
-jobs, `status`, `wait`, `logs`, `cancel`, `doctor` and `config`. These stay Linux-only; full
-parity is tracked in [issue #3](https://github.com/Exploded-views/bitc/issues/3):
+The v0.1.0 macOS builds are **local pools only**: `run`, `status`, `wait`, `logs` and `cancel` over
+`flock` pools, plus detached jobs, groups, priority lanes, nested holds, `doctor` and `config`.
+Memory floors (a pool's `memory` key) and any `[providers.*]` table are refused with exit 78.
+Tracked in:
 
-- memory admission (a pool's `memory` key): a config error (78) on macOS;
+- [#3](https://github.com/Exploded-views/bitc/issues/3): macOS parity (umbrella);
+- [#4](https://github.com/Exploded-views/bitc/issues/4): macOS as a client to remote providers
+  (planned for v0.1.1);
+- [#5](https://github.com/Exploded-views/bitc/issues/5): macOS as a remote build target (design
+  first).
+
+Other differences on macOS:
+
 - remote providers (`ssh`, `runpod`, `sprites` and exec plugins, so `sweep` and
-  `doctor --remote` have nothing to manage): any `[providers.*]` table is a config error (78);
+  `doctor --remote` have nothing to manage);
 - the remote agent (`bitc __agent`) and the plugin exec shim: one `bitc: ... runs on Linux only`
   line and exit 69;
 - the parent-death signal: on macOS a command outlives a bitc that was killed with SIGKILL;
@@ -215,6 +238,16 @@ holds, providers) are in [docs/concepts.md](docs/concepts.md).
 ## Providers
 
 A pool lists the providers it may use, in order, for example `providers = ["runpod", "local"]`.
+Remote providers are experimental and off by default in this release: the host file must opt in
+with `experimental_remote = true` under `[host]`, or any `[providers.<type>]` table (or a pool
+naming one) is a config error (exit 78; see [Known issues](#known-issues)). A repository file
+cannot set it and no environment variable does.
+
+```toml
+[host]
+experimental_remote = true
+```
+
 Remote jobs take no local slot, need the host to allow them, and share the same safety rails: a
 daily spend cap per provider account, a live-job limit, a ledger and a circuit breaker. Once a
 remote job has started it never falls back to another provider.
@@ -222,9 +255,9 @@ remote job has started it never falls back to another provider.
 | Provider | Where the job runs | State |
 | --- | --- | --- |
 | `local` | this machine, in a slot | stable, built in |
-| `runpod` | a RunPod pod created for the job and deleted afterwards | experimental: implemented and tested against a fake API; a live proof against the real service has not been run |
-| `sprites` | a fresh microVM (Fly Sprite) for every job, so many jobs run in parallel | first-class scale-out provider, **not enabled yet**: the egress allow-list is not yet proven enforced and the WSS exec stream is not yet reliable. bitc does not refuse it yet, but do not configure it for real work until a release enables it: today a job would receive the forwarded environment and the deploy key |
-| `ssh` | a Linux machine you own, over ssh | experimental: implemented and tested against fakes and, in maintainer-run tests, a real sshd; not yet proven on a live host. Host setup: [docs/ssh-host.md](docs/ssh-host.md) |
+| `runpod` | a RunPod pod created for the job and deleted afterwards | experimental: tested against a fake API and proven live on CPU pods earlier; a live re-proof of the v0.1.0 release path is pending |
+| `sprites` | a fresh microVM (Fly Sprite) for every job | jobs **refused in this release** (exit 78, even with `experimental_remote`), see [#6](https://github.com/Exploded-views/bitc/issues/6): its network policy does not restrict egress yet, and a job would receive the forwarded environment and the deploy key. With `experimental_remote`, `bitc sweep` still cleans up Sprites left by 0.1.0 (list, owner check, delete only) |
+| `ssh` | a Linux machine you own, over ssh | experimental: implemented and tested against fakes and, in maintainer-run tests, a real sshd. Host setup: [docs/ssh-host.md](docs/ssh-host.md) |
 | exec plugin | anything, through an executable `bitc-provider-<type>` pinned by path and sha256 | experimental: [docs/writing-a-provider.md](docs/writing-a-provider.md), [docs/provider-author-guide.md](docs/provider-author-guide.md) |
 
 Remote providers leave resources that cost money if a job dies at the wrong moment, so run
@@ -298,24 +331,59 @@ the job ends. See [docs/agent-guide.md](docs/agent-guide.md).
 
 ## Status and roadmap
 
-bitc is pre-1.0 and has not been tagged. Interfaces may still change before 1.0.
+bitc v0.1.0 is released ([release notes](https://github.com/Exploded-views/bitc/releases/tag/v0.1.0)).
+It is pre-1.0, so interfaces may still change before 1.0.
 
 - **Stable in intent:** the local gate (pools, slots, groups, priorities, memory admission, nested
   holds, detached jobs, `status`, `sweep`, `doctor`), the exit codes and the config schema.
-- **Experimental / pre-release:** every remote provider (see the table above): none has been
-  proven live yet, and Sprites is not enabled yet (egress allow-list unproven, exec stream not yet reliable). The
-  exec plugin protocol ([docs/plugin-protocol.md](docs/plugin-protocol.md)) may also change.
-- **Planned:** a first tagged release, signed checksums, live proofs of the remote providers, and
-  packages under the name `bitc`.
+- **Experimental:** every remote provider (see the table above), off by default behind
+  `[host] experimental_remote` (see [Known issues](#known-issues)). Sprites jobs
+  are refused in this release; `bitc sweep` still cleans up Sprites left by 0.1.0 (see [#6](https://github.com/Exploded-views/bitc/issues/6) and
+  [Known issues](#known-issues)). RunPod was proven live on CPU pods
+  earlier; a live re-proof of the v0.1.0 release path is pending. ssh is implemented but
+  experimental. The exec plugin protocol ([docs/plugin-protocol.md](docs/plugin-protocol.md)) may
+  also change.
+- **macOS:** local pools only in v0.1.0 (see [macOS status](#macos-status)).
 
-The changelog is [CHANGELOG.md](CHANGELOG.md).
+Open issues that make up the roadmap:
+
+- [#3](https://github.com/Exploded-views/bitc/issues/3): macOS parity (umbrella)
+- [#4](https://github.com/Exploded-views/bitc/issues/4): macOS as a client to remote providers (planned v0.1.1)
+- [#5](https://github.com/Exploded-views/bitc/issues/5): macOS as a remote build target (design first)
+- [#6](https://github.com/Exploded-views/bitc/issues/6): Sprites catch-all egress deny
+- [#7](https://github.com/Exploded-views/bitc/issues/7): RunPod ordered data-centre walk, with a per-pool US-only option
+- [#8](https://github.com/Exploded-views/bitc/issues/8): RunPod fallback CPU types per size
+- [#9](https://github.com/Exploded-views/bitc/issues/9): the launch lock must exclude across implementations during a mixed rollout (spend-cap safety)
+- [#10](https://github.com/Exploded-views/bitc/issues/10): IO-pressure admission (`io_pressure_max`)
+
+Also planned: signed checksums and packages under the name `bitc`. The changelog is
+[CHANGELOG.md](CHANGELOG.md).
+
+## Known issues
+
+- Remote providers are experimental and off by default (`experimental_remote`): their spend accounting is still being hardened. In 0.1.0 specifically: same-named concurrent jobs in one pool can collide, and some interrupted-create paths can leave a resource unpriced until its expiry. Local pools are not affected.
+
+  A host that ran remote jobs with an earlier version and has no flag gets one more line from
+  every refused command: set the flag and run `bitc sweep` to clean up what is left. If you
+  deleted a provider's table instead, `bitc doctor` and `bitc sweep` still point out its
+  unfinished jobs.
+- Sprites jobs are refused in this release (exit 78, even with `experimental_remote`): its
+  network policy does not restrict egress yet, and a job would receive the forwarded environment
+  and the deploy key. Fix tracked in [#6](https://github.com/Exploded-views/bitc/issues/6). To
+  clean up Sprites left by 0.1.0, keep the `[providers.sprites]` table, set
+  `experimental_remote = true` under `[host]` and run `bitc sweep` (the sweep timer keeps
+  working): it only lists Sprites, checks their owner tag and deletes this install's.
+- In 0.1.0 the shipped example `examples/config/repo.bitc.toml` declares `min_version = "1.0.0"`,
+  so a 0.1.0 build refuses it (exit 78); set it to `"0.1.0"`. Fixed in the next release.
 
 ## Contributing
 
-Issues and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md); it covers
+Bug reports and feature requests go to
+[GitHub issues](https://github.com/Exploded-views/bitc/issues/new/choose) (use the issue
+templates). Pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md); it covers
 building, `make ci`, and the conformance register every behaviour must appear in. Please follow the
-[Code of Conduct](CODE_OF_CONDUCT.md) and report security problems privately as described in
-[SECURITY.md](SECURITY.md).
+[Code of Conduct](CODE_OF_CONDUCT.md) and report security problems through private vulnerability reporting as described in
+[SECURITY.md](SECURITY.md), never in a public issue.
 
 ## License
 

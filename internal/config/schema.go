@@ -30,6 +30,8 @@ type hostSchema struct {
 	MaxSignalWait     *string `toml:"max_signal_wait" bitc:"host,default=10m"`
 	HistoryMax        *string `toml:"history_max" bitc:"host,default=50MiB"`
 	Retention         *string `toml:"retention" bitc:"host,default=14d"`
+	// ExperimentalRemote opts the host into remote providers (off by default in this release).
+	ExperimentalRemote *bool `toml:"experimental_remote" bitc:"host,default=false"`
 }
 
 type defaultsSchema struct {
@@ -111,6 +113,9 @@ type testSchema struct {
 	SSHGate       *string  `toml:"ssh_gate" bitc:"host"`
 	SSHRoot       *string  `toml:"ssh_root" bitc:"host"`
 	SSHSshd       *string  `toml:"ssh_sshd" bitc:"host"`
+	// AllowSprites lets the SP suites run the sprites provider against a loopback fake; honoured
+	// only when every sprites endpoint is a loopback literal (spritesRefused).
+	AllowSprites *bool `toml:"allow_sprites" bitc:"host"`
 }
 
 type hooksSchema struct {

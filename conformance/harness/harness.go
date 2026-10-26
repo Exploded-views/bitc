@@ -108,17 +108,43 @@ func Q(s string) string {
 }
 
 // HostConfig writes the host file: "version = 1", body, then [test] with accounting_dir under
-// Root and every seam added with Seam.
+// Root and every seam added with Seam; a body naming sprites gets [test] allow_sprites (the
+// sprites refusal's test-only bypass, honoured only for loopback endpoints). A body that configures a remote provider gets
+// [host] experimental_remote = true (WithRemoteFlag); EX1 writes its host files whole instead.
 func (h *H) HostConfig(body string) {
 	h.body = body
 	var b strings.Builder
 	b.WriteString("version = 1\n")
-	b.WriteString(body)
+	b.WriteString(WithRemoteFlag(body))
 	b.WriteString("\n\n[test]\naccounting_dir = " + Q(filepath.Join(h.Root, "account")) + "\n")
+	if strings.Contains(body, "sprites") { // the SP suites run sprites against a loopback fake (SPR1)
+		b.WriteString("allow_sprites = true\n")
+	}
 	for _, s := range h.seams {
 		b.WriteString(s + "\n")
 	}
 	h.Write(h.Config, b.String(), 0o600)
+}
+
+// WithRemoteFlag adds experimental_remote = true to the [host] table of a host-file body that
+// mentions providers (a [providers.<type>] table or a pool's providers list) and lacks the key:
+// after an existing [host] header, else as a [host] table at the end.
+func WithRemoteFlag(body string) string {
+	if !strings.Contains(body, "providers") || strings.Contains(body, "experimental_remote") {
+		return body
+	}
+	const flag = "experimental_remote = true\n"
+	if strings.HasPrefix(body, "[host]\n") {
+		return "[host]\n" + flag + body[len("[host]\n"):]
+	}
+	if i := strings.Index(body, "\n[host]\n"); i >= 0 {
+		j := i + len("\n[host]\n")
+		return body[:j] + flag + body[j:]
+	}
+	if body != "" && !strings.HasSuffix(body, "\n") {
+		body += "\n"
+	}
+	return body + "[host]\n" + flag
 }
 
 // Seam adds one `key = value` line to the [test] table and rewrites the host file.

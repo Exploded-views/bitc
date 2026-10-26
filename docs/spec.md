@@ -242,6 +242,7 @@ and a test fails when a tag, the reference and this table disagree.
 | `version` / `min_version` | required (`1`) / unset | every file |
 | `host.state_dir`, `poll`, `memory_floor`, `reservation_window` | `$XDG_STATE_HOME/bitc` (`~/.local/state/bitc`), `5s`, `6GiB`, `60s` | host |
 | `host.unknown_pools`, `grace`, `max_signal_wait`, `history_max` (keep 3), `retention` | `refuse`, `10s`, `10m`, `50MiB`, `14d` | host |
+| `host.experimental_remote` (remote providers' opt-in, 5.8) | `false` | host |
 | `defaults.slots` / `defaults.wait` (pools inherit both) | `1` / `10m` | host / narrowable |
 | `pools.<p>.memory`, `groups` / `providers` | none / `["local"]` | host / narrowable |
 | `pools.<p>.on_signal`, `refuse`, hooks; hook `timeout`, `refuse_exit` | `terminate`, none, none; `60s`, `[64]` | project |
@@ -275,7 +276,7 @@ setup and a root service. CI runs `bitc config check` on both.
 `BITC_PROVIDER=local` (the only value), `BITC_ARTIFACTS` (comma list, subset of the declared paths;
 empty = none; trailing `/` stripped), `BITC_LOG` (`info`, `debug`, `quiet`), `BITC_HOLD` (set by
 bitc, 6.6). Values cannot widen host keys; empty means unset; malformed exits 64; other `BITC_*`
-names are ignored.
+names are ignored. No variable sets `host.experimental_remote` (5.8): only the host file does.
 
 ### 5.7 Templates
 
@@ -286,6 +287,63 @@ Arithmetic: `+`/`-` of one integer var and one integer literal or var. **Remote 
 remote-capable pool (host list names a remote provider; repo has `[pools.<p>.remote]`), every env
 key whose template uses a host-only variable must be overridden by the remote profile's `env` or
 listed in its `env_unset`; else 78 at load naming the key.
+
+### 5.8 Remote providers are opt-in
+
+Remote providers are experimental in this release and off by default. Without
+`[host] experimental_remote = true` in the host file, any `[providers.<type>]` table, or a pool
+whose `providers` names anything but `local`, is a config error (78) at load, listed with the
+other problems before any lock, state, accounting or network access (the one write is
+`run --result FILE`, which records every config error, this one included):
+
+```
+bitc: remote providers are experimental in this release and off by default; their spend accounting is still under review (see https://github.com/Exploded-views/bitc#known-issues). To use them anyway, set [host] experimental_remote = true.
+```
+
+`bitc sweep` and `bitc doctor --remote`, and any command on a host whose accounting dir (9) has a
+`remote/<type>/reservations.json` listing a job (a run that never finished, so its resource may
+still exist), add one line:
+`To clean up resources left by an earlier version, set the flag and run bitc sweep.` The ledger is
+not consulted: it is append-only and a sweep closes no launch, so its lines only say that remote
+jobs ran once. The check opens the file without blocking (a FIFO or device is skipped), checks it
+is a regular file and reads at most 64 bytes; it never creates the dir. With no provider of that
+type configured (for example after its `[providers.<type>]` table was deleted), `bitc doctor`
+prints `warn remote: <type>: an earlier version's run may have left paid resources ...` and
+`bitc sweep` prints the same hint on stderr, since nothing configured can sweep it. The key is
+host-only (a repo file setting it is 78) and no `BITC_*` variable sets it. On a darwin build the
+platform refusal of every provider (1) applies instead. With the flag set, remote providers behave
+as described in 8, `bitc config check` passes and `bitc doctor` prints
+`warn remote: experimental_remote is on`.
+
+**Sprites jobs are refused in this release.** Any `[providers.sprites]` table, or a pool whose
+`providers` names `sprites`, is a config error (78) at load on every path but a cleanup, with or
+without `experimental_remote`, until the egress fix (#6) lands and is reviewed:
+
+```
+bitc: Sprites jobs are refused in this release: their network policy does not restrict egress yet, and a job would receive the forwarded environment and the deploy key. `bitc sweep` can still clean up Sprites left by 0.1.0 (see https://github.com/Exploded-views/bitc/issues/6 and https://github.com/Exploded-views/bitc#known-issues).
+```
+
+It is decided from the host file alone: the refusal comes before any token or `[[repos]]
+deploy_key_file` is read or checked, and before any env forwarding, state, lock or network access
+(the `--result` exception above applies). Every command except `bitc sweep` and
+`bitc doctor --remote` exits 78 (including `run`, with `--detach`, whose supervisor prepares the
+same way, `status`, `doctor`, `config`, `wait`, `logs` and `cancel`; `version` reads no config). Without the flag it is listed before the
+experimental line. Off Linux no provider section is decoded at all: the platform refusal stands
+alone, and no token or deploy key file is read.
+
+**Cleanup only.** `bitc sweep` and `bitc doctor --remote`, with `experimental_remote` set (like
+every remote path), get Sprites as cleanup-only: the API token and endpoint are decoded, no
+deploy key is checked or read and no env is forwarded, and the sweep holds a handle that can only
+list Sprites, check an owner tag (from the name, no API call) and delete one. It deletes only a
+Sprite whose owner tag verifies under this install's secret: never by name prefix, a ledger line
+or `--foreign`. `doctor --remote` prints `warn sprites jobs: refused in this release; bitc sweep
+only lists, owner-checks and deletes Sprites`, lists, and checks the sweep timer.
+
+The one bypass of the refusal is `[test] allow_sprites = true`, for the test suites against a
+loopback fake. It is honoured only when every endpoint of the sprites section is a loopback
+literal, and no `[host]` key or `BITC_*` variable sets it. It keeps a host from using it by
+accident; it is not a security boundary against the host's owner, who may put a loopback proxy or
+tunnel in front of the real API by their own choice.
 
 ## 6. Admission and local execution
 
@@ -412,6 +470,9 @@ history line.
   supervisor that died without `result.json` is marked `lost`; `wait` prints `RESULT starved`, 75.
 
 ## 8. Providers
+
+Every provider other than `local` needs the host opt-in `[host] experimental_remote = true` in this
+release, and `sprites` is refused outright (5.8).
 
 ### 8.1 Interface and capabilities
 
@@ -1274,7 +1335,12 @@ ACCOUNT/ install-secret (32 bytes; install16 = 16 hex of its sha256),
 
 **History:** `O_APPEND` lines under 4 KiB: `{ts (UTC, ms), event: "start"|"end"|"starved"|
 "fallback"|"reaped", pool, slot, job, pid, nested?, argv: [...], cwd, provider, resource?, sha?,
-wait_ms?, run_ms?, exit?, outcome?, reason?}`; refusals write nothing. **Concurrency:** one writer
+wait_ms?, run_ms?, exit?, outcome?, reason?}`; refusals write nothing; a `reason` over 512 bytes is
+cut there and ends ` [truncated]`; the 4 KiB bound is on the encoded line (JSON escaping
+included): the reason is halved first, then argv, then the cwd and the resource, and as a last
+resort the pool, job, provider and sha (names are not length-checked where they are written),
+each cut at a character boundary and marked; argv's cut sets `argv_truncated` instead. Only
+bitc's own short fields (`ts`, `event`, `outcome`, the numbers) are never cut, so every line fits. **Concurrency:** one writer
 per file (appends under 4 KiB, temp + rename, or a ticket's in-place write by its owner under
 `admit.lock`); no read-modify-write without the owning lock; every lock attempt non-blocking or
 bounded; no hold-and-wait; lock files never deleted while in use.

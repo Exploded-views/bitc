@@ -96,9 +96,13 @@ reference plugin's fake API (`fakeapi/main.go`) is a working example of the same
 ## 3. Pin and install
 
 A host pins a plugin in the host config file (not in a repository file: a `plugin` key in a repo
-file is exit 78):
+file is exit 78). Remote providers are off by default in this release, so the host file also sets
+the opt-in (spec 5.8):
 
 ```toml
+[host]
+experimental_remote = true
+
 [providers.modal]
 plugin = { path = "/usr/local/libexec/bitc/bitc-provider-modal",
            sha256 = "<64 lowercase hex>",

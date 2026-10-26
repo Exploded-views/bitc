@@ -62,23 +62,35 @@ func enum(p *problems, file, key string, s *string, def string, allowed ...strin
 }
 
 // applyHost fills host-only sections from the host layer and built-in defaults (spec 5.4).
-func applyHost(p *problems, e *Effective, host layer, env map[string]string) {
+func applyHost(p *problems, e *Effective, host layer, env map[string]string, cleanup bool) {
 	f, s := host.file, host.schema
+	// The sprites refusal comes first and stops every read of its material: no token file, no
+	// deploy key file (sprites.go).
+	// A cleanup (sweep, doctor --remote) gets sprites as CleanupOnly instead: list, owner check
+	// and delete only, still behind experimental_remote.
+	switch refused := spritesRefused(s, platformGOOS); {
+	case refused && cleanup:
+		e.spritesCleanup = true
+	case refused:
+		e.spritesRefused = true
+		p.addf("%s", SpritesRefusal)
+	}
 	h := s.Host
 	if h == nil {
 		h = &hostSchema{}
 	}
 	stateBase := firstNonEmpty(env["XDG_STATE_HOME"], filepath.Join(env["HOME"], ".local", "state"))
 	e.Host = Host{
-		StateDir:          filepath.Join(stateBase, "bitc"),
-		Poll:              dur(p, f, "host.poll", h.Poll, 5*time.Second),
-		MemoryFloor:       size(p, f, "host.memory_floor", h.MemoryFloor, 6<<30),
-		ReservationWindow: dur(p, f, "host.reservation_window", h.ReservationWindow, 60*time.Second),
-		UnknownPools:      enum(p, f, "host.unknown_pools", h.UnknownPools, "refuse", "refuse", "default"),
-		Grace:             dur(p, f, "host.grace", h.Grace, 10*time.Second),
-		MaxSignalWait:     dur(p, f, "host.max_signal_wait", h.MaxSignalWait, 10*time.Minute),
-		HistoryMax:        size(p, f, "host.history_max", h.HistoryMax, 50<<20),
-		Retention:         dur(p, f, "host.retention", h.Retention, 14*24*time.Hour),
+		StateDir:           filepath.Join(stateBase, "bitc"),
+		Poll:               dur(p, f, "host.poll", h.Poll, 5*time.Second),
+		MemoryFloor:        size(p, f, "host.memory_floor", h.MemoryFloor, 6<<30),
+		ReservationWindow:  dur(p, f, "host.reservation_window", h.ReservationWindow, 60*time.Second),
+		UnknownPools:       enum(p, f, "host.unknown_pools", h.UnknownPools, "refuse", "refuse", "default"),
+		Grace:              dur(p, f, "host.grace", h.Grace, 10*time.Second),
+		MaxSignalWait:      dur(p, f, "host.max_signal_wait", h.MaxSignalWait, 10*time.Minute),
+		HistoryMax:         size(p, f, "host.history_max", h.HistoryMax, 50<<20),
+		Retention:          dur(p, f, "host.retention", h.Retention, 14*24*time.Hour),
+		ExperimentalRemote: h.ExperimentalRemote != nil && *h.ExperimentalRemote,
 	}
 	e.Sources["host.state_dir"] = "default"
 	if h.StateDir != nil {
@@ -126,7 +138,7 @@ func applyHost(p *problems, e *Effective, host layer, env map[string]string) {
 			p.addf("%s: repos[%d].match is required", f, i)
 		}
 		g := RepoGrant(r)
-		if g.DeployKeyFile != "" {
+		if g.DeployKeyFile != "" && !e.spritesRefused && !e.spritesCleanup && platformGOOS == "linux" {
 			g.DeployKeyFile = expandHome(g.DeployKeyFile, env)
 			if why := keyFileProblem(g.DeployKeyFile); why != "" {
 				p.addf("%s: [[repos]] deploy_key_file: %s", f, why)
@@ -194,6 +206,15 @@ func applyHost(p *problems, e *Effective, host layer, env map[string]string) {
 		if t.SSHSshd != nil {
 			e.Test.SSHSshd = *t.SSHSshd
 		}
+		if t.AllowSprites != nil {
+			e.Test.AllowSprites = *t.AllowSprites
+		}
+	}
+	if platformGOOS != "linux" { // every provider is refused for the platform: read none of their files
+		for t := range s.Providers {
+			e.platformRefused = append(e.platformRefused, t)
+		}
+		return
 	}
 	decodeProviders(p, e, f, s.Providers, env)
 }
@@ -342,8 +363,12 @@ func mergePools(p *problems, e *Effective, host layer, repo *layer) {
 			pool.Providers = hp.Providers
 		}
 		for _, t := range pool.Providers {
-			if t != "local" && e.Providers[t] == nil {
-				p.addf("%s: %s.providers names %q, which is not local or a configured [providers.<type>]", host.file, key, t)
+			if t != "local" && e.Providers[t] == nil && (t != "sprites" || !e.spritesRefused) && platformGOOS == "linux" {
+				hint := ""
+				if t == "sprites" && e.spritesCleanup {
+					hint = "; to clean up Sprites left by 0.1.0, configure [providers.sprites] with [host] experimental_remote = true and run bitc sweep"
+				}
+				p.addf("%s: %s.providers names %q, which is not local or a configured [providers.<type>]%s", host.file, key, t, hint)
 			}
 		}
 		pool.Providers = without(pool.Providers, rp.ProvidersExclude)

@@ -2,13 +2,14 @@
 
 ## Supported versions
 
-bitc is pre-1.0 and has no tagged release yet. Security fixes go to the `main` branch. Once
-releases exist, the latest release is supported; older ones are not.
+bitc is pre-1.0. Security fixes go to the `main` branch, and the latest release (currently
+[v0.1.0](https://github.com/Exploded-views/bitc/releases/tag/v0.1.0)) is supported; older ones are
+not.
 
 | Version | Supported |
 | --- | --- |
 | `main` | yes |
-| latest release (when one exists) | yes |
+| latest release | yes |
 | anything older | no |
 
 ## Reporting a vulnerability

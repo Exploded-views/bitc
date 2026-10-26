@@ -1,8 +1,12 @@
 # Contributing to bitc
 
 Thank you for helping. Issues and pull requests are welcome. Releases are cut by the maintainers
-only. By taking part you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md). Report security
-problems privately, as described in [SECURITY.md](SECURITY.md).
+only. By taking part you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+Bug reports and feature requests go to
+[GitHub issues](https://github.com/Exploded-views/bitc/issues/new/choose), using the issue
+templates. Report security problems privately through GitHub's private vulnerability reporting, as
+described in [SECURITY.md](SECURITY.md); never open a public issue for them.
 
 For a larger change, open an issue first so we can agree on the shape before you write code.
 

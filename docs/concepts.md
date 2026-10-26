@@ -53,7 +53,7 @@ A **provider** is a place where a command can run.
 | --- | --- |
 | `local` | this machine, in a slot (built in) |
 | `runpod` | a RunPod pod, created for the job and deleted afterwards |
-| `sprites` | a fresh Fly Sprite (microVM) for every job; not enabled yet, see the README |
+| `sprites` | a fresh Fly Sprite (microVM) for every job; jobs **refused in this release** (exit 78, even with `experimental_remote`; `bitc sweep` still cleans up Sprites left by 0.1.0), see [#6](https://github.com/Exploded-views/bitc/issues/6): its network policy does not restrict egress yet, and a job would receive the forwarded environment and the deploy key |
 | exec plugin | any platform, through an executable `bitc-provider-<type>` that you pin by absolute path and sha256 |
 | `ssh` | a machine you already own, reached over ssh (experimental) |
 

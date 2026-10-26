@@ -70,7 +70,7 @@ func Load(o LoadOptions) (*Effective, error) {
 	if hostExists {
 		e.HostFile = host.file
 	}
-	applyHost(&p, e, host, env)
+	applyHost(&p, e, host, env, o.Cleanup)
 	e.Worktree, e.RepoFile = findRepo(cwd, env, o.RepoFile)
 	sum := sha256.Sum256([]byte(e.Worktree))
 	e.WT8 = hex.EncodeToString(sum[:])[:8]
@@ -94,6 +94,7 @@ func Load(o LoadOptions) (*Effective, error) {
 	checkTemplates(&p, e)
 	checkRemoteEnv(&p, e)
 	checkTestGate(&p, e)
+	checkExperimentalRemote(&p, e, host.schema, platformGOOS, o.Cleanup)
 	checkPlatform(&p, e, platformGOOS)
 	if err := p.err(); err != nil {
 		return nil, err
@@ -238,6 +239,14 @@ func checkClasses(p *problems, file string, v reflect.Value, prefix, parentClass
 		switch {
 		case repo && class == "host":
 			p.addf("%s: %s is a host-only key (repo files may not set it)", file, key)
+			if key == "host" { // name each [host] key the repo file sets (experimental_remote above all)
+				hv := fv.Elem()
+				for j := 0; j < hv.NumField(); j++ {
+					if !hv.Field(j).IsZero() {
+						p.addf("%s: host.%s is a host-only key", file, strings.Split(hv.Type().Field(j).Tag.Get("toml"), ",")[0])
+					}
+				}
+			}
 			if key == "providers" && fv.Kind() == reflect.Map { // name the boundary key too (spec 8.2)
 				for _, k := range fv.MapKeys() {
 					if m, ok := fv.MapIndex(k).Interface().(map[string]any); ok {

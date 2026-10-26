@@ -7,6 +7,12 @@ power, bitc is SIGKILLed) leaves its resource behind until a sweep removes it, s
 a timer. A systemd **user** timer that runs `bitc sweep` every 15 minutes needs these two unit
 files.
 
+Remote providers are off by default in this release: with a `[providers.<type>]` table but no
+`experimental_remote = true` under `[host]`, every command, `bitc sweep` included, exits 78 (spec
+5.8). To clean up resources an earlier version left, set the flag and run `bitc sweep`. Sprites
+jobs are refused in this release, but with the flag the sweep (and this timer) still cleans up
+Sprites left by 0.1.0: it only lists them, checks their owner tag and deletes this install's.
+
 ```ini
 # ~/.config/systemd/user/bitc-sweep.service
 [Unit]
@@ -58,7 +64,8 @@ only with `--foreign`.
 
 ## Sprites: the timer is mandatory
 
-A Sprite has no self-delete, so for the `sprites` provider the timer is not optional. The sweep
+A Sprite has no self-delete, so for the `sprites` provider the timer is not optional, including in
+this release, where Sprites jobs are refused and the sweep only cleans up (spec 5.8). The sweep
 records each successful listing, and `bitc doctor --remote` reports `fail sprites sweep timer` (exit
 69) when no sweep ran in the last 30 minutes; a `--dry-run` does not count. Besides Sprites past
 their expiry, the sweep deletes this install's Sprites that no live reservation on the host

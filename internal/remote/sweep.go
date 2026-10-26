@@ -45,7 +45,7 @@ func init() {
 }
 
 type sweepInput struct {
-	prov     provider.Provider
+	prov     provider.Cleaner // list, owner check, teardown: all a sweep does
 	typ      string
 	dir      string // ACCOUNT/remote/<type>, holds the reservations
 	prefix   string // "<name_prefix>-"
@@ -193,12 +193,17 @@ func Sweep(ctx context.Context, e *config.Effective, dry bool, only string, fore
 		}
 		if core.APIKey == "" && typ != "fake" && core.Plugin == nil && !core.Fixed {
 			fmt.Fprintf(os.Stderr, "bitc: sweep: %s: no credentials; skipped resources\n", typ)
-		} else if p, err := NewProvider(ctx, typ, core, e, provider.Runtime{Red: redact.New(), Stderr: os.Stderr, Debug: e.LogLevel == "debug"}); err != nil {
+		} else if p, err := sweepHandle(ctx, typ, core, e); err != nil {
 			fmt.Fprintf(os.Stderr, "bitc: sweep: %s: %v\n", typ, err)
 		} else {
-			defer CloseProvider(p)
+			if full, ok := p.(provider.Provider); ok {
+				defer CloseProvider(full)
+			}
 			in := sweepInput{prov: p, typ: typ, dir: dir, prefix: core.NamePrefix + "-", install: install, secret: secret,
 				launched: launchedNames(dir), foreign: foreign, dry: dry, now: time.Now(), out: out, errw: os.Stderr}
+			if core.CleanupOnly { // a verified owner tag only: never a ledger line or another install's resource
+				in.launched, in.foreign = nil, false
+			}
 			if sr, ok := p.(provider.SweepRules); ok {
 				in.rules = sr.SweepRules()
 				in.goneAfter = e.Scale(in.rules.GoneAfter)
@@ -235,4 +240,22 @@ func launchedNames(dir string) map[string]bool {
 		}
 	}
 	return names
+}
+
+// sweepHandle is what the sweep uses for a provider: its cleanup-only handle when the type's jobs
+// are refused (config.Provider.CleanupOnly: list, owner check, delete, no create, exec or attach),
+// else the provider.
+func sweepHandle(ctx context.Context, typ string, core *config.Provider, e *config.Effective) (provider.Cleaner, error) {
+	if core.CleanupOnly {
+		f, ok := provider.Lookup(typ, core)
+		if !ok || f.NewCleaner == nil {
+			return nil, fmt.Errorf("no cleanup-only handle for %s", typ)
+		}
+		return f.NewCleaner(core, e)
+	}
+	p, err := NewProvider(ctx, typ, core, e, provider.Runtime{Red: redact.New(), Stderr: os.Stderr, Debug: e.LogLevel == "debug"})
+	if err != nil {
+		return nil, err
+	}
+	return p, nil
 }

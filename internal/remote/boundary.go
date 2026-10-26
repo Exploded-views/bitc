@@ -127,6 +127,9 @@ func nameLimit(maxName int) int {
 
 // NewProvider builds a section's provider and starts it when it needs a process (a plugin).
 func NewProvider(ctx context.Context, typ string, core *config.Provider, e *config.Effective, rt provider.Runtime) (provider.Provider, error) {
+	if core.CleanupOnly { // defense in depth: a cleanup gets the cleanup-only handle (sweepHandle)
+		return nil, errors.New(typ + " jobs are refused in this release")
+	}
 	f, ok := provider.Lookup(typ, core)
 	if !ok {
 		return nil, errors.New("not available in this build")

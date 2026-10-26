@@ -19,6 +19,9 @@ type LoadOptions struct {
 	Cwd   string   // os.Getwd() of the caller
 
 	RepoFile string // `config check --repo FILE`: use FILE as the repo file
+	// Cleanup: the caller is sweep or doctor --remote, so a refusal for remote providers says how
+	// to clean up what an earlier version left.
+	Cleanup bool
 }
 
 // RunFlags are the narrowing flags of `bitc run` (spec 3.1, 5.3).
@@ -74,6 +77,12 @@ type Effective struct {
 
 	Warnings []string // non-fatal config notes, one line each; `config check` prints them to stderr
 	run      runState
+	// spritesRefused: the host configures or names sprites, which this release refuses (sprites.go)
+	spritesRefused bool
+	// spritesCleanup: the same, for a cleanup: sprites is decoded CleanupOnly
+	spritesCleanup bool
+	// platformRefused: off Linux, the [providers.<type>] tables, refused without being decoded
+	platformRefused []string
 }
 
 type Host struct {
@@ -86,6 +95,9 @@ type Host struct {
 	MaxSignalWait     time.Duration
 	HistoryMax        Size
 	Retention         time.Duration
+	// ExperimentalRemote: [host] experimental_remote, the opt-in remote providers need. Host file
+	// only: no repo key and no BITC_* variable sets it.
+	ExperimentalRemote bool
 }
 
 type Pool struct {
@@ -158,8 +170,12 @@ type RemoteLimits struct {
 }
 
 type Provider struct {
-	Type         string
-	Fixed        bool // fixed capacity: slots, no API key (providers delta C.3)
+	Type  string
+	Fixed bool // fixed capacity: slots, no API key (providers delta C.3)
+	// CleanupOnly: jobs of this type are refused in this release (sprites); a cleanup (sweep,
+	// doctor --remote) may only list, owner-check and delete its resources, through the type's
+	// provider.Factory.NewCleaner, never New.
+	CleanupOnly  bool
 	NamePrefix   string
 	APIKey       string // never printed
 	APIKeyFile   string
@@ -318,6 +334,8 @@ type Test struct {
 	// SSHSshd names the program doctor runs in place of `sshd -T` for the tunnel account check
 	// (providers delta C.6.3), so a test needs no root and no sshd.
 	SSHSshd string
+	// AllowSprites: [test] allow_sprites, the sprites refusal's test-only bypass (spritesRefused).
+	AllowSprites bool
 }
 
 // Scale applies [test] time_scale to a duration bitc waits on.

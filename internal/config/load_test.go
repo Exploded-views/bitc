@@ -17,7 +17,30 @@ type fixture struct {
 	wt   string
 }
 
+// newFixture writes host (with experimental_remote = true added when it names providers, see
+// withRemoteFlag) and repo; newRawFixture writes host as given.
 func newFixture(t *testing.T, host, repo string) *fixture {
+	t.Helper()
+	return newRawFixture(t, withRemoteFlag(host), repo)
+}
+
+// withRemoteFlag adds [host] experimental_remote = true to a host file that mentions providers
+// and lacks the key (the remote gate is tested in experimental_test.go and conformance EX1).
+func withRemoteFlag(host string) string {
+	if !strings.Contains(host, "providers") || strings.Contains(host, "experimental_remote") {
+		return host
+	}
+	if i := strings.Index(host, "\n[host]\n"); i >= 0 {
+		j := i + len("\n[host]\n")
+		return host[:j] + "experimental_remote = true\n" + host[j:]
+	}
+	if host != "" && !strings.HasSuffix(host, "\n") {
+		host += "\n"
+	}
+	return host + "[host]\nexperimental_remote = true\n"
+}
+
+func newRawFixture(t *testing.T, host, repo string) *fixture {
 	t.Helper()
 	home := t.TempDir()
 	f := &fixture{t: t, home: home, host: filepath.Join(home, "bitc.toml"), wt: filepath.Join(home, "wt")}
@@ -344,3 +367,7 @@ func TestTestTableFixedSecretsSeam(t *testing.T) {
 		t.Errorf("unset fixed_secrets: %+v %v", e.Test, err)
 	}
 }
+
+// Unit tests never look at this account's real accounting dir (a host that ran remote jobs would
+// change what Load says): without [test] accounting_dir the leftover check finds nothing.
+func init() { accountDir = func() string { return "" } }

@@ -1,6 +1,6 @@
 # Example repo config: .bitc.toml at a work tree's top (spec 5). CI checks it with `bitc config check`.
 version = 1
-min_version = "1.0.0"
+min_version = "0.1.0"
 vars = { db_port_base = 55431, heavy_heap_mb = 8192 }
 defaults = { env = { TEST_MAX_WORKERS = "2" }, env_unset = ["NODE_OPTIONS"] }  # all pools
 

@@ -29,7 +29,7 @@ func checkPlatform(p *problems, e *Effective, goos string) {
 			p.addf("%s: pools.%s.memory: memory admission runs on Linux only (this is a %s build)", file, n, goos)
 		}
 	}
-	types := make([]string, 0, len(e.Providers))
+	types := append([]string(nil), e.platformRefused...) // not decoded off Linux (applyHost)
 	for t := range e.Providers {
 		types = append(types, t)
 	}

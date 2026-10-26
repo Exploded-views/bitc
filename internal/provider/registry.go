@@ -17,8 +17,11 @@ type SelfDeleteEnv struct {
 
 // Factory registers a provider type (spec 8.5).
 type Factory struct {
-	Endpoints  func(raw map[string]any) ([]string, error)
-	New        func(core *config.Provider, eff *config.Effective) (Provider, error)
+	Endpoints func(raw map[string]any) ([]string, error)
+	New       func(core *config.Provider, eff *config.Effective) (Provider, error)
+	// NewCleaner builds the cleanup-only handle of a type whose jobs are refused
+	// (config.Provider.CleanupOnly): sweep and doctor --remote use it instead of New.
+	NewCleaner func(core *config.Provider, eff *config.Effective) (Cleaner, error)
 	SelfDelete func(ctx context.Context, env SelfDeleteEnv) error
 	TestOnly   bool // accepted only with a [test] table (the fake)
 	// FallbackCap is the latest boundary the type declares for these provider-specific keys

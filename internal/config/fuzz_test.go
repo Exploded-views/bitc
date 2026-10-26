@@ -19,6 +19,7 @@ func FuzzLoadHostFile(f *testing.F) {
 		"version = 2\n",
 		"version = 1\n[[repos]]\nmatch = \"**\"\nconfig = \"/nope\"\n",
 		"version = 1\n[providers.runpod]\ndaily_usd = 1\nimage = \"x\"\nsizes = {}\n",
+		"version = 1\n[host]\nexperimental_remote = true\n[providers.runpod]\ndaily_usd = 1\nimage = \"x\"\nsizes = {}\n",
 		"version = 1\n[pools.x]\nenv = { A = \"{\" }\n",
 	} {
 		f.Add(s)

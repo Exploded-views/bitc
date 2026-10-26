@@ -75,6 +75,9 @@ func Walk(ctx context.Context, inv run.Invocation, p *run.Prepared, typ string, 
 	if core == nil {
 		return run.Outcome{}, false, &provider.ErrIneligible{Why: typ + " is not configured"}
 	}
+	if core.CleanupOnly { // defense in depth: config refuses these jobs before a walk starts
+		return run.Outcome{}, false, &provider.ErrIneligible{Why: typ + " jobs are refused in this release"}
+	}
 	f, ok := provider.Lookup(typ, core)
 	if !ok {
 		return run.Outcome{}, false, &provider.ErrIneligible{Why: typ + " is not configured"}

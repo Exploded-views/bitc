@@ -9,6 +9,7 @@ groups = { bigmem = { units = 1 } }
 state_dir = "~/.local/state/bitc"  # BITC_DIR / --state-dir override
 poll = "2s"                     # admission poll; inotify wakes earlier
 memory_floor = "6GiB"           # for pools that set `memory`; "0GiB" disables
+experimental_remote = true      # remote providers are off by default in this release (README: Known issues)
 
 [pools]
 lint = { slots = 1 }

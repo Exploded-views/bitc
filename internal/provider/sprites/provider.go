@@ -26,6 +26,13 @@ func init() {
 		New: func(core *config.Provider, eff *config.Effective) (provider.Provider, error) {
 			return NewProvider(core, eff)
 		},
+		NewCleaner: func(core *config.Provider, eff *config.Effective) (provider.Cleaner, error) {
+			c, err := NewCleaner(core, eff)
+			if err != nil {
+				return nil, err // never a typed nil in the interface
+			}
+			return c, nil
+		},
 		FallbackCap: func(map[string]any) provider.Boundary { return provider.UntilAttach },
 		// the Sprite and every checkpoint of it are deleted with the job (decision 10, probe 9.25)
 		SendEnv:  func(map[string]any) provider.EnvLevel { return provider.EnvForced },
@@ -256,16 +263,27 @@ func (p *Provider) List(ctx context.Context, prefixes []string) ([]provider.Reso
 	if err := p.credentials(); err != nil {
 		return nil, err
 	}
+	return listResources(ctx, p.cli, p.set, p.eff, prefixes)
+}
+
+// spriteLister is the one read a listing needs (the Client; the cleanup handle keeps only this
+// and spriteDeleter).
+type spriteLister interface {
+	ListSprites(ctx context.Context, prefix string) ([]Sprite, error)
+}
+
+// listResources lists the Sprites under the prefixes as provider resources.
+func listResources(ctx context.Context, cli spriteLister, set Settings, eff *config.Effective, prefixes []string) ([]provider.Resource, error) {
 	seen := map[string]bool{}
 	var out []provider.Resource
 	for _, pre := range prefixes {
-		sp, err := p.cli.ListSprites(ctx, pre)
+		sp, err := cli.ListSprites(ctx, pre)
 		var tr *provider.ErrTransient
 		if errors.As(err, &tr) { // a 5xx before any create: one retry, no lookup
 			select {
 			case <-ctx.Done():
-			case <-time.After(p.eff.Scale(2 * time.Second)):
-				sp, err = p.cli.ListSprites(ctx, pre)
+			case <-time.After(eff.Scale(2 * time.Second)):
+				sp, err = cli.ListSprites(ctx, pre)
 			}
 		}
 		if err != nil {
@@ -280,7 +298,7 @@ func (p *Provider) List(ctx context.Context, prefixes []string) ([]provider.Reso
 			if pn, ok := ParseName(strings.TrimSuffix(pre, "-"), s.Name); ok {
 				r.Install, r.SizeKey, r.Job, r.Expires = pn.Install, pn.Size, pn.Job8, pn.Expires
 			}
-			r.USDPerHour = p.set.Price(r.SizeKey) // an unparsable name is priced at the highest size
+			r.USDPerHour = set.Price(r.SizeKey) // an unparsable name is priced at the highest size
 			out = append(out, r)
 		}
 	}

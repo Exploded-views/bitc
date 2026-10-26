@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/Exploded-views/bitc/internal/config"
@@ -38,7 +39,7 @@ func init() {
 				pools = append(pools, a)
 			}
 		}
-		e, l, code := loadState(g, std)
+		e, l, code := loadState(g, std, false)
 		if code != 0 {
 			return code
 		}
@@ -74,11 +75,14 @@ func init() {
 				return usageLine(std, sweepUsage)
 			}
 		}
-		e, l, code := loadState(g, std)
+		e, l, code := loadState(g, std, true)
 		if code != 0 {
 			return code
 		}
 		_ = status.Sweep(e, l, dry, std.Out)
+		for _, t := range config.UnconfiguredLeftovers(e) { // nothing configured can sweep these
+			fmt.Fprintln(std.Err, "bitc: remote "+config.LeftoverHint(t))
+		}
 		if status.RemoteSweep != nil {
 			status.RemoteSweep(ctx, e, dry, provider, foreign, std.Out)
 		}
@@ -92,7 +96,7 @@ func init() {
 			}
 			remote = true
 		}
-		e, l, code := loadState(g, std)
+		e, l, code := loadState(g, std, remote)
 		if code != 0 {
 			return code
 		}
@@ -119,8 +123,11 @@ func usageLine(std Std, line string) int {
 	return exit.Usage
 }
 
-func loadState(g config.Flags, std Std) (*config.Effective, state.Layout, int) {
-	e, err := loadFor(g, "")
+// loadState loads the config and opens the state dir; cleanup marks sweep and doctor --remote,
+// whose refusal of remote providers says how to clean up (config.LoadOptions.Cleanup).
+func loadState(g config.Flags, std Std, cleanup bool) (*config.Effective, state.Layout, int) {
+	cwd, _ := os.Getwd()
+	e, err := config.Load(config.LoadOptions{Flags: g, Env: os.Environ(), Cwd: cwd, Cleanup: cleanup})
 	if err != nil {
 		fmt.Fprintln(std.Err, exit.As(err).Line)
 		return nil, state.Layout{}, exit.Code(err)

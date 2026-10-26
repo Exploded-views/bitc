@@ -36,6 +36,12 @@ func Doctor(e *config.Effective, l state.Layout, out io.Writer) (failed bool) {
 		line("fail", "linux", "bitc needs Linux, this is "+runtime.GOOS)
 	}
 	line("ok", "config", fmt.Sprintf("host %s, repo %s", orNone(e.HostFile), orNone(e.RepoFile)))
+	if e.Host.ExperimentalRemote {
+		line("warn", "remote", "experimental_remote is on")
+	}
+	for _, t := range config.UnconfiguredLeftovers(e) {
+		line("warn", "remote", config.LeftoverHint(t))
+	}
 	line("ok", "state dir", l.Root+" (private, local filesystem, schema "+fmt.Sprint(state.SchemaVersion)+")")
 	// a private probe file, so two doctors at once never contend for it
 	if tmp, err := os.CreateTemp(l.Root, ".doctor-*.lock"); err != nil {

@@ -65,6 +65,9 @@ func decodeProviders(p *problems, e *Effective, file string, sections map[string
 			}
 			pt, ok = pluginSectionType, true
 		}
+		if typ == "sprites" && e.spritesRefused { // refused at load: its token file is never read
+			continue
+		}
 		if !ok {
 			p.addf("%s: %s: unknown provider type %q", file, key, typ)
 			continue
@@ -80,6 +83,7 @@ func decodeProviders(p *problems, e *Effective, file string, sections map[string
 			Artifacts: ArtifactLimits{MaxCompressed: 200 << 20, MaxUnpacked: 2 << 30, MaxEntries: 100000},
 			Raw:       map[string]any{}}
 		pr.Fixed = pt.Fixed
+		pr.CleanupOnly = typ == "sprites" && e.spritesCleanup
 		var fallback any
 		hasFallback := false
 		var sendEnv any

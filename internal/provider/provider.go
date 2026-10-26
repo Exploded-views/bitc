@@ -193,6 +193,15 @@ type Resource struct {
 	State                                 string // starting | running | exited | gone
 }
 
+// Cleaner is everything a sweep does with a provider's resources: list them, check an owner
+// tag, delete one. A Provider is one; a cleanup-only handle (Factory.NewCleaner) is only this,
+// so code holding it cannot create, exec or attach.
+type Cleaner interface {
+	List(ctx context.Context, prefixes []string) ([]Resource, error)
+	Owner(ctx context.Context, id string) (string, error)
+	Teardown(ctx context.Context, id string) error
+}
+
 type Provider interface {
 	Info() Info
 	Preflight(ctx context.Context, j *JobSpec) error

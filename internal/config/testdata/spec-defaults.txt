@@ -8,6 +8,7 @@ host.grace = 10s
 host.max_signal_wait = 10m
 host.history_max = 50MiB
 host.retention = 14d
+host.experimental_remote = false
 defaults.slots = 1
 defaults.wait = 10m
 pools.<pool>.providers = ["local"]

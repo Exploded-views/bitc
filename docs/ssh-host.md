@@ -152,7 +152,9 @@ VM's networks that can route through it is forwarded; keep the VM off networks y
 
 ## Verify from the controller
 
-Add the host to `bitc.toml` as the `ssh` provider (see the config reference), then:
+Add the host to `bitc.toml` as the `ssh` provider (see the config reference), with
+`experimental_remote = true` under `[host]` (remote providers are off by default in this release,
+spec 5.8), then:
 
 ```
 bitc doctor --remote

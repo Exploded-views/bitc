@@ -15,6 +15,7 @@ Generated from `internal/config/schema.go` by `go generate ./internal/config`. D
 | `host.max_signal_wait` | host | `10m` |
 | `host.history_max` | host | `50MiB` |
 | `host.retention` | host | `14d` |
+| `host.experimental_remote` | host | `false` |
 | `defaults.slots` | host | `1` |
 | `defaults.wait` | narrow | `10m` |
 | `defaults.env` | project | unset |
@@ -87,6 +88,7 @@ Generated from `internal/config/schema.go` by `go generate ./internal/config`. D
 | `test.ssh_gate` | host | unset |
 | `test.ssh_root` | host | unset |
 | `test.ssh_sshd` | host | unset |
+| `test.allow_sprites` | host | unset |
 | `remote.forward_env` | repo | unset |
 | `remote.forbid_ignored` | repo | unset |
 | `remote.allow_ignored` | repo | unset |

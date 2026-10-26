@@ -7,6 +7,37 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** remote providers are off by default behind `[host] experimental_remote`. Without
+  it in the host file, any `[providers.<type>]` table, or a pool naming a provider other than
+  `local`, is a config error, so every command (`run`, `status`, `sweep`, `doctor`, `config
+  check`, ...) now exits 78 on such a config, pointing at the README's known issues. A repository
+  file cannot set the key and no environment variable does. `bitc doctor` warns while it is on.
+  On a host whose accounting dir holds unfinished remote jobs, and for `sweep` and
+  `doctor --remote`, the error adds a line: set the flag and run `bitc sweep` to clean up what an
+  earlier version left. With no provider of that type configured, `bitc doctor` warns and
+  `bitc sweep` prints the same hint.
+- **Breaking:** Sprites jobs are refused in this release: with a `[providers.sprites]` table or a
+  pool naming it, every command except `bitc sweep` and `bitc doctor --remote` exits 78
+  (including `run`, `status`, `doctor`, `config`, `wait`, `logs` and `cancel`; `version` reads no
+  config), even with `experimental_remote`, because its network policy does not restrict egress
+  yet and a job would receive the forwarded environment and the deploy key
+  ([#6](https://github.com/Exploded-views/bitc/issues/6)). The refusal comes before any token or
+  deploy key file is read. With `experimental_remote`, `bitc sweep` and `bitc doctor --remote` still clean up
+  Sprites left by 0.1.0, through a handle that can only list them, check their owner tag and
+  delete this install's; the sweep timer keeps working.
+
+### Fixed
+
+- The shipped repository example (`examples/config/repo.bitc.toml`) declared
+  `min_version = "1.0.0"`, so a 0.1.0 release build refused it with exit 78; it now declares
+  `"0.1.0"`, and every shipped example is checked against a release-stamped build.
+
+- History lines stay a single atomic write (at most 4 KiB after JSON escaping): a long reason, cwd,
+  resource, and as a last resort pool, job, provider or sha, is cut at a character boundary and
+  marked ` [truncated]`; argv is shortened as before and sets `argv_truncated`.
+
 ## [0.1.0] - 2026-10-26
 
 ### Security

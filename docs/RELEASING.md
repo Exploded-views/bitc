@@ -35,7 +35,7 @@ golangci-lint, unit and conformance tests with `-race`, examples, link check) an
 `goreleaser release --snapshot --clean --skip=publish`, which uploads nothing), and on a pushed
 `v*` tag the release itself (steps 5 and 6). Its token is read-only except in the release job,
 which alone has `contents: write`. The README badges point at the ci workflow,
-the latest GitHub release (they show nothing useful until the first tag), pkg.go.dev and Go Report
+the latest GitHub release, pkg.go.dev and Go Report
 Card. There is no coverage badge: it needs a coverage service.
 
 ## Steps

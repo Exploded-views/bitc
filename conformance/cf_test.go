@@ -244,6 +244,33 @@ func TestCF3_ExamplesPassCheck(t *testing.T) {
 	}
 }
 
+// A release build stamps a real version, so a min_version in an example must not exceed it; an
+// unstamped build (no tag in the checkout) skips that check and cannot catch this.
+func TestCF3_ExamplesPassCheckOnAReleaseBuild(t *testing.T) {
+	h := harness.New(t)
+	bin := buildStamped(t, "true")
+	for host, repo := range map[string]string{
+		"../examples/config/host.bitc.toml":          "../examples/config/repo.bitc.toml",
+		"../examples/node-monorepo/host.bitc.toml":   "../examples/node-monorepo/.bitc.toml",
+		"../examples/python-monorepo/host.bitc.toml": "../examples/python-monorepo/.bitc.toml",
+	} {
+		dir := filepath.Join(h.Root, "release-examples", filepath.Base(filepath.Dir(host)))
+		copies := [2]string{filepath.Join(dir, "host.toml"), filepath.Join(dir, "repo.toml")}
+		for i, src := range []string{host, repo} {
+			b, err := os.ReadFile(src)
+			if err != nil {
+				t.Fatal(err)
+			}
+			h.Write(copies[i], string(b), 0o600)
+		}
+		c := exec.Command(bin, "config", "check", "--repo", copies[1])
+		c.Env, c.Dir = harness.MergeEnv(h.Env, []string{"BITC_CONFIG=" + copies[0]}), h.Cwd
+		if out, err := c.CombinedOutput(); err != nil {
+			t.Errorf("%s with a release build: %v %q", host, err, out)
+		}
+	}
+}
+
 func TestCF4_ExplainRedactsCredentials(t *testing.T) {
 	h := harness.New(t)
 	h.HostConfig("[providers.runpod]\napi_key = \"inline-secret\"\ndaily_usd = 1\nimage = \"x\"\nsizes = {}\napi_base = \"http://127.0.0.1:9\"\nproxy_domain = \"127.0.0.1:9\"\n")
