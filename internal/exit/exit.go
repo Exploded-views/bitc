@@ -41,6 +41,12 @@ func Unavailablef(format string, a ...any) *Error {
 }
 func Configf(format string, a ...any) *Error { return newf(Config, "config", format, a...) }
 
+// LinuxOnly is the one refusal of a Linux-only feature in a non-Linux client build: 69, like
+// "not Linux" (docs/exit-codes.md). feature takes a singular verb ("the remote agent").
+func LinuxOnly(feature, goos string) *Error {
+	return Unavailablef("%s runs on Linux only (this is a %s build)", feature, goos)
+}
+
 // Starved is 75: "STARVED <pool>" or "STARVED <pool> (<reason>)".
 func Starved(pool, reason string) *Error {
 	line := "STARVED " + pool

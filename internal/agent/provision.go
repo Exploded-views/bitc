@@ -1,3 +1,5 @@
+//go:build linux
+
 package agent
 
 import (
@@ -13,42 +15,6 @@ import (
 	"slices"
 	"strings"
 )
-
-// ProvisionSpec is the whole input of `__agent provision` (sprites-provider.md 3): the repo's
-// packages and tools and nothing that belongs to one job. Unprivileged and TestRoot are for the
-// host's [test] runs only, as in Spec.
-type ProvisionSpec struct {
-	Packages     []string `json:"packages,omitempty"`
-	Tools        []Tool   `json:"tools,omitempty"`
-	Unprivileged bool     `json:"unprivileged,omitempty"`
-	TestRoot     string   `json:"test_root,omitempty"`
-}
-
-// Frame is the length-prefixed JSON the host writes on stdin (the boot payload's framing).
-func (p ProvisionSpec) Frame() ([]byte, error) { return frameJSON(p) }
-
-// ReadProvisionSpec reads one frame.
-func ReadProvisionSpec(r io.Reader) (ProvisionSpec, error) {
-	var p ProvisionSpec
-	return p, readFrame(r, &p)
-}
-
-// Exit codes of `__agent provision` besides 0: the repo's own failure and an infrastructure one.
-// Anything else (64 bad input, a signal, 69, 126, 127) is read as infrastructure.
-const (
-	ProvisionExitRepo  = 71
-	ProvisionExitInfra = 75
-)
-
-// ProvisionMarkerName is the marker file in the state root.
-const ProvisionMarkerName = "provisioned.json"
-
-// ProvisionMarker records what provisioning installed; Run skips its own installs when it matches.
-type ProvisionMarker struct {
-	AgentSHA256 string   `json:"agent_sha256"`
-	Packages    []string `json:"packages"`
-	Tools       []Tool   `json:"tools"`
-}
 
 // ProvisionOptions are the agent's environment for provisioning.
 type ProvisionOptions struct {

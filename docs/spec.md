@@ -27,7 +27,9 @@ conformance suite; any language or repo; config validated before any side effect
 (`flock(2)`); safe remote overflow (account-wide daily cap per provider account, leak-proof, no
 secrets in argv or logs);
 agent-grade contracts; small. **Non-goals (v1):** CI, sharding, build caching; multi-host
-scheduling; daemon or UI; macOS and Windows (`/proc` is required); cgroup limits, PSI admission;
+scheduling; daemon or UI; Windows; macOS beyond a client build (local pools only: memory
+admission, remote providers, the agent, the parent-death signal, the inotify wake-up and the
+`/proc/locks` view stay Linux-only; issue #3); cgroup limits, PSI admission;
 GPU pods; job DAGs or retries (callers retry on 75); sandboxing the account from itself (10).
 
 ## 2. Concepts
@@ -122,9 +124,9 @@ record (a job a legacy launcher started, 12): legacy J8/J9 apply, so the last li
 | command's own (`128+N` if killed by signal N) | the command ran, locally or remotely | treat as the real result |
 | 64 `EX_USAGE` | bad arguments or malformed `BITC_*` value; unknown/invalid pool; group used as a pool; refused by policy; `--provider` not allowed; uncreatable detached log | fix the call |
 | 66 `EX_NOINPUT` | `wait`/`logs`/`cancel`: no such job | check the name |
-| 69 `EX_UNAVAILABLE` | not Linux; hook could not start, timed out, printed unparsable output or exited with an unlisted code; no provider left and the last was unusable (a remote-only pool's job not eligible for remote, 8.2); a remote job's own setup step failed by itself (15.9); internal error (a bitc bug) | do not retry blindly |
+| 69 `EX_UNAVAILABLE` | not Linux or macOS; a Linux-only feature in the macOS build; hook could not start, timed out, printed unparsable output or exited with an unlisted code; no provider left and the last was unusable (a remote-only pool's job not eligible for remote, 8.2); a remote job's own setup step failed by itself (15.9); internal error (a bitc bug) | do not retry blindly |
 | 75 `EX_TEMPFAIL` | starved; hook exited 75; remote infrastructure failure after start; no provider left after a transient failure | wait and retry |
-| 78 `EX_CONFIG` | invalid config file; host-only key in a repo file; `min_version` unmet; insecure, NFS or newer-schema dirs | fix config |
+| 78 `EX_CONFIG` | invalid config file; host-only key in a repo file; `min_version` unmet; insecure, NFS (on macOS also smbfs, afpfs, webdav) or newer-schema dirs; a pool's `memory` or a `[providers.*]` table in the macOS build | fix config |
 | 124 | `wait`: job still running | call `wait` again |
 
 A remote problem surfaces only as local fallback, 69 or 75 (8.2). An internal error or panic
@@ -1448,7 +1450,7 @@ updated before any shim switch (that work lives with the migrating project, not 
 
 **Later:** volume caches (16.1, past M2), cosign-signed checksums (16.2, after v1), cgroup limits,
 PSI brake, repo-defined pools, `upload` transport, Modal and Fly, named provider instances, a plugin sandbox (separate uid or
-Landlock, 8.5.8), command-sourced credentials, macOS, Homebrew/npm, Prometheus.
+Landlock, 8.5.8), command-sourced credentials, macOS parity (issue #3), Homebrew/npm, Prometheus.
 
 ## 15. Decided
 

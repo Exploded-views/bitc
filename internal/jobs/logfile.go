@@ -3,28 +3,18 @@ package jobs
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"os"
 	"strconv"
 	"strings"
 )
 
 // Terminate returns a function that ends the log with "__EXIT__ <code>" on its own line. The
-// last byte is read through the job's own fd (/proc/self/fd), so a rerun that replaced the path
+// last byte is read through the job's own fd (lastByte), so a rerun that replaced the path
 // never confuses it.
 func Terminate(log *os.File) func(code int) error {
 	return func(code int) error {
-		last := []byte{'\n'}
-		if f, err := os.Open(fmt.Sprintf("/proc/self/fd/%d", log.Fd())); err == nil {
-			if st, err := f.Stat(); err == nil && st.Size() > 0 {
-				if _, err := f.ReadAt(last, st.Size()-1); err != nil && err != io.EOF {
-					last[0] = 0
-				}
-			}
-			f.Close()
-		}
 		var b bytes.Buffer
-		if last[0] != '\n' {
+		if lastByte(log) != '\n' {
 			b.WriteByte('\n')
 		}
 		fmt.Fprintf(&b, "__EXIT__ %d\n", code)

@@ -351,7 +351,7 @@ func TestAR11_BuildScriptsTakeAnArchAndRefuseOthers(t *testing.T) {
 
 func TestAR12_ReleaseConfigBuildsBothArchsStaticallyWithRawBinaries(t *testing.T) {
 	y := string(must(os.ReadFile("../.goreleaser.yaml")))
-	for _, want := range []string{"goos: [linux]", "goarch: [amd64, arm64]", "env: [CGO_ENABLED=0]", "flags: [-trimpath]",
+	for _, want := range []string{"goos: [linux, darwin]", "goarch: [amd64, arm64]", "env: [CGO_ENABLED=0]", "flags: [-trimpath]",
 		"formats: [binary]", `name_template: "bitc_{{ .Version }}_{{ .Os }}_{{ .Arch }}"`, "name_template: checksums.txt", "algorithm: sha256"} {
 		if !strings.Contains(y, want) {
 			t.Errorf(".goreleaser.yaml lacks %q", want)

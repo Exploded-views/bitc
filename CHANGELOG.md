@@ -3,12 +3,16 @@
 All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
-adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). bitc has not been tagged
-yet, so everything below is unreleased.
+adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.1.0] - UNRELEASED
+## [0.1.0] - 2026-10-26
+
+### Security
+
+- Built with Go 1.27.3, which fixes GO-2026-6809 (crypto/x509 now distrusts compromised
+  intermediate certificates; bitc reaches it through TLS handshakes to provider APIs).
 
 ### Added
 
@@ -31,7 +35,18 @@ yet, so everything below is unreleased.
 - `bitc sweep` and `bitc doctor --remote` to find and clean up leaked remote resources, and a
   systemd timer recipe ([docs/sweep-timer.md](docs/sweep-timer.md)).
 - A conformance suite with a register of behaviours (`conformance/behaviours.toml`).
-- Release pipeline configuration (GoReleaser) for linux amd64 and arm64 with sha256 checksums.
+- Release pipeline configuration (GoReleaser) for linux and darwin, amd64 and arm64, with sha256
+  checksums.
+- macOS client builds (darwin arm64 and amd64): local pools, detached jobs, `status`, `wait`,
+  `logs`, `cancel`, `doctor` and `config`, cross-built and smoke-tested on a macOS runner in CI.
+  Linux-only, refused on macOS with one line ([full parity: issue #3](https://github.com/Exploded-views/bitc/issues/3)):
+  - memory admission (a pool's `memory` key; config error 78);
+  - remote providers (`ssh`, `runpod`, `sprites`, exec plugins; any `[providers.*]` table is a
+    config error 78), and with them `sweep` and `doctor --remote`;
+  - the remote agent and the plugin exec shim (`bitc __agent`, `bitc __plugin-exec`; exit 69);
+  - the parent-death signal (a command outlives a SIGKILLed bitc), the inotify wake-up (waiters
+    re-check every `poll`), the read-only `/proc/locks` view in `status` (a brief `flock` probe
+    instead), and the last-byte check of a detached log (an empty line may precede `__EXIT__`).
 - Project documentation, contribution guide, code of conduct and security policy.
 
 ### Fixed

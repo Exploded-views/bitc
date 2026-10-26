@@ -94,6 +94,7 @@ func Load(o LoadOptions) (*Effective, error) {
 	checkTemplates(&p, e)
 	checkRemoteEnv(&p, e)
 	checkTestGate(&p, e)
+	checkPlatform(&p, e, platformGOOS)
 	if err := p.err(); err != nil {
 		return nil, err
 	}

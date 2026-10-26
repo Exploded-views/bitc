@@ -44,7 +44,7 @@ func isTTY(f *os.File) bool {
 	if f == nil {
 		return false
 	}
-	_, err := unix.IoctlGetTermios(int(f.Fd()), unix.TCGETS)
+	_, err := unix.IoctlGetTermios(int(f.Fd()), ioctlGetTermios)
 	return err == nil
 }
 
@@ -56,7 +56,7 @@ func Exec(ctx context.Context, s ExecSpec) (ExecResult, error) {
 	cmd := exec.Command(s.Argv[0], s.Argv[1:]...)
 	cmd.Env, cmd.Dir = s.Env, s.Dir
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = s.Stdin, s.Stdout, s.Stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: !tty, Pdeathsig: syscall.SIGKILL}
+	cmd.SysProcAttr = childAttr(!tty)
 
 	hs := handled
 	if s.NoHangup {

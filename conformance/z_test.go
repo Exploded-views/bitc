@@ -7,11 +7,17 @@ import (
 	"github.com/Exploded-views/bitc/internal/exit"
 )
 
-func TestZ1_LinuxOnly(t *testing.T) {
-	if err := cli.PlatformCheck("darwin"); exit.Code(err) != 69 {
-		t.Fatalf("%v", err)
+// Linux, and macOS as a client build (local pools; Linux-only features refused); every other
+// OS exits 69.
+func TestZ1_LinuxAndADarwinClientOnly(t *testing.T) {
+	for _, goos := range []string{"linux", "darwin"} {
+		if err := cli.PlatformCheck(goos); err != nil {
+			t.Fatalf("%s: %v", goos, err)
+		}
 	}
-	if err := cli.PlatformCheck("linux"); err != nil {
-		t.Fatal(err)
+	for _, goos := range []string{"windows", "freebsd", "openbsd", "netbsd", "illumos", ""} {
+		if err := cli.PlatformCheck(goos); exit.Code(err) != 69 {
+			t.Fatalf("%s: %v", goos, err)
+		}
 	}
 }

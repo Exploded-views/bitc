@@ -26,7 +26,7 @@ jobs:
       # The same toolchain as scripts/dev.sh pins; go.mod only states the minimum.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.2"
+          go-version: "1.27.3"
           cache: true
       - name: Install pinned tools
         run: |
@@ -37,3 +37,37 @@ jobs:
         run: make ci
       - name: goreleaser check
         run: goreleaser check
+      # the macOS client build (cgo off) cross-compiles here; the macos-smoke job runs it
+      - name: darwin/arm64 cross-build
+        run: env CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -o /dev/null ./cmd/bitc
+      - name: darwin/amd64 cross-build
+        run: env CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -o /dev/null ./cmd/bitc
+
+  # The macOS client on a GitHub-hosted runner: build it, run the darwin-only unit tests, then a
+  # one-slot local pool runs `true` and status reads it back (README: Linux-only features).
+  macos-smoke:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.3"
+          cache: true
+      - name: build
+        run: go build -o bitc ./cmd/bitc
+      - name: darwin unit tests
+        run: go test -run 'Darwin|NetworkFSLabel|StatFromKinfo|LinuxOnly' ./internal/state/ ./internal/proc/ ./internal/exit/
+      - name: smoke
+        env:
+          BITC_CONFIG: ${{ runner.temp }}/bitc.toml
+        run: |
+          printf 'version = 1\n[pools]\nsmoke = { slots = 1, wait = "1m" }\n' > "$BITC_CONFIG"
+          chmod 600 "$BITC_CONFIG"
+          ./bitc version
+          ./bitc run smoke -- true
+          ./bitc status --json

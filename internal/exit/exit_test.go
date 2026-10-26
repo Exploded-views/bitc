@@ -54,3 +54,18 @@ func TestGoTurnsAPanicIntoExit69(t *testing.T) {
 		t.Fatalf("got %+v", e)
 	}
 }
+
+// A Linux-only feature in a non-Linux client build is one line and 69 (docs/exit-codes.md:
+// "not Linux"), never a silent no-op.
+func TestLinuxOnlyIsOneLineAnd69(t *testing.T) {
+	e := LinuxOnly("the remote agent", "darwin")
+	if e.Code != Unavailable || e.Outcome != "unavailable" {
+		t.Fatalf("code %d outcome %q", e.Code, e.Outcome)
+	}
+	if want := "bitc: the remote agent runs on Linux only (this is a darwin build)"; e.Line != want {
+		t.Fatalf("line %q, want %q", e.Line, want)
+	}
+	if got := LinuxOnly("a plugin provider", "freebsd").Line; got != "bitc: a plugin provider runs on Linux only (this is a freebsd build)" {
+		t.Fatalf("line %q", got)
+	}
+}

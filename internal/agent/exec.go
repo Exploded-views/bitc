@@ -1,8 +1,9 @@
+//go:build linux
+
 package agent
 
 import (
 	"context"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,82 +25,6 @@ import (
 // writes one length-prefixed boot payload; later it reads results with `__agent tail`, `read`,
 // `list` and `teardown`. There is no listener, no results server and no bearer: authorization is
 // the exec channel itself.
-
-// MaxBootPayload is the largest boot payload body the agent accepts (8 MiB).
-const MaxBootPayload = 8 << 20
-
-var (
-	ErrTruncated = errors.New("truncated payload")
-	ErrTooLarge  = errors.New("payload over 8 MiB")
-	ErrBadArg    = errors.New("bad argument")
-	ErrNotFound  = errors.New("not found")
-	ErrOffset    = errors.New("offset beyond the end")
-)
-
-// CodeUpload says that exactly Len bytes of a git bundle (SHA256 is its hash, Ref the ref it
-// carries) follow the frame on the same stream. ssh upload transport only.
-type CodeUpload struct {
-	Kind   string `json:"kind"`
-	Len    int64  `json:"len"`
-	SHA256 string `json:"sha256"`
-	Ref    string `json:"ref"`
-}
-
-// Frame is the boot payload frame: an 8-byte big-endian length, then that many bytes of JSON.
-func (p BootPayload) Frame() ([]byte, error) { return frameJSON(p) }
-
-// frameJSON is an 8-byte big-endian length followed by v as JSON.
-func frameJSON(v any) ([]byte, error) {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return nil, err
-	}
-	if len(b) > MaxBootPayload {
-		return nil, ErrTooLarge
-	}
-	out := make([]byte, 8, 8+len(b))
-	binary.BigEndian.PutUint64(out, uint64(len(b)))
-	return append(out, b...), nil
-}
-
-// ReadBootPayload reads one frame. EOF before the declared length, a zero length or unparsable
-// JSON is ErrTruncated: the agent starts nothing (spec 8.4, providers delta C.5).
-func ReadBootPayload(r io.Reader) (BootPayload, error) {
-	var p BootPayload
-	return p, readFrame(r, &p)
-}
-
-// readFrame reads one frame into v.
-func readFrame(r io.Reader, v any) error {
-	var head [8]byte
-	if _, err := io.ReadFull(r, head[:]); err != nil {
-		return ErrTruncated
-	}
-	n := binary.BigEndian.Uint64(head[:])
-	if n > MaxBootPayload {
-		return ErrTooLarge
-	}
-	if n == 0 {
-		return ErrTruncated
-	}
-	body := make([]byte, n)
-	if _, err := io.ReadFull(r, body); err != nil {
-		return ErrTruncated
-	}
-	if json.Unmarshal(body, v) != nil {
-		return ErrTruncated
-	}
-	return nil
-}
-
-// WithoutKey returns the payload with the deploy key taken out, and the key. Stage 1 keeps the
-// rest in the memfd that survives the re-exec and passes the key in a second one that stage 2
-// reads and closes before any repo code runs.
-func (p BootPayload) WithoutKey() (BootPayload, string) {
-	key := p.DeployKey
-	p.DeployKey = ""
-	return p, key
-}
 
 // The names `read` and `tail` serve, and the job-id grammar (also enforced by the spec's names).
 var (
@@ -157,17 +82,6 @@ func ReadFile(root, job, file string, off int64, w io.Writer) error {
 	}
 	_, err = io.Copy(w, f)
 	return err
-}
-
-// Frame is one line of `__agent tail`: data of a result file at an offset (Off is omitted when
-// 0), a heartbeat carrying whether the agent is alive, or the final done.
-type Frame struct {
-	File  string `json:"file,omitempty"`
-	Off   int64  `json:"off,omitempty"`
-	Data  []byte `json:"data,omitempty"`
-	HB    bool   `json:"hb,omitempty"`
-	Alive *bool  `json:"alive,omitempty"`
-	Done  bool   `json:"done,omitempty"`
 }
 
 // TailOptions: Offsets are the host's resume points by file name (agent.log, out.log, err.log);

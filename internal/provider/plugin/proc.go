@@ -12,7 +12,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"golang.org/x/sys/unix"
 
@@ -180,7 +179,7 @@ func (p *Provider) spawn() (*session, error) {
 	cmd.Env = p.pluginEnv(d)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = inR, outW, s.stderr
 	cmd.ExtraFiles = []*os.File{secR, f} // fd 3: secrets, fd 4: the pinned plugin (the shim execs it)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGKILL}
+	cmd.SysProcAttr = pluginAttr()
 	s.cmd = cmd
 	startErr := make(chan error, 1)
 	exit.Go(func() {

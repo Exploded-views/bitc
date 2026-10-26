@@ -55,10 +55,11 @@ func Main(args []string, std Std) (code int) {
 	return cmd(context.Background(), g, rest[1:], std)
 }
 
-// PlatformCheck is 69 off Linux (spec 1: /proc is required).
+// PlatformCheck is 69 off Linux and macOS (spec 1). macOS is a client build: local pools only,
+// the Linux-only features refused (config.checkPlatform, exit.LinuxOnly).
 func PlatformCheck(goos string) error {
-	if goos != "linux" {
-		return exit.Unavailablef("bitc runs only on Linux (this is %s)", goos)
+	if goos != "linux" && goos != "darwin" {
+		return exit.Unavailablef("bitc runs only on Linux and macOS (this is %s)", goos)
 	}
 	return nil
 }

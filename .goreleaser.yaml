@@ -6,7 +6,7 @@ builds:
     binary: bitc
     env: [CGO_ENABLED=0]
     flags: [-trimpath]
-    goos: [linux]
+    goos: [linux, darwin]
     goarch: [amd64, arm64]
     ldflags:
       - -s -w
@@ -20,7 +20,8 @@ archives:
     name_template: "bitc_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files: [LICENSE, README.md]
   # the bare binary: the agent source "release" downloads bitc_<ver>_linux_<arch> and checks the
-  # sha256 that checksums.txt lists for it (providers delta C.4)
+  # sha256 that checksums.txt lists for it (providers delta C.4); the darwin ones are client
+  # downloads only (the agent runs on Linux)
   - id: raw
     ids: [bitc]
     formats: [binary]

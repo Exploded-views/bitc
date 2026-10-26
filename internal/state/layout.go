@@ -18,6 +18,9 @@ import (
 // SchemaVersion is the state-dir schema this binary writes and understands.
 const SchemaVersion = 1
 
+// statfs is unix.Statfs; tests stand in a network filesystem.
+var statfs = unix.Statfs
+
 // Layout names every path in a state dir. Root is absolute.
 type Layout struct{ Root string }
 
@@ -49,8 +52,10 @@ func Open(root string) (Layout, error) {
 		return Layout{}, err
 	}
 	var sfs unix.Statfs_t
-	if err := unix.Statfs(root, &sfs); err == nil && sfs.Type == unix.NFS_SUPER_MAGIC {
-		return Layout{}, exit.Configf("state dir %s is on NFS; bitc needs a local filesystem for flock", root)
+	if err := statfs(root, &sfs); err == nil {
+		if fs := networkFS(&sfs); fs != "" {
+			return Layout{}, exit.Configf("state dir %s is on %s; bitc needs a local filesystem for flock", root, fs)
+		}
 	}
 	l := Layout{Root: root}
 	b, err := os.ReadFile(l.Schema())

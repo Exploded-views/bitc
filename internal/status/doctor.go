@@ -26,9 +26,13 @@ func Doctor(e *config.Effective, l state.Layout, out io.Writer) (failed bool) {
 		fmt.Fprintf(out, "%s %s: %s\n", level, check, detail)
 		failed = failed || level == "fail"
 	}
-	if runtime.GOOS == "linux" {
+	switch runtime.GOOS {
+	case "linux":
 		line("ok", "linux", runtime.GOOS+"/"+runtime.GOARCH)
-	} else {
+	case "darwin":
+		line("warn", "linux", runtime.GOOS+"/"+runtime.GOARCH+" client build: local pools only; "+
+			"memory admission, remote providers and the remote agent need Linux")
+	default:
 		line("fail", "linux", "bitc needs Linux, this is "+runtime.GOOS)
 	}
 	line("ok", "config", fmt.Sprintf("host %s, repo %s", orNone(e.HostFile), orNone(e.RepoFile)))
@@ -57,11 +61,11 @@ func Doctor(e *config.Effective, l state.Layout, out io.Writer) (failed bool) {
 	}
 	if avail, ok, src := admit.ReadMemory(root); ok {
 		line("ok", "meminfo", fmt.Sprintf("%d MiB available (%s)", avail>>20, src))
-	} else {
+	} else if runtime.GOOS == "linux" { // elsewhere a pool's memory key is a config error
 		line("warn", "meminfo", "cannot read "+src+"; memory admission admits with a warning")
 	}
 	var st unix.Statfs_t
-	if unix.Statfs(l.Root, &st) == nil && st.Type == unix.TMPFS_MAGIC {
+	if unix.Statfs(l.Root, &st) == nil && onTmpfs(&st) {
 		line("warn", "state dir", "is on tmpfs: tickets and history vanish on reboot")
 	}
 	for _, h := range admit.LegacyHolders(e.Compat) {

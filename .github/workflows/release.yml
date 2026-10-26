@@ -1,0 +1,71 @@
+# Releases (docs/RELEASING.md). On a pull request: a GoReleaser dry run that builds the snapshot
+# and uploads nothing. On a pushed v* tag: GoReleaser builds the release and uploads it as a DRAFT
+# (.goreleaser.yaml draft: true) with this job's own GITHUB_TOKEN; a maintainer reviews the draft
+# and publishes it. No personal token is involved.
+name: release
+
+on:
+  pull_request:
+  push:
+    tags: ['v*']
+
+# A tag's release is never cancelled; a newer push to a pull request replaces its dry run.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  dry-run:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The same toolchain as scripts/dev.sh pins and ci.yml uses.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.3"
+          cache: true
+      - name: Install pinned tools
+        run: |
+          make tools-ci
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: goreleaser check
+        run: goreleaser check
+      - name: goreleaser dry run (snapshot, nothing published)
+        run: goreleaser release --snapshot --clean --skip=publish
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The only write permission in this repo's workflows: GoReleaser creates the draft release
+    # and uploads its assets with this job's GITHUB_TOKEN.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # No build cache on a release: nothing another workflow saved goes into the assets.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.3"
+          cache: false
+      - name: Install pinned tools
+        run: |
+          make tools-ci
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: goreleaser release (draft)
+        run: goreleaser release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

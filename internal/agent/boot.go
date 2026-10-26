@@ -1,3 +1,5 @@
+//go:build linux
+
 package agent
 
 import (
@@ -18,28 +20,6 @@ import (
 
 	"github.com/Exploded-views/bitc/internal/provider"
 )
-
-// BootPayload is what stage 1 hands stage 2 on fd 3 (spec 8.4 step 1). The environment path
-// builds it from BITC_*; --boot-stdin reads it from a length-prefixed frame on stdin.
-type BootPayload struct {
-	Spec        string `json:"spec"`
-	Deadline    int64  `json:"deadline"`
-	DeployKey   string `json:"deploy_key"`
-	Provider    string `json:"provider"`
-	ResourceID  string `json:"resource_id"`
-	ScopedKey   string `json:"scoped_key"`
-	APIBase     string `json:"api_base"`
-	ResultsRoot string `json:"results_root,omitempty"` // --boot-stdin only; default /run/bitc
-	// KeepAlive asks for a Tasks API task held for the job (--boot-stdin on Sprites only).
-	KeepAlive *KeepAlive  `json:"keep_alive,omitempty"`
-	Code      *CodeUpload `json:"code,omitempty"`
-}
-
-// KeepAlive is the lifetime of the keep-alive task and how often it is renewed.
-type KeepAlive struct {
-	Expire Duration `json:"expire"`
-	Renew  Duration `json:"renew"`
-}
 
 // Main is `bitc __agent`: stage 1 moves secrets out of the env and re-execs; stage 2 runs.
 func Main(args []string, stdout io.Writer) int { return MainIO(args, os.Stdin, stdout) }

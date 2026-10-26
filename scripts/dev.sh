@@ -1,7 +1,7 @@
 #!/bin/sh
 # dev.sh CMD...: run CMD in the pinned Go toolchain container (the host needs only docker).
 set -eu
-BITC_DEV_IMAGE=${BITC_DEV_IMAGE:-golang:1.27.2-bookworm@sha256:5cf287a799e6b94384bad13d16b14904c531f51ba65792237e122ce42b392f61}
+BITC_DEV_IMAGE=${BITC_DEV_IMAGE:-golang:1.27.3-bookworm@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5}
 top=$(git rev-parse --show-toplevel)
 common=$(cd "$(git rev-parse --git-common-dir)" && pwd)   # main repo's .git, so worktrees resolve
 cache=${BITC_DEV_CACHE:-$HOME/.cache/bitc-build}

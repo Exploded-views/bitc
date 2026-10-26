@@ -82,24 +82,29 @@ privileged:
 snapshot:
 	goreleaser release --snapshot --clean
 
-# Builds the release artifacts locally (snapshot: nothing is uploaded) and verifies them.
+# Builds the release artifacts locally (snapshot: nothing is uploaded) and verifies them: eight
+# assets, a tarball and a bare binary for linux and darwin on amd64 and arm64, all in checksums.txt.
 release-check:
 	goreleaser check
 	goreleaser release --snapshot --clean
-	@# a tarball sits in dist/; a bare binary is the build output dist/bitc_linux_<arch>_*/bitc
+	@# a tarball sits in dist/; a bare binary bitc_<ver>_<os>_<arch> is the build output dist/bitc_<os>_<arch>_*/bitc
 	cd dist && n=0 && while read -r sum name; do \
 	  case "$$name" in \
 	    *.tar.gz) f="$$name" ;; \
-	    *) f=$$(ls bitc_linux_$${name##*_}_*/bitc 2>/dev/null | head -n 1) ;; \
+	    *) osarch=$$(echo "$$name" | sed 's/^bitc_[^_]*_//'); f=$$(ls bitc_$${osarch}_*/bitc 2>/dev/null | head -n 1) ;; \
 	  esac; \
 	  test -f "$$f" || { echo "release-check: no file for $$name"; exit 1; }; \
 	  echo "$$sum  $$f" | sha256sum -c - || exit 1; \
 	  n=$$((n + 1)); \
-	done < checksums.txt && test "$$n" -eq 4
+	done < checksums.txt && test "$$n" -eq 8
 	tar -tzf dist/bitc_*_linux_amd64.tar.gz | grep -qx bitc
 	tar -tzf dist/bitc_*_linux_arm64.tar.gz | grep -qx bitc
+	tar -tzf dist/bitc_*_darwin_amd64.tar.gz | grep -qx bitc
+	tar -tzf dist/bitc_*_darwin_arm64.tar.gz | grep -qx bitc
 	test -x dist/bitc_linux_amd64_*/bitc
 	test -x dist/bitc_linux_arm64_*/bitc
+	test -x dist/bitc_darwin_amd64_*/bitc
+	test -x dist/bitc_darwin_arm64_*/bitc
 
 # Pinned exactly; a bump is a deliberate maintainer commit, never part of an unrelated change.
 tools-ci:

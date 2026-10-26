@@ -1,17 +1,19 @@
 # Releasing bitc
 
-Release steps are maintainer-only: nothing here runs in CI. Releases are
-published at `https://github.com/Exploded-views/bitc/releases`. The pipeline is GoReleaser
-(`.goreleaser.yaml`); the release is created as a draft and stays private until a maintainer
-publishes it.
+Releases are published at `https://github.com/Exploded-views/bitc/releases`. The pipeline is
+GoReleaser (`.goreleaser.yaml`), run by `.github/workflows/release.yml` when a maintainer pushes a
+`v*` tag; the release is created as a draft and stays private until a maintainer publishes it.
+No personal token is involved: the workflow uploads with the release job's own `GITHUB_TOKEN`.
 
 ## What a release contains
 
 | Asset | Purpose |
 | --- | --- |
 | `bitc_<version>_linux_amd64.tar.gz`, `bitc_<version>_linux_arm64.tar.gz` | the binary, `LICENSE`, `README.md` |
+| `bitc_<version>_darwin_amd64.tar.gz`, `bitc_<version>_darwin_arm64.tar.gz` | the macOS client build, `LICENSE`, `README.md` |
 | `bitc_<version>_linux_amd64`, `bitc_<version>_linux_arm64` | the bare binaries: what the remote agent `release` source downloads |
-| `checksums.txt` | sha256 of every asset above (unsigned until after v1) |
+| `bitc_<version>_darwin_amd64`, `bitc_<version>_darwin_arm64` | the bare macOS client binaries (never an agent: the agent runs on Linux) |
+| `checksums.txt` | sha256 of every asset above, eight lines (unsigned until after v1) |
 
 The agent `release` source builds its URL from the running binary's version:
 `https://github.com/Exploded-views/bitc/releases/download/v<version>/bitc_<version>_linux_<arch>`, and
@@ -28,7 +30,11 @@ version from the Go build info instead (`release` stays `false`).
 `.github/workflows/ci.yml` runs on pushes to `main` and on pull requests: `make ci` (vet,
 golangci-lint, unit and conformance tests with `-race`, examples, link check) and
 `goreleaser check`, with `setup-go` given the same Go version as the image pinned in `scripts/dev.sh`
-(`scripts/dev.sh` itself is not used in CI) and the tool versions pinned by `make tools-ci`. It does not build or upload a release. The README badges point at that workflow,
+(`scripts/dev.sh` itself is not used in CI) and the tool versions pinned by `make tools-ci`. It does not build or upload a release.
+`.github/workflows/release.yml` does: on pull requests a dry run (`goreleaser check`, then
+`goreleaser release --snapshot --clean --skip=publish`, which uploads nothing), and on a pushed
+`v*` tag the release itself (steps 5 and 6). Its token is read-only except in the release job,
+which alone has `contents: write`. The README badges point at the ci workflow,
 the latest GitHub release (they show nothing useful until the first tag), pkg.go.dev and Go Report
 Card. There is no coverage badge: it needs a coverage service.
 
@@ -38,14 +44,17 @@ Card. There is no coverage badge: it needs a coverage service.
    three fingerprints against the forge's documentation page.
 2. `scripts/dev.sh make ci && scripts/dev.sh make release-check`. The second command builds
    the snapshot (nothing is uploaded), runs `goreleaser check`, verifies every line of `checksums.txt` with
-   `sha256sum -c` (the four assets: both tarballs and both bare binaries) and checks that the
-   tarballs hold `bitc` and the bare binaries are executable.
+   `sha256sum -c` (the eight assets: the linux and darwin tarballs and bare binaries, amd64 and
+   arm64) and checks that the tarballs hold `bitc` and the bare binaries are executable.
 3. `scripts/dev.sh make vuln` must be clean. This is the release gate (it is advisory
    during development). Otherwise list each finding in the release notes as a documented exception: the
    finding id and either why it does not reach bitc or the planned bump.
-4. Tag: `git tag -s v<x.y.z>` (or `git tag -a v<x.y.z>`), then push the tag.
-5. `scripts/dev.sh goreleaser release --clean`, with a `GITHUB_TOKEN` that only a maintainer holds,
-   exported on the host (`scripts/dev.sh` passes it into the container with `-e GITHUB_TOKEN`).
+4. Get the owner's OK on the exact commit SHA to release (`git rev-parse HEAD`). Only then tag
+   that commit (`git tag -s v<x.y.z> <sha>`, or `git tag -a`) and push the tag.
+5. The tag push starts `.github/workflows/release.yml`: its release job builds the assets with
+   GoReleaser and uploads them as a draft release with the job's own `GITHUB_TOKEN`
+   (`contents: write` for that job only). No personal token is used or needed; nobody runs
+   GoReleaser against the forge by hand.
 6. Review the draft release: the assets above, `checksums.txt`, and the vuln exceptions if any.
    Then publish it.
 7. Verify both install paths report `bitc <x.y.z>`:

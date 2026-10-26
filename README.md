@@ -105,13 +105,15 @@ read the Providers and Status sections before pointing one at a real account.
 
 ## Install
 
-bitc runs on Linux (amd64 or arm64). To install from source you need Go 1.26 or newer (CI tests 1.27.2):
+bitc runs on Linux (amd64 or arm64). macOS (Apple silicon or Intel) gets a client build that runs
+local pools; the Linux-only features below are refused there. To install from source you need
+Go 1.26 or newer (CI tests 1.27.3):
 
 ```sh
 go install github.com/Exploded-views/bitc/cmd/bitc@latest
 ```
 
-Release tarballs for linux amd64 and arm64, bare binaries and a `checksums.txt` are published at
+Release tarballs for linux and darwin (amd64 and arm64), bare binaries and a `checksums.txt` are published at
 <https://github.com/Exploded-views/bitc/releases> once a release exists (no release has been
 tagged yet). Download the asset and `checksums.txt` into one directory and verify before use:
 
@@ -121,6 +123,23 @@ sha256sum -c --ignore-missing checksums.txt
 
 Checksums are unsigned for now; signed checksums are planned after 1.0.
 [docs/RELEASING.md](docs/RELEASING.md) describes what a release contains.
+
+### macOS client build
+
+The darwin build runs local pools: slots, queues, groups, priority lanes, nested holds, detached
+jobs, `status`, `wait`, `logs`, `cancel`, `doctor` and `config`. These stay Linux-only; full
+parity is tracked in [issue #3](https://github.com/Exploded-views/bitc/issues/3):
+
+- memory admission (a pool's `memory` key): a config error (78) on macOS;
+- remote providers (`ssh`, `runpod`, `sprites` and exec plugins, so `sweep` and
+  `doctor --remote` have nothing to manage): any `[providers.*]` table is a config error (78);
+- the remote agent (`bitc __agent`) and the plugin exec shim: one `bitc: ... runs on Linux only`
+  line and exit 69;
+- the parent-death signal: on macOS a command outlives a bitc that was killed with SIGKILL;
+- the inotify wake-up: a waiting caller re-checks every `poll` (5s by default) instead;
+- the read-only lock view (`/proc/locks`): `status` probes a lock with a brief non-blocking
+  `flock`;
+- a detached job's log may have an empty line before its `__EXIT__` line.
 
 ## Quickstart
 
@@ -220,7 +239,7 @@ defends against and what it does not.
 | the command's own | the command ran; `128+N` if signal N killed it | treat it as the real result |
 | 64 | usage: bad arguments, unknown pool, refused by a rule or hook | fix the call |
 | 66 | no such detached job | check the job name |
-| 69 | unavailable: not Linux, unusable hook, no usable provider, internal error | stop and report; do not retry blindly |
+| 69 | unavailable: not Linux or macOS, a Linux-only feature on macOS, unusable hook, no usable provider, internal error | stop and report; do not retry blindly |
 | **75** | **temporary failure: starved, or a remote infrastructure failure after the job started** | **wait, then run again** |
 | 78 | invalid configuration | fix the configuration |
 | 124 | `bitc wait` only: the job is still running | call `wait` again |
@@ -249,7 +268,8 @@ When not to use bitc:
 - You are fanning a list of inputs out over cores in one command. Use `parallel` or `xargs -P`.
 - Your contention is between CI runs rather than processes on a machine. Use your CI system's
   concurrency controls.
-- You need Windows or macOS as the gate host. bitc is Linux only.
+- You need Windows as the gate host, or macOS with memory admission or remote providers. bitc
+  is Linux first; its macOS build runs local pools only.
 - You need a cluster scheduler with resource accounting across many machines. Use one.
 
 ## FAQ

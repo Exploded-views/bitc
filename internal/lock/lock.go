@@ -108,7 +108,7 @@ func HeldRO(path string) bool {
 	if err != nil {
 		return Held(path)
 	}
-	maj, mnr := unix.Major(st.Dev), unix.Minor(st.Dev)
+	maj, mnr := devMajorMinor(&st)
 	for _, line := range strings.Split(string(b), "\n") {
 		// "1: FLOCK  ADVISORY  WRITE 1234 00:2b:5678 0 EOF"; a blocked waiter has "->" in f[1]
 		f := strings.Fields(line)
