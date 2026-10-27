@@ -174,10 +174,13 @@ func TestSpawnRefusesBitsSetBetweenLoadAndSpawn(t *testing.T) {
 
 func killPlugin(t *testing.T, r *rig) {
 	t.Helper()
+	r.p.mu.Lock()
+	s := r.p.sess
+	r.p.mu.Unlock()
 	if err := syscall.Kill(r.diag().Pid, syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(100 * time.Millisecond)
+	r.until("the adapter saw the plugin die", s.isDead)
 }
 
 func TestADeadPluginIsRespawnedOnceThenUnavailableForTheProcess(t *testing.T) {

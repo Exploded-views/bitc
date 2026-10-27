@@ -26,7 +26,7 @@ func TestCleanerListsOwnerChecksAndDeletesOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eff := &config.Effective{Test: &config.Test{TimeScale: 0.05, AccountingDir: acct}}
+	eff := &config.Effective{Test: &config.Test{TimeScale: 1, AccountingDir: acct}}
 	raw := map[string]any{"org": f.Org(), "api_base": f.URL(), "sizes": map[string]any{"cpu8": map[string]any{"memory": "16GiB"}}}
 	core := &config.Provider{Type: "sprites", NamePrefix: "bitc", APIKey: f.Token(), Raw: raw, StartTimeout: time.Minute, CleanupOnly: true}
 	fac, _ := provider.Get("sprites")
@@ -86,7 +86,7 @@ func TestCleanerListsOwnerChecksAndDeletesOnly(t *testing.T) {
 func TestCleanerErrorPaths(t *testing.T) {
 	f := spritesfake.New(t, spritesfake.Options{})
 	acct := filepath.Join(t.TempDir(), "acct")
-	eff := &config.Effective{Test: &config.Test{TimeScale: 0.05, AccountingDir: acct}}
+	eff := &config.Effective{Test: &config.Test{TimeScale: 1, AccountingDir: acct}}
 	raw := map[string]any{"org": f.Org(), "api_base": f.URL(), "sizes": map[string]any{"cpu8": map[string]any{"memory": "16GiB"}}}
 	c, err := NewCleaner(&config.Provider{Type: "sprites", NamePrefix: "bitc", APIKey: f.Token(), Raw: raw, CleanupOnly: true}, eff)
 	if err != nil {
@@ -127,7 +127,7 @@ func TestFactoryHooksAndOwnerWithoutASecret(t *testing.T) {
 	if err := os.WriteFile(acct, []byte("not a dir"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	eff := &config.Effective{Test: &config.Test{TimeScale: 0.05, AccountingDir: acct}}
+	eff := &config.Effective{Test: &config.Test{TimeScale: 1, AccountingDir: acct}}
 	p, err := fac.New(&config.Provider{Type: "sprites", NamePrefix: "bitc", APIKey: f.Token(), Raw: raw}, eff)
 	if err != nil {
 		t.Fatal(err)

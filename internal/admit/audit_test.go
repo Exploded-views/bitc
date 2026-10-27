@@ -3,9 +3,11 @@ package admit
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"syscall"
 	"testing"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/Exploded-views/bitc/internal/config"
 	"github.com/Exploded-views/bitc/internal/proc"
+	"github.com/Exploded-views/bitc/internal/state"
 )
 
 // A pgid whose leader is a different process now (the id was reused) names an unrelated
@@ -35,25 +38,36 @@ func TestReapSkipsReusedPgid(t *testing.T) {
 	}
 }
 
+// A waiter wakes on its context's cancel, not on its poll: the poll and the pool's wait are an hour,
+// so a missed wake hangs into the test timeout. The cancel comes once the waiter's ticket is on disk.
 func TestAcquireWakesOnContextCancel(t *testing.T) {
-	lint := &config.Pool{Name: "lint", Slots: 1, Wait: 30 * time.Second}
+	lint := &config.Pool{Name: "lint", Slots: 1, Wait: time.Hour}
 	l, e := setup(t, map[string]*config.Pool{"lint": lint}, nil)
-	e.Host.Poll = 5 * time.Second
+	e.Host.Poll = time.Hour
 	h1, err := Acquire(context.Background(), req(l, e, lint))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer h1.Release()
 	ctx, cancel := context.WithCancel(context.Background())
-	time.AfterFunc(200*time.Millisecond, cancel)
-	t0 := time.Now()
-	_, err = Acquire(ctx, req(l, e, lint))
-	if err == nil || ctx.Err() == nil {
-		t.Fatalf("got %v", err)
+	go func() {
+		for !hasWaiter(l, "lint") {
+			runtime.Gosched()
+		}
+		cancel()
+	}()
+	if _, err = Acquire(ctx, req(l, e, lint)); !errors.Is(err, context.Canceled) {
+		t.Fatalf("got %v, want the context's cancel", err)
 	}
-	if d := time.Since(t0); d > time.Second {
-		t.Fatalf("cancellation noticed after %v (poll is 5s)", d)
+}
+
+func hasWaiter(l state.Layout, pool string) bool {
+	for _, tf := range ReadTickets(l, pool) {
+		if tf.T.State == "waiting" {
+			return true
+		}
 	}
+	return false
 }
 
 // Pruning a dead high-class ticket also removes its compat priority marker.

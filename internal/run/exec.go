@@ -48,6 +48,12 @@ func isTTY(f *os.File) bool {
 	return err == nil
 }
 
+// beforeRecord and afterWait are test seams: beforeRecord runs before Exec records the started
+// command (Started), afterWait once the command has been reaped. They are package globals read by
+// every Exec, so a test in internal/run that sets them must not use t.Parallel (nor run beside
+// one that does).
+var beforeRecord, afterWait func()
+
 var handled = []os.Signal{syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT}
 
 // Exec runs the command as bitc's child and returns how it ended (spec 6.4).
@@ -80,17 +86,26 @@ func Exec(ctx context.Context, s ExecSpec) (ExecResult, error) {
 
 	startErr := make(chan error, 1)
 	done := make(chan error, 1)
+	var leader proc.Stat // read before Wait can reap the command; published by the send on startErr
+	var leaderErr error
 	exit.Go(func() {
 		// Pdeathsig belongs to the thread that forked the child: keep this goroutine on its
 		// thread until Wait returns, so the child is killed only when bitc itself dies.
 		runtime.LockOSThread()
 		err := cmd.Start()
+		if err == nil && s.Started != nil {
+			leader, leaderErr = proc.ReadStat(cmd.Process.Pid)
+		}
 		startErr <- err
 		if err != nil {
 			runtime.UnlockOSThread()
 			return
 		}
-		done <- cmd.Wait()
+		err = cmd.Wait()
+		if afterWait != nil {
+			afterWait()
+		}
+		done <- err
 		runtime.UnlockOSThread()
 	})
 	if err := <-startErr; err != nil {
@@ -100,14 +115,17 @@ func Exec(ctx context.Context, s ExecSpec) (ExecResult, error) {
 		}
 		return ExecResult{Code: code, StartErr: err}, nil
 	}
+	if beforeRecord != nil {
+		beforeRecord()
+	}
 	pid := cmd.Process.Pid
 	pgid := pid
 	if tty {
 		pgid = 0 // the caller's group is not ours: record and signal the command alone
 	}
 	if s.Started != nil {
-		if st, err := proc.ReadStat(pid); err == nil {
-			s.Started(pid, pgid, st.Start)
+		if leaderErr == nil {
+			s.Started(pid, pgid, leader.Start)
 		}
 	}
 	forward := func(sig syscall.Signal) {

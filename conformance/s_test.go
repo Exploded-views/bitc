@@ -151,7 +151,7 @@ func TestT1_StarvedAfterWait(t *testing.T) {
 	if r.Code != 75 || r.Stderr != "STARVED lint\n" || r.Stdout != "" {
 		t.Fatalf("%+v", r)
 	}
-	if d := time.Since(t0); d < time.Second || d > 3*time.Second {
+	if d := time.Since(t0); d < time.Second { // starved no sooner than the wait
 		t.Fatalf("took %v", d)
 	}
 	hold.Release()

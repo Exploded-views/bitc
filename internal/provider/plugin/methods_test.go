@@ -37,22 +37,19 @@ func TestMethodsFirstStartThePlugin(t *testing.T) {
 }
 
 func TestTimeoutSendsCancelAndIsTransient(t *testing.T) {
-	r := newRig(t, fault("hang:estimate"))
+	r := newRig(t, fault("hang:estimate"), fire("estimate", 300*time.Millisecond)) // never answers
 	r.start()
 	_, err := r.p.Estimate(context.Background(), r.job())
 	var tr *provider.ErrTransient
 	if !errors.As(err, &tr) || !strings.HasPrefix(tr.Why, "estimate timed out after ") {
 		t.Fatalf("got %T %v", err, err)
 	}
-	deadline := time.Now().Add(2 * time.Second)
-	for !r.exists("cancel.log") && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
-	if !r.exists("cancel.log") || !strings.Contains(string(r.read("cancel.log")), `"id":`) {
+	r.await("cancel.log")
+	if !strings.Contains(string(r.read("cancel.log")), `"id":`) {
 		t.Errorf("the plugin got no cancel frame")
 	}
 	first := r.diag().Pid
-	time.Sleep(r.eff.Scale(6 * time.Second)) // 5 s after the cancel (scaled) bitc kills and respawns
+	r.awaitGone(first) // the plugin ignored the cancel: bitc kills it after its grace (5 s)
 	if err := r.p.Preflight(context.Background(), r.job()); err != nil {
 		t.Fatalf("after a plugin ignored the cancel: %v", err)
 	}
@@ -62,19 +59,22 @@ func TestTimeoutSendsCancelAndIsTransient(t *testing.T) {
 }
 
 func TestRequestsAreMultiplexedByID(t *testing.T) {
-	r := newRig(t, fault("slow:watch=600"))
+	r := newRig(t, fault("hang:watch")) // the watch never answers
 	r.start()
 	h := provider.Handle{ID: "r-x", Name: "x"}
 	done := make(chan error, 1)
-	start := time.Now()
-	go func() { _, err := r.p.Watch(context.Background(), h, newSink()); done <- err }()
-	time.Sleep(150 * time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { _, err := r.p.Watch(ctx, h, newSink()); done <- err }()
+	r.await("hanging.log") // the watch is in flight in the plugin
 	if err := r.p.Teardown(context.Background(), "r-x"); err != nil {
 		t.Fatal(err)
 	}
-	if time.Since(start) > 500*time.Millisecond {
-		t.Error("Teardown waited for the open watch")
+	select { // Teardown answered while the watch is still open: it did not wait for it
+	case err := <-done:
+		t.Fatalf("the watch ended first: %v", err)
+	default:
 	}
+	cancel()
 	<-done
 }
 

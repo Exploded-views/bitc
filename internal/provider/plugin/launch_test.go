@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Exploded-views/bitc/internal/provider"
 )
@@ -105,7 +106,7 @@ func TestStderrIsPrintedOnlyAtDebug(t *testing.T) {
 func TestAmbiguousLaunchesAreAttachedAndReapedByName(t *testing.T) {
 	for _, f := range []string{"launch-hang", "launch-die", "launch-malformed", "launch-unknown-class", "launch-unknown-class-id", "launch-phase-begun"} {
 		t.Run(f, func(t *testing.T) {
-			r := newRig(t, fault(f))
+			r := newRig(t, fault(f), fire("launch", hangBound(f)))
 			r.start()
 			j := r.job()
 			_, err := r.p.Launch(context.Background(), j)
@@ -122,7 +123,7 @@ func TestAmbiguousLaunchesAreAttachedAndReapedByName(t *testing.T) {
 }
 
 func TestAmbiguousLaunchTimeoutNamesTheWait(t *testing.T) {
-	r := newRig(t, fault("launch-hang"))
+	r := newRig(t, fault("launch-hang"), fire("launch", 300*time.Millisecond)) // the hang never answers
 	r.start()
 	_, err := r.p.Launch(context.Background(), r.job())
 	att := asAttached(t, err)
@@ -143,7 +144,7 @@ func TestAmbiguousLaunchWithAFailingListLeavesTheNameForTheSweep(t *testing.T) {
 }
 
 func TestReapChecksTheOwnerTagBeforeTearingDown(t *testing.T) {
-	r := newRig(t, fault("owner-wrong,launch-hang")) // the resource the hung launch made answers with another owner
+	r := newRig(t, fault("owner-wrong,launch-hang"), fire("launch", 300*time.Millisecond)) // the resource the hung launch made answers with another owner
 	r.start()
 	j := r.job()
 	_, err := r.p.Launch(context.Background(), j)
@@ -260,7 +261,7 @@ func hexs(b [32]byte) string {
 // The old process's waiter must not remove the TMPDIR of the plugin that replaced it: the stub
 // holds its stderr pipe open past its death, so the old Wait returns after the respawn is up.
 func TestRespawnAfterAnAmbiguousLaunchKeepsTheNewPluginsTmpdir(t *testing.T) {
-	r := newRig(t, fault("launch-hang,tmp-check"))
+	r := newRig(t, fault("launch-hang,tmp-check"), fire("launch", 300*time.Millisecond))
 	r.start()
 	j := r.job()
 	_, err := r.p.Launch(context.Background(), j)
@@ -271,4 +272,31 @@ func TestRespawnAfterAnAmbiguousLaunchKeepsTheNewPluginsTmpdir(t *testing.T) {
 	if got := strings.TrimSpace(string(r.read("tmpcheck.log"))); got != "true" {
 		t.Errorf("the respawned plugin's TMPDIR probe survived the reap = %q, want true", got)
 	}
+}
+
+// A plugin that is merely slow (its list answers after 700 ms, far inside the 30 s list bound)
+// must not leave an ambiguous launch's resource unconfirmed: the reap's bounds are the real ones,
+// not a scaled fraction that scheduling on a loaded runner can miss (the CI flake of
+// TestAmbiguousLaunchesAreAttachedAndReapedByName).
+func TestAmbiguousLaunchReapSurvivesASlowPlugin(t *testing.T) {
+	r := newRig(t, fault("launch-malformed,slow:list=700"))
+	r.start()
+	j := r.job()
+	_, err := r.p.Launch(context.Background(), j)
+	att := asAttached(t, err)
+	if !att.Ambiguous || att.Unconfirmed || strings.Contains(att.Err.Error(), "left for sweep") {
+		t.Fatalf("a slow list left the resource unconfirmed: %+v (%v)", att, att.Err)
+	}
+	if len(r.resources()) != 0 || !strings.Contains(r.torn(), "r-"+j.Name) {
+		t.Errorf("the resource was not reaped by name: %v torn %q", r.resources(), r.torn())
+	}
+}
+
+// hangBound is the launch bound for a fault: short only for launch-hang, which never answers (so
+// the bound fires whatever the runner's speed); the real start_timeout for the others.
+func hangBound(f string) time.Duration {
+	if f == "launch-hang" {
+		return 300 * time.Millisecond
+	}
+	return 2 * time.Minute
 }

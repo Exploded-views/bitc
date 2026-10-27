@@ -27,12 +27,18 @@ func plRepo(t *testing.T, h *harness.H, fault, declare, extra string) *plEnv {
 	path, sum := h.Plugin("stub")
 	e := &plEnv{h: h, own: filepath.Join(h.State, "plugins", "stub"), acct: filepath.Join(h.Root, "account", "remote", "stub")}
 	h.Env = append(h.Env, "STUB_FALLBACK="+declare)
-	h.Seam("time_scale = 0.05")
+	// Real bounds (no time_scale): none fires because a loaded runner is slow. The launch bound,
+	// start_timeout, is short only for launch-hang, whose stub never answers, so it fires
+	// whatever the runner's speed (the rig's fire(), on the host side).
+	start := "1m"
+	if strings.Contains(fault, "launch-hang") {
+		start = "2s"
+	}
 	h.Seam("agent_url = \"http://127.0.0.1:9/bitc\"")
 	h.HostConfig("[remote_limits]\nworktrees = [\"**/app\"]\n" +
 		"[pools.heavy]\nproviders = [\"stub\", \"local\"]\nremote_limits = { size = { stub = \"cpu8\" }, timeout = \"60m\" }\nwait = \"5s\"\n" +
 		"[providers.stub]\nplugin = { path = " + harness.Q(path) + ", sha256 = " + harness.Q(sum) + ", env_pass = [\"STUB_FALLBACK\", \"STUB_MULTI_JOB\"] }\n" +
-		"api_key = \"sk-test-0123456789\"\ndaily_usd = 25\nmax_live = 6\nstart_timeout = \"1m\"\n" +
+		"api_key = \"sk-test-0123456789\"\ndaily_usd = 25\nmax_live = 6\nstart_timeout = " + harness.Q(start) + "\n" +
 		"sizes = { cpu8 = { usd_per_hour = 0.24 } }\nendpoints = [\"127.0.0.1\"]\nfault = " + harness.Q(fault) + "\n" + extra)
 	e.wt = h.Repo("app", map[string]string{".bitc.toml": "version = 1\n[pools.heavy.remote]\nallow = [[\"sh\", \"*\"], [\"echo\", \"*\"]]\n"})
 	h.Cwd = e.wt

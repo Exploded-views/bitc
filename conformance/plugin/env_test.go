@@ -56,7 +56,6 @@ func newEnv(t *testing.T, o opts) *env {
 	}
 	e.api = h.StartFakeAPI(harness.RefFakeAPI)
 	e.path, e.sum = h.PluginFrom("fakex", harness.RefPlugin)
-	h.Seam("time_scale = 0.05")
 	h.Seam("fixed_secrets = true")
 	h.Seam("agent_url = \"http://127.0.0.1:9/bitc\"")
 	size := def(o.size, "cpu8")

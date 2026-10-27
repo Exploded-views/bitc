@@ -797,3 +797,29 @@ func TestFakeLaxNamesAcceptsWhatTheClientCallsInvalid(t *testing.T) {
 		t.Fatalf("delete of that name = %d, want 204", code)
 	}
 }
+
+// A hook's output written after its session was cut fails: the write reports the dropped
+// connection to the command instead of vanishing.
+func TestFakeHookOutputAfterACutSessionFails(t *testing.T) {
+	started, release, wrote := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	f := spritesfake.New(t, spritesfake.Options{Exec: func(e spritesfake.ExecContext) int {
+		close(started)
+		<-release
+		_, err := e.Stdout.Write([]byte("late\n"))
+		wrote <- err
+		return 0
+	}})
+	c := client(t, f)
+	ready(t, c, "a")
+	s, err := c.Exec(context.Background(), "a", sprites.ExecRequest{Cmd: []string{"true"}, Stdin: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	<-started
+	f.CutSessions("a")
+	close(release)
+	if err := <-wrote; err == nil {
+		t.Fatal("a write after the session was cut succeeded")
+	}
+}

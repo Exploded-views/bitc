@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.1] - UNRELEASED
+
 ### Changed
 
 - **Breaking:** remote providers are off by default behind `[host] experimental_remote`. Without
@@ -30,6 +32,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `bitc run` no longer loses the process record of a command that exits at once: its pid and
+  start time were read after the command could already have been reaped, so a very short command
+  (or a loaded host) left the slot's hold without them. They are now read before the command is
+  waited on.
 - The shipped repository example (`examples/config/repo.bitc.toml`) declared
   `min_version = "1.0.0"`, so a 0.1.0 release build refused it with exit 78; it now declares
   `"0.1.0"`, and every shipped example is checked against a release-stamped build.

@@ -118,6 +118,25 @@ func TestCancelledContextDoesNotSpin(t *testing.T) {
 	}
 }
 
+// A command that exits at once is still recorded: Started reads the leader's stat before the
+// command is reaped. The seams hold the record back until the reap, the worst order a loaded
+// host can produce.
+func TestStartedRecordsACommandReapedBeforeTheRecord(t *testing.T) {
+	reaped := make(chan struct{})
+	afterWait = func() { close(reaped) }
+	beforeRecord = func() { <-reaped }
+	t.Cleanup(func() { afterWait, beforeRecord = nil, nil })
+	s := spec(t, "true")
+	called := false
+	s.Started = func(pid, pgid int, start uint64) { called = pid > 0 && pgid == pid && start > 0 }
+	if _, err := Exec(context.Background(), s); err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("Started was not called with the leader's pid, pgid and start")
+	}
+}
+
 func TestTTYStdinStartedWithoutAGroup(t *testing.T) {
 	m, err := os.OpenFile("/dev/ptmx", os.O_RDWR|syscall.O_NOCTTY, 0)
 	if err != nil {

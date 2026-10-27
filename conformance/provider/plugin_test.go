@@ -47,7 +47,6 @@ func (p *pluginTarget) Configure(t *testing.T, h *harness.H) {
 	if *pluginSumFlag != "" && *pluginSumFlag != p.sum {
 		t.Fatalf("-plugin-sha256 %s is not the sha256 of %s (%s)", *pluginSumFlag, bin, p.sum)
 	}
-	h.Seam("time_scale = 0.05")
 	h.Seam("fixed_secrets = true")
 	h.Seam("agent_url = \"http://127.0.0.1:9/bitc\"")
 	h.HostConfig("[remote_limits]\nworktrees = [\"**/app\"]\nforward_env_allow = [\"CANARY_VALUE\"]\n" +
@@ -157,7 +156,7 @@ func (p *pluginTarget) ListNames(t *testing.T, h *harness.H) []string {
 		Sizes:    map[string]config.Micros{"cpu8": 240_000},
 		SizesRaw: map[string]any{"cpu8": map[string]any{"usd_per_hour": 0.24}},
 		Raw:      map[string]any{"api_base": p.apiURL}}
-	eff := &config.Effective{Host: config.Host{StateDir: h.State}, Test: &config.Test{AccountingDir: filepath.Join(h.Root, "account"), TimeScale: 0.05}}
+	eff := &config.Effective{Host: config.Host{StateDir: h.State}, Test: &config.Test{AccountingDir: filepath.Join(h.Root, "account"), TimeScale: 1}}
 	pr, err := plugin.New(core, eff)
 	if err != nil {
 		t.Fatal(err)

@@ -75,13 +75,12 @@ func TestWatchLostPhaseAndASilentPlugin(t *testing.T) {
 	if _, err := r.p.Watch(context.Background(), h, s); err == nil || !strings.Contains(strings.Join(s.phases, ","), "lost") {
 		t.Fatalf("lost phase: err %v phases %v", err, s.phases)
 	}
-	r2 := newRig(t, fault("watch-silent"))
+	r2 := newRig(t, fault("watch-silent"), fire("watch", 300*time.Millisecond)) // never sends an event
 	h2 := launched(t, r2)
 	s2 := newSink()
-	start := time.Now()
 	_, err := r2.p.Watch(context.Background(), h2, s2)
-	if err == nil || !strings.Contains(strings.Join(s2.phases, ","), "lost") || time.Since(start) > 10*time.Second {
-		t.Fatalf("90 s without an event (scaled) is lost: err %v phases %v after %v", err, s2.phases, time.Since(start))
+	if err == nil || !strings.Contains(strings.Join(s2.phases, ","), "lost") {
+		t.Fatalf("no event within the watch bound is lost: err %v phases %v", err, s2.phases)
 	}
 }
 

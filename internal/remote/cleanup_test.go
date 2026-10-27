@@ -21,7 +21,7 @@ func TestCleanupOnlySpritesHandleAndDoctor(t *testing.T) {
 	if err := os.Chmod(acct, 0o700); err != nil { // a private accounting dir, as state requires
 		t.Fatal(err)
 	}
-	e := &config.Effective{Test: &config.Test{TimeScale: 0.05, AccountingDir: acct}}
+	e := &config.Effective{Test: &config.Test{TimeScale: 1, AccountingDir: acct}}
 	raw := map[string]any{"org": f.Org(), "api_base": f.URL(), "sizes": map[string]any{"cpu8": map[string]any{"memory": "16GiB"}}}
 	core := &config.Provider{Type: "sprites", NamePrefix: "bitc", APIKey: f.Token(), Raw: raw, StartTimeout: time.Minute, CleanupOnly: true}
 	c, err := sweepHandle(context.Background(), "sprites", core, e)

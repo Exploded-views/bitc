@@ -285,7 +285,7 @@ func adapter(t *testing.T, e *env) *plugin.Provider {
 		Sizes:    map[string]config.Micros{"cpu8": 240_000},
 		SizesRaw: map[string]any{"cpu8": map[string]any{"usd_per_hour": 0.24}},
 		Raw:      map[string]any{"api_base": e.api.URL, "fault": "diag"}}
-	eff := &config.Effective{Host: config.Host{StateDir: e.h.State}, Test: &config.Test{AccountingDir: filepath.Join(e.h.Root, "account"), TimeScale: 0.05}}
+	eff := &config.Effective{Host: config.Host{StateDir: e.h.State}, Test: &config.Test{AccountingDir: filepath.Join(e.h.Root, "account"), TimeScale: 1}}
 	p, err := plugin.New(core, eff)
 	if err != nil {
 		t.Fatal(err)

@@ -74,7 +74,7 @@ func walkPlugNamed(t *testing.T, stub *pluginStub, long bool) *plugRun {
 	j := testJob(t, stub, &out, &errb)
 	eff, p := j.P.Eff, j.P
 	eff.HostFile = "/etc/bitc.toml"
-	eff.Test.TimeScale = 0.01
+	eff.Test.TimeScale = 1
 	core := &config.Provider{Type: "plug", NamePrefix: "bitc", FallbackUntil: "attach", StartTimeout: time.Minute, Raw: map[string]any{}}
 	eff.Providers = map[string]*config.Provider{"plug": core}
 	eff.RemoteLimits.Worktrees = []string{"**"}

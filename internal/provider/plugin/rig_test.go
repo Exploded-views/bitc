@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Exploded-views/bitc/internal/config"
+	"github.com/Exploded-views/bitc/internal/proc"
 	"github.com/Exploded-views/bitc/internal/provider"
 	"github.com/Exploded-views/bitc/internal/provider/plugin/pin"
 	"github.com/Exploded-views/bitc/internal/redact"
@@ -56,6 +57,7 @@ func (s *syncBuf) String() string              { s.mu.Lock(); defer s.mu.Unlock(
 // rig is one adapter over the stub plugin in a private directory.
 type rig struct {
 	t                *testing.T
+	fire             map[string]time.Duration // bounds the test means to fire (fire)
 	dir, bin         string
 	state, acct, own string // state dir, accounting dir, <state>/plugins/stub
 	core             *config.Provider
@@ -70,6 +72,18 @@ type rigOpt func(*rig)
 
 func raw(k string, v any) rigOpt { return func(r *rig) { r.core.Raw[k] = v } }
 func fault(f string) rigOpt      { return raw("fault", f) }
+
+// fire shortens the named bound (a method, "launch", "reap", "namecheck", "watch", "hello") to d:
+// the one bound the test means to fire, because the stub never answers in time (a hang or a slow
+// fault). Every other bound stays real.
+func fire(name string, d time.Duration) rigOpt {
+	return func(r *rig) {
+		if r.fire == nil {
+			r.fire = map[string]time.Duration{}
+		}
+		r.fire[name] = d
+	}
+}
 
 func newRig(t *testing.T, opts ...rigOpt) *rig {
 	t.Helper()
@@ -92,7 +106,9 @@ func newRig(t *testing.T, opts ...rigOpt) *rig {
 		Sizes:    map[string]config.Micros{"cpu8": 600_000},
 		SizesRaw: map[string]any{"cpu8": map[string]any{"usd_per_hour": 0.6}},
 		Raw:      map[string]any{"region": "eu"}}
-	r.eff = &config.Effective{Host: config.Host{StateDir: r.state}, Test: &config.Test{AccountingDir: r.acct, TimeScale: 0.02}}
+	// TimeScale 1: every bound is the real one, so none fires because a loaded runner was slow;
+	// a test that means a bound to fire shortens that one by name (fire).
+	r.eff = &config.Effective{Host: config.Host{StateDir: r.state}, Test: &config.Test{AccountingDir: r.acct, TimeScale: 1}}
 	for _, o := range opts {
 		o(r)
 	}
@@ -100,6 +116,7 @@ func newRig(t *testing.T, opts ...rigOpt) *rig {
 	if err != nil {
 		t.Fatal(err)
 	}
+	r.p.bounds = r.fire
 	t.Cleanup(func() { r.p.Close() })
 	return r
 }
@@ -206,3 +223,28 @@ func (s *recSink) Out(st provider.Stream, b []byte) {
 }
 
 var _ io.Writer = (*syncBuf)(nil)
+
+// until polls cond and fails the test if it does not hold within 30 s: a safety net only, its
+// expiry is never a verdict a test passes on.
+func (r *rig) until(what string, cond func() bool) {
+	r.t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			r.t.Fatalf("%s: not within 30 s", what)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// await waits until the stub has written the named file (a handshake from the plugin).
+func (r *rig) await(name string) {
+	r.t.Helper()
+	r.until(name+" written", func() bool { return r.exists(name) })
+}
+
+// awaitGone waits until the process pid has exited and been reaped.
+func (r *rig) awaitGone(pid int) {
+	r.t.Helper()
+	r.until(fmt.Sprintf("plugin %d gone", pid), func() bool { _, err := proc.ReadStat(pid); return err != nil })
+}

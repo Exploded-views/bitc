@@ -47,10 +47,12 @@ const (
 // adapter only speaks the protocol, validates what the plugin says, and prices from the host's
 // config.
 type Provider struct {
-	core *config.Provider
-	eff  *config.Effective
-	typ  string
-	rt   provider.Runtime
+	// bounds: test-only per-bound overrides (see bound); nil in production
+	bounds map[string]time.Duration
+	core   *config.Provider
+	eff    *config.Effective
+	typ    string
+	rt     provider.Runtime
 
 	mu      sync.Mutex
 	started bool
@@ -117,7 +119,7 @@ func (p *Provider) spawnAndHandshake() (*session, error) {
 	}
 	ctx := context.Background()
 	raw, eo, err := s.do(ctx, "hello", map[string]any{"protocols": []int{1}, "bitc_version": version.Version, "type": p.typ},
-		callOpts{timeout: p.eff.Scale(helloTimeout)})
+		callOpts{timeout: p.bound("hello", helloTimeout)})
 	if err != nil || eo != nil {
 		return fail(p.callErr(s, "hello", eo, err))
 	}
@@ -143,7 +145,7 @@ func (p *Provider) spawnAndHandshake() (*session, error) {
 		return fail(&provider.ErrConfig{Why: fmt.Sprintf("providers.%s.send_env: \"forced\" is not allowed: %s reuses resources across jobs", p.typ, p.typ)})
 	}
 	raw, eo, err = s.do(ctx, "configure", map[string]any{"config": p.configMap(), "sizes": p.core.SizesRaw},
-		callOpts{timeout: p.eff.Scale(helloTimeout)})
+		callOpts{timeout: p.bound("hello", helloTimeout)})
 	if err != nil || eo != nil {
 		return fail(p.callErr(s, "configure", eo, err))
 	}
@@ -296,6 +298,16 @@ func (p *Provider) callErr(s *session, method string, eo *errObj, err error) err
 	return p.publicErr(s, err)
 }
 
+// bound is a method's scaled bound. bounds (nil in production) lets a test shorten exactly the
+// bound it means to fire, by name (a method, "launch", "reap", "namecheck"), so every other bound
+// keeps its real value and no verdict depends on how fast a loaded machine schedules a timer.
+func (p *Provider) bound(name string, d time.Duration) time.Duration {
+	if v, ok := p.bounds[name]; ok {
+		return v
+	}
+	return p.eff.Scale(d)
+}
+
 // call runs one non-launch request.
 func (p *Provider) call(ctx context.Context, method string, params any, bound time.Duration, o callOpts) (json.RawMessage, error) {
 	raw, _, err := p.callX(ctx, method, params, bound, o)
@@ -308,7 +320,7 @@ func (p *Provider) callX(ctx context.Context, method string, params any, bound t
 	if err != nil {
 		return nil, false, err
 	}
-	o.timeout = p.eff.Scale(bound)
+	o.timeout = p.bound(method, bound)
 	raw, eo, err := s.do(ctx, method, params, o)
 	if err != nil || eo != nil {
 		if err != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, errStopped)) {
@@ -625,7 +637,7 @@ func (p *Provider) Watch(ctx context.Context, h provider.Handle, out provider.Si
 		return provider.Result{Began: began}, ctx.Err()
 	case timedOut:
 		out.Phase(provider.Lost, "no event from the plugin")
-		return provider.Result{Began: began}, fmt.Errorf("%s was lost: no event from the plugin for %s", h.ID, p.eff.Scale(watchIdle))
+		return provider.Result{Began: began}, fmt.Errorf("%s was lost: no event from the plugin for %s", h.ID, p.bound("watch", watchIdle))
 	case err != nil:
 		return provider.Result{Began: began}, err
 	}

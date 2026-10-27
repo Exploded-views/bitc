@@ -1,4 +1,4 @@
 {
-  "github.com/Exploded-views/bitc/internal/provider/plugin": {"tolerance": 0.1, "why": "coverage measured lower on the GitHub runner than locally (gap 0.1); suspected retry/kill timing, root cause pending (follow-up)"},
+  "github.com/Exploded-views/bitc/internal/provider/plugin": {"tolerance": 0.1, "why": "coverage measured lower on the GitHub runner than locally (gap 0.1). Root cause (2026-10-27): three settle paths ran only when a rig race went one way (the debug stderr tail, the answer to a cancelled call, a handler's plain error in stopped); internal/provider/plugin/settle_test.go now covers them deterministically, so this tolerance can go to 0 once CI confirms (a separate decision)"},
   "github.com/Exploded-views/bitc/internal/status": {"tolerance": 0.4, "why": "coverage measured lower on the GitHub runner than locally (gap 0.4); suspected tty detection, root cause pending (follow-up)"}
 }

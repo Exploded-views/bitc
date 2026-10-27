@@ -203,6 +203,7 @@ func sleeper() {
 
 func handle(r req, line []byte) {
 	if has("hang:" + r.Method) {
+		_ = appendTo("hanging.log", r.Method) // the handshake a test waits on: this call is in flight
 		hang()
 	}
 	for _, f := range strings.Split(str("fault"), ",") {

@@ -81,7 +81,7 @@ func (p *Provider) Launch(ctx context.Context, j *provider.JobSpec) (provider.Ha
 		params["secrets"] = map[string]string{"deploy_key": j.DeployKey}
 	}
 	p.redactJob(j)
-	raw, eo, err := s.do(ctx, "launch", params, callOpts{timeout: p.eff.Scale(p.core.StartTimeout), onEvent: launchEvent})
+	raw, eo, err := s.do(ctx, "launch", params, callOpts{timeout: p.bound("launch", p.core.StartTimeout), onEvent: launchEvent})
 	switch {
 	case errors.Is(err, errTooLarge):
 		return provider.Handle{}, &provider.ErrIneligible{Why: "the launch request is larger than 1 MiB"}
@@ -149,7 +149,7 @@ func (p *Provider) ambiguous(j *provider.JobSpec, s *session, why string) error 
 // the tag core computed, and tears down the matches. confirmed means the lookup worked and nothing
 // of this job is left; foreign owners are never touched.
 func (p *Provider) reapByName(j *provider.JobSpec) (found []string, confirmed bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), p.eff.Scale(listBound+ownerBound+teardownBound))
+	ctx, cancel := context.WithTimeout(context.Background(), p.bound("reap", listBound+ownerBound+teardownBound))
 	defer cancel()
 	rs, err := p.listRaw(ctx, []string{j.Name})
 	if err != nil {
@@ -222,7 +222,7 @@ func (e *errObj) innerErr() error {
 
 // nameCheck is A.5.5: after an id-less classified launch error, list by the job's full name.
 func (p *Provider) nameCheck(j *provider.JobSpec, s *session, class string, plain error) error {
-	ctx, cancel := context.WithTimeout(context.Background(), p.eff.Scale(listBound+ownerBound))
+	ctx, cancel := context.WithTimeout(context.Background(), p.bound("namecheck", listBound+ownerBound))
 	defer cancel()
 	rs, err := p.listRaw(ctx, []string{j.Name})
 	if err != nil {
@@ -239,7 +239,7 @@ func (p *Provider) nameCheck(j *provider.JobSpec, s *session, class string, plai
 		if owner != j.Owner {
 			continue
 		}
-		tctx, c2 := context.WithTimeout(context.Background(), p.eff.Scale(teardownBound))
+		tctx, c2 := context.WithTimeout(context.Background(), p.bound("teardown", teardownBound))
 		torn := p.Teardown(tctx, r.ID) == nil
 		c2()
 		why := fmt.Sprintf("launch said %s but %s exists", class, j.Name)
