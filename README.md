@@ -1,32 +1,178 @@
-# bitc
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/bitc-dark.svg">
+  <img alt="bitc: big ideas, tiny computer. Heavy commands, offloaded under a spend cap or queued locally." src="docs/assets/bitc-light.svg" width="100%">
+</picture>
 
-Offload heavy commands to pluggable cloud providers (RunPod, Sprites, SSH, or your own) under a spend cap, with local slot gating as the fallback. Built for machines shared by AI coding agents.
+Run heavy commands on a shared machine without letting them knock it over. bitc queues them in
+named pools of slots on your machine, and can offload them to a remote provider (a RunPod pod, a
+machine you own over SSH, or a plugin of your own) under a daily spend cap. When a command cannot start in time, bitc exits
+**75**, "try again later", and never pretends your command failed.
 
-<!-- badges -->
 [![ci](https://github.com/Exploded-views/bitc/actions/workflows/ci.yml/badge.svg)](https://github.com/Exploded-views/bitc/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/Exploded-views/bitc.svg)](https://pkg.go.dev/github.com/Exploded-views/bitc)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Exploded-views/bitc)](https://goreportcard.com/report/github.com/Exploded-views/bitc)
 [![Latest release](https://img.shields.io/github/v/release/Exploded-views/bitc?include_prereleases&sort=semver)](https://github.com/Exploded-views/bitc/releases)
 [![License: MIT](https://img.shields.io/github/license/Exploded-views/bitc)](LICENSE)
 [![Go version](https://img.shields.io/github/go-mod/go-version/Exploded-views/bitc)](go.mod)
-<!-- TODO: coverage badge (needs a coverage service) -->
 
-bitc (big ideas, tiny computer) runs a heavy command (type check, test suite, browser tests) on a
-remote provider instead of your machine, as long as the pool's daily spend cap allows it. If the
-job cannot be offloaded, or the provider is down, it runs locally in a slot of a named pool. In
-the one case where it can do neither in time, it exits **75** ("try again later") and never
-pretends your command failed.
+```console
+$ bitc run heavy -- npm test               # waits for a free slot, then runs; exit code is npm's
+$ bitc run --wait 1s heavy -- npm test     # from another terminal, while the first still runs
+STARVED heavy
+$ echo $?
+75
+```
 
-The host file says which providers a pool may use, how much it may spend and which work trees may
-go remote; the repository says what may leave the machine.
+bitc is one static binary with no daemon. It is built for machines shared by AI coding agents,
+and works the same for a person at a terminal.
 
-Host file, `~/.config/bitc/bitc.toml`:
+## Why it exists
+
+Ten coding agents on one 16 GiB machine will each start a type checker, a browser suite and a
+database at the same moment, and the machine falls over. Locks alone do not fix that: the agents
+also need to know whether to wait, retry or give up, and someone has to keep remote compute from
+running up a bill.
+
+- **A queue, not a crash.** A pool with N slots runs N commands at a time, in FIFO order, with
+  priority lanes, groups shared across pools and a memory floor that holds a job back instead of
+  letting the kernel kill something.
+- **Exit codes callers can act on.** 75 means wait and retry, 69 means stop and report, and every
+  other code is your command's own. Agents get a [ten-rule guide](docs/agent-guide.md).
+- **No daemon.** State is files and `flock(2)` locks. A caller that is killed releases everything
+  it held, and the next caller cleans up after it.
+- **Spend-capped offload (experimental).** A daily cap per provider account, a live-job limit, a
+  ledger and a circuit breaker bound what remote jobs can cost. A job that has not started remotely
+  falls back to the next provider and finally to `local`.
+- **A trust split.** The host file sets capacities, spend caps and providers. A repository's
+  `.bitc.toml` can only narrow those limits, never widen them.
+
+**Maturity, plainly:** the local gate is the mature part. Every remote provider is experimental
+and off by default; read [Status](#status-and-roadmap) and [Known issues](#known-issues) before
+pointing one at a real account.
+
+## Install
+
+Linux (amd64 or arm64) is the main platform. The macOS builds run local pools only
+([macOS status](docs/install.md#macos-status)).
+
+From a release, verified against its checksums:
+
+```sh
+curl -LO https://github.com/Exploded-views/bitc/releases/download/v0.1.0/bitc_0.1.0_linux_amd64.tar.gz
+curl -LO https://github.com/Exploded-views/bitc/releases/download/v0.1.0/checksums.txt
+grep bitc_0.1.0_linux_amd64.tar.gz checksums.txt | sha256sum -c -
+tar -xzf bitc_0.1.0_linux_amd64.tar.gz bitc
+install -m 0755 bitc ~/.local/bin/bitc      # or any other directory on your PATH
+```
+
+Swap `linux_amd64` for `linux_arm64`, `darwin_arm64` or `darwin_amd64`. With Go 1.26 or newer:
+
+```sh
+go install github.com/Exploded-views/bitc/cmd/bitc@v0.1.0
+```
+
+[docs/install.md](docs/install.md) lists every release asset and what `bitc version --json`
+reports.
+
+## Quickstart (local, about two minutes)
+
+This needs no account and no network. Every block below is run by the test suite exactly as
+written; the outputs come from a real run, with paths, ids and memory figures that will differ on
+your machine.
+
+**1. Describe your machine.** One pool, `heavy`, with one slot:
+
+<!-- doc-test -->
+```sh
+mkdir -p ~/.config/bitc
+cat > ~/.config/bitc/bitc.toml <<'EOF'
+version = 1
+
+[pools.heavy]
+slots = 1
+EOF
+chmod 600 ~/.config/bitc/bitc.toml   # bitc refuses a group- or world-writable config
+bitc config check
+```
+
+```text
+ok host /home/you/.config/bitc/bitc.toml repo (none)
+```
+
+**2. Run a command through the pool.** bitc waits for a free slot, runs the command and returns
+the command's own exit code. stdout is the command's; bitc writes only to stderr.
+
+<!-- doc-test -->
+```sh
+bitc run heavy -- echo hello
+bitc status
+```
+
+```text
+hello
+heavy: 0/1 slots held, 0 waiting
+memory: 15350 MiB available (MemAvailable), floor 6144 MiB
+```
+
+**3. See "try again later".** While one command holds the only slot, a second caller waits up to
+the pool's `wait` (10 minutes by default; `--wait` shortens it here), then gives up with
+`STARVED heavy` and exit 75:
+
+<!-- doc-test -->
+```sh
+bitc run heavy -- sleep 3 &     # takes the only slot
+sleep 1
+bitc run --wait 1s heavy -- echo second || echo "exit $?"
+bitc status
+wait
+```
+
+```text
+STARVED heavy
+exit 75
+heavy: 1/1 slots held, 0 waiting
+  slot 1  19e3b439  pid 10745  since 2026-10-27T18:15:22Z  sleep 3
+  last STARVED: all slots busy at 2026-10-27T18:15:24.777Z
+memory: 15354 MiB available (MemAvailable), floor 6144 MiB
+```
+
+**4. Outlast a tool-call limit.** A detached job returns at once; `bitc wait` blocks for at most 9
+minutes per call and exits 124 while the job is still running, so an agent just calls it again:
+
+<!-- doc-test -->
+```sh
+bitc run --detach --name demo heavy -- sh -c 'echo hi'
+bitc wait demo
+```
+
+```text
+started demo pid 14890 log /home/you/.local/state/bitc/jobs/22bb2cbb/demo/out.log
+RESULT exit 0
+--- last 60 lines of /home/you/.local/state/bitc/jobs/22bb2cbb/demo/out.log ---
+hi
+__EXIT__ 0
+```
+
+The other commands are `logs`, `cancel`, `sweep`, `doctor` and `version`; `bitc` alone prints
+the usage line. Next: add a repository file ([configuration](docs/configuration.md)), give a pool
+a memory reservation, or point your agents at [the agent guide](docs/agent-guide.md).
+
+## Offload to a provider (experimental)
+
+> [!WARNING]
+> Remote providers are experimental and **off by default**. Their spend accounting is still being
+> hardened (see [Known issues](#known-issues)). The `experimental_remote` switch shown here is on
+> `main` and ships in the next release; the v0.1.0 binary rejects it as an unknown key (exit 78).
+
+A pool can list providers in order of preference. The host file says which providers a pool may
+use, how much it may spend and which work trees may go remote:
 
 ```toml
+# ~/.config/bitc/bitc.toml
 version = 1
 
 [host]
-experimental_remote = true             # remote providers are off by default (see Known issues)
+experimental_remote = true             # remote providers are off by default
 
 [pools.heavy]
 slots = 1
@@ -46,9 +192,10 @@ sizes = { cpu8 = { cpu_type = "cpu3c", vcpu = 8, usd_per_hour = 0.24 } }
 agent = { source = "url", url = "https://example.com/bitc_linux_{arch}", path = "/opt/bitc/bitc" }
 ```
 
-Repository file, `.bitc.toml`:
+The repository says what may leave the machine:
 
 ```toml
+# .bitc.toml at the top of the work tree
 version = 1
 
 [pools.heavy.remote]
@@ -66,204 +213,48 @@ bitc: runpod: running heavy locally: daily cap $25.00: spent $24.80 + committed 
 ```
 
 The output is shortened and the job and pod ids are examples; the shape of both `bitc:` lines is
-real (see [docs/exit-codes.md](docs/exit-codes.md)). Complete files are in [examples/](examples/);
-a repository usually also needs a `[remote]` profile for setup steps. Offload is experimental:
-see Providers below.
+real ([docs/exit-codes.md](docs/exit-codes.md)). Both files pass `bitc config check`; a real
+repository usually also needs a `[remote]` profile for setup steps (complete files are in
+[examples/](examples/)). Run `bitc sweep` from a timer ([docs/sweep-timer.md](docs/sweep-timer.md))
+so a job that dies at the wrong moment does not leave a paid resource behind. The provider table
+(RunPod, SSH, exec plugins, and Sprites, which is refused in this release) is in
+[docs/providers.md](docs/providers.md).
 
-The other half is the shared-host story. Ten coding agents on one 16 GiB machine will each start a
-type checker, a browser suite and a database at the same moment, and the machine falls over. A pool
-with N slots turns that into a queue, with or without a provider:
+## How it works
 
-```console
-$ bitc run lint -- npm run lint        # holds the only slot of pool "lint" for the whole run
-$ bitc run --wait 1s lint -- echo hi   # from a second terminal, while the first still runs
-STARVED lint
-$ echo $?
-75
-$ bitc status
-lint: 1/1 slots held, 0 waiting
-  slot 1  d0b9172c  pid 2306089  since 2026-10-25T06:38:03Z  npm run lint
-  last STARVED: all slots busy at 2026-10-25T06:38:05.299Z
-memory: 12230 MiB available (MemAvailable), floor 6144 MiB
+`bitc run <pool> -- <command>` walks the pool's `providers` list in order (a pool with no list is
+just `local`). Simplified:
+
+```mermaid
+flowchart TD
+    start(["bitc run heavy -- cmd"]) --> next{"Next provider in<br/>the pool's list?"}
+    next -- "remote" --> eligible{"Allowed to go remote?<br/>host opted in, work tree granted,<br/>repo allows this argv"}
+    eligible -- "no" --> next
+    eligible -- "yes" --> budget{"Under the daily cap and<br/>live-job limit, provider healthy?"}
+    budget -- "no" --> next
+    budget -- "yes" --> launch["Launch the remote job"]
+    launch -- "failed before the job started" --> next
+    launch -- "started" --> remote["Runs remotely. Exit code is the command's;<br/>an infrastructure failure from here on is 75"]
+    next -- "local" --> slot{"Slot free (and memory floor met)<br/>within the pool's wait?"}
+    slot -- "yes" --> local["Runs here in the slot.<br/>Exit code is the command's"]
+    slot -- "no" --> starved["STARVED, exit 75: try again later"]
+    next -- "none left" --> none["No provider left:<br/>75 (cap, busy) or 69 (unavailable)"]
 ```
 
-## Why it exists
+Once a remote job has started it never falls back, so a half-started job never runs its load
+twice. Every rule is in [docs/spec.md](docs/spec.md) section 8.2.
 
-- **Spend-capped offload.** A daily cap per provider account, a live-job limit, a ledger and a
-  circuit breaker bound what remote jobs can cost. A job that has not started falls back to the
-  next provider and finally to `local`.
-- **Pluggable.** Built-in providers for RunPod, Sprites and SSH hosts, and an exec plugin protocol
-  for anything else.
-- **No daemon.** State is files and `flock(2)` locks. A caller that is killed releases everything
-  it held, and the next caller cleans up after it.
-- **Exit codes callers can act on.** 75 means wait and retry, 69 means stop and report, 64, 66, 78
-  and 124 are bitc's own (see the table below), and every other code is your command's. Agents get a small rule set ([docs/agent-guide.md](docs/agent-guide.md)).
-- **Admission, not just locking.** FIFO tickets, priority lanes, groups shared across pools and a
-  memory floor that holds a job back instead of letting the kernel kill something.
-- **Two config layers with a trust split.** The host file sets capacities, spend caps and
-  providers. A repository's `.bitc.toml` can only narrow those limits, never widen them.
+Two files configure bitc, and they are trusted differently:
 
-**Maturity, plainly:** the local gate is the mature part. Every remote provider is experimental;
-read the Providers and Status sections before pointing one at a real account.
-
-## Install
-
-bitc v0.1.0 is released: <https://github.com/Exploded-views/bitc/releases/tag/v0.1.0>. It runs on
-Linux (amd64 or arm64). The macOS builds (Apple silicon or Intel) run local pools only; see
-[macOS status](#macos-status) below.
-
-Each release publishes a tarball `bitc_0.1.0_<os>_<arch>.tar.gz` (`<os>` is `linux` or `darwin`,
-`<arch>` is `amd64` or `arm64`; it holds `bitc`, `LICENSE` and `README.md`), the bare binary
-`bitc_0.1.0_<os>_<arch>`, and `checksums.txt`. Download an asset and `checksums.txt` and verify the
-asset before use:
-
-```sh
-curl -LO https://github.com/Exploded-views/bitc/releases/download/v0.1.0/bitc_0.1.0_linux_amd64.tar.gz
-curl -LO https://github.com/Exploded-views/bitc/releases/download/v0.1.0/checksums.txt
-grep bitc_0.1.0_linux_amd64.tar.gz checksums.txt | sha256sum -c -
-tar -xzf bitc_0.1.0_linux_amd64.tar.gz bitc
-install -m 0755 bitc ~/.local/bin/bitc      # or any other directory on your PATH
-bitc version --json
+```mermaid
+flowchart LR
+    host["Host file<br/>~/.config/bitc/bitc.toml<br/>owned by the account"] -- "sets pools, slots, waits,<br/>memory floors, providers,<br/>spend caps, grants" --> eff(["Effective limits"])
+    repo["Repo file<br/>.bitc.toml<br/>owned by the project"] -- "can only narrow:<br/>env, hooks, refuse rules,<br/>what may go remote" --> eff
 ```
 
-`bitc version --json` prints one compact JSON line, for example
-`{"commit":"225a43a","config_schema":1,"release":true,"state_schema":1,"version":"0.1.0"}`.
-`release` is `true` only for release builds. Checksums are unsigned for now; signed checksums are
-planned after 1.0. [docs/RELEASING.md](docs/RELEASING.md) describes what a release contains.
-
-To build from source you need Go 1.26 or newer (CI tests 1.27.3):
-
-```sh
-go install github.com/Exploded-views/bitc/cmd/bitc@v0.1.0
-```
-
-A build made this way reports `"release":false`.
-
-### macOS status
-
-The v0.1.0 macOS builds are **local pools only**: `run`, `status`, `wait`, `logs` and `cancel` over
-`flock` pools, plus detached jobs, groups, priority lanes, nested holds, `doctor` and `config`.
-Memory floors (a pool's `memory` key) and any `[providers.*]` table are refused with exit 78.
-Tracked in:
-
-- [#3](https://github.com/Exploded-views/bitc/issues/3): macOS parity (umbrella);
-- [#4](https://github.com/Exploded-views/bitc/issues/4): macOS as a client to remote providers
-  (planned for v0.1.1);
-- [#5](https://github.com/Exploded-views/bitc/issues/5): macOS as a remote build target (design
-  first).
-
-Other differences on macOS:
-
-- remote providers (`ssh`, `runpod`, `sprites` and exec plugins, so `sweep` and
-  `doctor --remote` have nothing to manage);
-- the remote agent (`bitc __agent`) and the plugin exec shim: one `bitc: ... runs on Linux only`
-  line and exit 69;
-- the parent-death signal: on macOS a command outlives a bitc that was killed with SIGKILL;
-- the inotify wake-up: a waiting caller re-checks every `poll` (5s by default) instead;
-- the read-only lock view (`/proc/locks`): `status` probes a lock with a brief non-blocking
-  `flock`;
-- a detached job's log may have an empty line before its `__EXIT__` line.
-
-## Quickstart
-
-Write a host file with one pool, check it, run a command, then run a detached job. The block
-below is run by the test suite exactly as written.
-
-<!-- doc-test -->
-```sh
-mkdir -p ~/.config/bitc
-printf 'version = 1\n[pools.lint]\nslots = 1\n' > ~/.config/bitc/bitc.toml
-chmod 600 ~/.config/bitc/bitc.toml
-bitc config check
-bitc run lint -- echo hello
-bitc run lint -- sleep 1 & bitc run lint -- echo second; wait
-bitc status
-bitc run --detach --name demo lint -- sh -c 'echo hi'
-bitc wait demo
-```
-
-The pool `lint` has one slot, so two callers take turns: the second waits (up to the pool's `wait`,
-10 minutes by default) and, if it cannot start in time, exits 75 with a `STARVED lint` line on
-stderr. `bitc status` shows holders, waiters and spend. A detached job returns at once with
-`started demo pid <pid> log <path>`; `bitc wait demo` waits (by default at most 9 minutes per call,
-`detach.wait_timeout`, or `--timeout`) and
-prints `RESULT exit <code>` and the last lines of the log.
-
-Commands: `run`, `status`, `wait`, `logs`, `cancel`, `sweep`, `doctor`, `config` and `version`.
-`bitc` alone lists the commands; a bad flag prints that command's usage.
-
-## Configuration
-
-There are two files, and both must start with `version = 1`, use strict decoding (an unknown key
-is an error) and not be group- or world-writable.
-
-The **host file** (`~/.config/bitc/bitc.toml`, or `--config`, or `BITC_CONFIG`) belongs to the
-account:
-
-```toml
-version = 1
-
-[host]
-memory_floor = "6GiB"          # admission holds a job back below this much free memory
-
-[pools.lint]
-slots = 1
-
-[pools.heavy]
-slots = 1
-wait = "1h"
-memory = "8GiB"                # an admission reservation, not a limit on the command
-```
-
-The **repo file** (`.bitc.toml` at the top of a work tree) belongs to the project. It can add
-environment, hooks and refuse rules, and can only narrow what the host allows:
-
-```toml
-version = 1
-
-[pools.heavy]
-wait = "45m"                   # narrow only
-env = { NODE_OPTIONS = "--max-old-space-size=8192" }
-
-[pools.lint]
-refuse = [{ tool = "tsc", reason = "typecheck runs in heavy" }]
-```
-
-`bitc config check` validates both. Every key, its class (host, repo, narrow) and its default is in
-[docs/config-reference.md](docs/config-reference.md); worked examples are in
-[examples/config/](examples/config/), [examples/node-monorepo/](examples/node-monorepo/) and
-[examples/python-monorepo/](examples/python-monorepo/). Concepts (pools, groups, tickets, nested
-holds, providers) are in [docs/concepts.md](docs/concepts.md).
-
-## Providers
-
-A pool lists the providers it may use, in order, for example `providers = ["runpod", "local"]`.
-Remote providers are experimental and off by default in this release: the host file must opt in
-with `experimental_remote = true` under `[host]`, or any `[providers.<type>]` table (or a pool
-naming one) is a config error (exit 78; see [Known issues](#known-issues)). A repository file
-cannot set it and no environment variable does.
-
-```toml
-[host]
-experimental_remote = true
-```
-
-Remote jobs take no local slot, need the host to allow them, and share the same safety rails: a
-daily spend cap per provider account, a live-job limit, a ledger and a circuit breaker. Once a
-remote job has started it never falls back to another provider.
-
-| Provider | Where the job runs | State |
-| --- | --- | --- |
-| `local` | this machine, in a slot | stable, built in |
-| `runpod` | a RunPod pod created for the job and deleted afterwards | experimental: tested against a fake API and proven live on CPU pods earlier; a live re-proof of the v0.1.0 release path is pending |
-| `sprites` | a fresh microVM (Fly Sprite) for every job | jobs **refused in this release** (exit 78, even with `experimental_remote`), see [#6](https://github.com/Exploded-views/bitc/issues/6): its network policy does not restrict egress yet, and a job would receive the forwarded environment and the deploy key. With `experimental_remote`, `bitc sweep` still cleans up Sprites left by 0.1.0 (list, owner check, delete only) |
-| `ssh` | a Linux machine you own, over ssh | experimental: implemented and tested against fakes and, in maintainer-run tests, a real sshd. Host setup: [docs/ssh-host.md](docs/ssh-host.md) |
-| exec plugin | anything, through an executable `bitc-provider-<type>` pinned by path and sha256 | experimental: [docs/writing-a-provider.md](docs/writing-a-provider.md), [docs/provider-author-guide.md](docs/provider-author-guide.md) |
-
-Remote providers leave resources that cost money if a job dies at the wrong moment, so run
-`bitc sweep` every 15 minutes from a timer ([docs/sweep-timer.md](docs/sweep-timer.md)) and check
-setup with `bitc doctor --remote`. [docs/threat-model.md](docs/threat-model.md) says what bitc
-defends against and what it does not.
+A host-only key in a repo file is an error (exit 78). Both files start with `version = 1`, are
+decoded strictly and must not be group- or world-writable. More in
+[docs/concepts.md](docs/concepts.md) and [docs/configuration.md](docs/configuration.md).
 
 ## Exit codes
 
@@ -278,95 +269,84 @@ defends against and what it does not.
 | 124 | `bitc wait` only: the job is still running | call `wait` again |
 
 A command that itself exits 75 shows up as `RESULT exit 75` in `bitc wait`: read the first line,
-not only the code. Details and the stderr lines are in [docs/exit-codes.md](docs/exit-codes.md).
+not only the code. The stderr lines are in [docs/exit-codes.md](docs/exit-codes.md); the rules
+for agents are in [docs/agent-guide.md](docs/agent-guide.md).
 
-## Comparison with alternatives
+## Documentation
 
-| | bitc | `flock` | GNU `parallel` / `sem` | GitHub Actions concurrency |
-| --- | --- | --- | --- | --- |
-| Where it works | processes on one host (plus optional remote providers) | processes on one host | `parallel`: one invocation; `sem`: processes on one host | jobs in one CI system |
-| Counting semaphore (N slots) | yes | one lock per file; N needs N lock files | yes (`sem -j N`) | one running job per group |
-| FIFO order, priority lanes | yes | no ordering guarantee | `parallel` starts jobs in input order; `sem` does not guarantee FIFO; no priorities | at most one pending run per group (GitLab `resource_group` and Buildkite concurrency groups differ) |
-| Memory-aware admission | yes (`memory_floor`) | no | `--memfree` in `parallel` | no |
-| Distinct "busy, retry" exit code | 75 | configurable with `-E` | no | not applicable |
-| Per-slot environment | yes (`{slot}`, `BITC_SLOT`) | no | job slot number via `{%}` / `$PARALLEL_JOBSLOT` | no |
-| Repo-supplied rules under host limits | yes | no | no | no |
-| Remote execution with spend cap | optional providers | no | `parallel --sshlogin`, no cap | account-level spending limit, not per-pool |
-| Install | one static binary | in util-linux | Perl, GNU parallel | built in |
-
-When not to use bitc:
-
-- You need one lock around a short critical section in a script. `flock` is simpler and already
-  installed.
-- You are fanning a list of inputs out over cores in one command. Use `parallel` or `xargs -P`.
-- Your contention is between CI runs rather than processes on a machine. Use your CI system's
-  concurrency controls.
-- You need Windows as the gate host, or macOS with memory admission or remote providers. bitc
-  is Linux first; its macOS build runs local pools only.
-- You need a cluster scheduler with resource accounting across many machines. Use one.
-
-## FAQ
-
-**Is there a daemon or a server?** No. Everything is files and `flock(2)` locks under the state
-directory, which must be on a local file system (not NFS).
-
-**Does exit 75 mean my command failed?** No. It means the command did not get to run (or, for a
-remote job, that the infrastructure failed after it started; a remote job is not retried
-automatically). Run it again.
-
-**What happens when a caller is killed?** The kernel drops its locks. The next caller reaps the
-tickets and slots it left behind.
-
-**Can a repository raise its own limits?** No. A repo file can only narrow host limits; a host-only
-key in a repo file is an error (exit 78).
-
-**How does an agent wait for a job that outlasts its tool-call limit?** Start it with
-`bitc run --detach --name build ...` and call `bitc wait build` repeatedly; `wait` returns 124 until
-the job ends. See [docs/agent-guide.md](docs/agent-guide.md).
-
-**Does it enforce a memory limit on my command?** No. `memory` is an admission reservation.
-
-**Where is the full design?** [docs/spec.md](docs/spec.md). The machine-readable status format is
-[docs/status.schema.json](docs/status.schema.json).
+| Read | For |
+| --- | --- |
+| [docs/agent-guide.md](docs/agent-guide.md) | the rules an AI agent follows when it runs commands through bitc |
+| [docs/concepts.md](docs/concepts.md) | pools, slots, groups, tickets, nested holds, providers, state |
+| [docs/configuration.md](docs/configuration.md), [docs/config-reference.md](docs/config-reference.md) | the two config files, and every key with its class and default |
+| [docs/exit-codes.md](docs/exit-codes.md) | exit codes, stderr lines, `wait` outcomes, `result.json` |
+| [docs/providers.md](docs/providers.md) | remote providers, their state, and running them safely |
+| [docs/install.md](docs/install.md) | release assets, building from source, macOS status |
+| [docs/comparison.md](docs/comparison.md), [docs/faq.md](docs/faq.md) | bitc next to `flock`, GNU `parallel` and CI concurrency; common questions |
+| [docs/threat-model.md](docs/threat-model.md), [docs/spec.md](docs/spec.md) | what bitc defends against; the full design |
 
 ## Status and roadmap
 
-bitc v0.1.0 is released ([release notes](https://github.com/Exploded-views/bitc/releases/tag/v0.1.0)).
-It is pre-1.0, so interfaces may still change before 1.0.
+bitc is pre-1.0 ([v0.1.0 release notes](https://github.com/Exploded-views/bitc/releases/tag/v0.1.0)),
+so interfaces may still change before 1.0.
 
-- **Stable in intent:** the local gate (pools, slots, groups, priorities, memory admission, nested
-  holds, detached jobs, `status`, `sweep`, `doctor`), the exit codes and the config schema.
-- **Experimental:** every remote provider (see the table above), off by default behind
-  `[host] experimental_remote` (see [Known issues](#known-issues)). Sprites jobs
-  are refused in this release; `bitc sweep` still cleans up Sprites left by 0.1.0 (see [#6](https://github.com/Exploded-views/bitc/issues/6) and
-  [Known issues](#known-issues)). RunPod was proven live on CPU pods
-  earlier; a live re-proof of the v0.1.0 release path is pending. ssh is implemented but
-  experimental. The exec plugin protocol ([docs/plugin-protocol.md](docs/plugin-protocol.md)) may
-  also change.
-- **macOS:** local pools only in v0.1.0 (see [macOS status](#macos-status)).
+**Shipped in v0.1.0**
 
-Open issues that make up the roadmap:
+- The local gate, stable in intent: pools, slots, groups, priority lanes, memory admission,
+  nested holds, detached jobs, `status` (with `--json`), `sweep` and `doctor`, the exit codes and
+  the config schema.
+- Remote providers, experimental: `runpod` (proven live on CPU pods earlier; a live re-proof of
+  the v0.1.0 release path is pending), `ssh` and exec plugins (the
+  [plugin protocol](docs/plugin-protocol.md) may still change).
+- Release binaries for Linux and macOS (amd64, arm64) with sha256 checksums; macOS runs local
+  pools only.
 
-- [#3](https://github.com/Exploded-views/bitc/issues/3): macOS parity (umbrella)
-- [#4](https://github.com/Exploded-views/bitc/issues/4): macOS as a client to remote providers (planned v0.1.1)
-- [#5](https://github.com/Exploded-views/bitc/issues/5): macOS as a remote build target (design first)
-- [#6](https://github.com/Exploded-views/bitc/issues/6): Sprites catch-all egress deny
-- [#7](https://github.com/Exploded-views/bitc/issues/7): RunPod ordered data-centre walk, with a per-pool US-only option
-- [#8](https://github.com/Exploded-views/bitc/issues/8): RunPod fallback CPU types per size
-- [#9](https://github.com/Exploded-views/bitc/issues/9): the launch lock must exclude across implementations during a mixed rollout (spend-cap safety)
-- [#10](https://github.com/Exploded-views/bitc/issues/10): IO-pressure admission (`io_pressure_max`)
+**On `main`, in the next release** ([CHANGELOG](CHANGELOG.md#unreleased))
 
-Also planned: signed checksums and packages under the name `bitc`. The changelog is
-[CHANGELOG.md](CHANGELOG.md).
+- Remote providers off by default behind `[host] experimental_remote`.
+- Sprites jobs refused until its egress is restricted
+  ([#6](https://github.com/Exploded-views/bitc/issues/6)); `bitc sweep` still cleans up Sprites
+  left by 0.1.0.
+- The shipped repository example fixed, and history lines bounded to one atomic write.
+
+**Next** (open issues)
+
+- [#4](https://github.com/Exploded-views/bitc/issues/4): macOS as a client to remote providers
+  (planned for v0.1.1), part of [#3](https://github.com/Exploded-views/bitc/issues/3), macOS parity
+- [#9](https://github.com/Exploded-views/bitc/issues/9): the launch lock must exclude across
+  implementations during a mixed rollout (spend-cap safety)
+- [#6](https://github.com/Exploded-views/bitc/issues/6): Sprites network policy ends in a
+  catch-all deny, so its jobs can be enabled
+- [#7](https://github.com/Exploded-views/bitc/issues/7) and
+  [#8](https://github.com/Exploded-views/bitc/issues/8): RunPod ordered data-centre walk with a
+  per-pool US-only option, and fallback CPU types per size
+- [#10](https://github.com/Exploded-views/bitc/issues/10): IO-pressure admission
+  (`io_pressure_max`)
+
+**Later**
+
+- [#5](https://github.com/Exploded-views/bitc/issues/5): macOS as a remote build target (design
+  first).
+- Signed checksums after 1.0, and packages under the name `bitc`.
+- Volume caches for remote jobs (designed in [spec.md](docs/spec.md) section 16.1, not scheduled).
+- Provisioning compute for [crewkit](https://github.com/Exploded-views/crewkit). The direction is
+  `crewkit up --provider <p>`: crewkit composes the stack, bitc provisions the compute. This is a
+  direction, not a promise.
 
 ## Known issues
 
-- Remote providers are experimental and off by default (`experimental_remote`): their spend accounting is still being hardened. In 0.1.0 specifically: same-named concurrent jobs in one pool can collide, and some interrupted-create paths can leave a resource unpriced until its expiry. Local pools are not affected.
+- Remote providers are experimental and off by default (`experimental_remote`): their spend
+  accounting is still being hardened. In 0.1.0 specifically: same-named concurrent jobs in one
+  pool can collide, and some interrupted-create paths can leave a resource unpriced until its
+  expiry. Local pools are not affected.
 
   A host that ran remote jobs with an earlier version and has no flag gets one more line from
   every refused command: set the flag and run `bitc sweep` to clean up what is left. If you
   deleted a provider's table instead, `bitc doctor` and `bitc sweep` still point out its
   unfinished jobs.
+- The v0.1.0 release predates the `experimental_remote` switch: it rejects the key as unknown
+  (exit 78) and runs configured remote providers without it, Sprites included. Configure remote
+  providers on 0.1.0 only with the cautions above in mind.
 - Sprites jobs are refused in this release (exit 78, even with `experimental_remote`): its
   network policy does not restrict egress yet, and a job would receive the forwarded environment
   and the deploy key. Fix tracked in [#6](https://github.com/Exploded-views/bitc/issues/6). To
@@ -376,14 +356,27 @@ Also planned: signed checksums and packages under the name `bitc`. The changelog
 - In 0.1.0 the shipped example `examples/config/repo.bitc.toml` declares `min_version = "1.0.0"`,
   so a 0.1.0 build refuses it (exit 78); set it to `"0.1.0"`. Fixed in the next release.
 
+## Part of Exploded Views
+
+bitc is one of a small family of tools for running crews of AI coding agents:
+
+- [crewkit](https://github.com/Exploded-views/crewkit) is the front door: Claude Code plugins,
+  practices and an installer that installs pinned, checksum-verified releases of bitc and
+  claude-memsync.
+- [claude-utils](https://github.com/Exploded-views/claude-utils) ships claude-memsync, which syncs
+  Claude Code memory across machines through a private git repository. It is a fork of
+  [MarimerLLC/claude-utils](https://github.com/MarimerLLC/claude-utils) by Rockford Lhotka.
+- yo-human, a CLI that lets an agent reach its human through a notification channel, is in
+  design.
+
 ## Contributing
 
 Bug reports and feature requests go to
 [GitHub issues](https://github.com/Exploded-views/bitc/issues/new/choose) (use the issue
 templates). Pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md); it covers
 building, `make ci`, and the conformance register every behaviour must appear in. Please follow the
-[Code of Conduct](CODE_OF_CONDUCT.md) and report security problems through private vulnerability reporting as described in
-[SECURITY.md](SECURITY.md), never in a public issue.
+[Code of Conduct](CODE_OF_CONDUCT.md) and report security problems through private vulnerability
+reporting as described in [SECURITY.md](SECURITY.md), never in a public issue.
 
 ## License
 

@@ -28,6 +28,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Sprites left by 0.1.0, through a handle that can only list them, check their owner tag and
   delete this install's; the sweep timer keeps working.
 
+- The README is now a short landing page: what bitc is, install, a local-only quickstart whose
+  blocks the test suite runs, diagrams of how a run is placed and of the config trust split, exit
+  codes, status and roadmap. Reference material moved, unchanged in substance, to
+  [docs/install.md](docs/install.md) (release assets, macOS status),
+  [docs/providers.md](docs/providers.md), [docs/configuration.md](docs/configuration.md),
+  [docs/comparison.md](docs/comparison.md) and [docs/faq.md](docs/faq.md).
+
 ### Fixed
 
 - The shipped repository example (`examples/config/repo.bitc.toml`) declared
