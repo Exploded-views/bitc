@@ -135,11 +135,14 @@ func (h *SlotHost) lock(slots []int) (func(), error) {
 				unlock()
 				return nil, fmt.Errorf("slot %d mutex: %w", i, err)
 			}
-			time.Sleep(5 * time.Millisecond)
+			slotMutexRetry()
 		}
 	}
 	return unlock, nil
 }
+
+// slotMutexRetry waits between tries for a held slot mutex; a test seam.
+var slotMutexRetry = func() { time.Sleep(5 * time.Millisecond) }
 
 // clean is the teardown steps of C.5 step 8 against one slot, without freeing it.
 func (h *SlotHost) clean(i int) error {

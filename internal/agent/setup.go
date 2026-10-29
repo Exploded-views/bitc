@@ -342,16 +342,42 @@ func extractTar(r io.Reader, dest string) error {
 				return err
 			}
 		case tar.TypeSymlink:
-			if filepath.IsAbs(hdr.Linkname) || !within(dest, filepath.Join(filepath.Dir(target), hdr.Linkname)) {
+			if filepath.IsAbs(hdr.Linkname) || !leadingDotDots(hdr.Linkname) ||
+				!within(dest, filepath.Join(filepath.Dir(target), hdr.Linkname)) {
 				return fmt.Errorf("%w: %s -> %s leaves the tool dir", errUnsafeArchive, hdr.Name, hdr.Linkname)
 			}
-			_ = ensureTree(dest, filepath.Dir(target))
-			_ = os.Symlink(hdr.Linkname, target)
+			if err := ensureTree(dest, filepath.Dir(target)); err != nil {
+				return fmt.Errorf("%s: %w", hdr.Name, err)
+			}
+			if err := os.Symlink(hdr.Linkname, target); err != nil {
+				return fmt.Errorf("%s: %w", hdr.Name, err)
+			}
 		}
 	}
 }
 
 var errUnsafeArchive = errors.New("unsafe tool archive")
+
+// leadingDotDots reports whether every .. in a link target comes before its first name. A
+// leading .. climbs real dirs (the link's own dir has no link on its path), so the lexical
+// within check holds; a .. after a name could climb out of a link that is or later becomes
+// that name. This depends on noLinksOnPath running for every entry, symlinks included: no link
+// is ever created under another, and no real dir is replaced by one.
+func leadingDotDots(link string) bool {
+	named := false
+	for _, c := range strings.Split(link, "/") {
+		switch c {
+		case "", ".":
+		case "..":
+			if named {
+				return false
+			}
+		default:
+			named = true
+		}
+	}
+	return true
+}
 
 // within reports whether p is dest or below it.
 func within(dest, p string) bool {

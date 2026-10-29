@@ -7,7 +7,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.1.1] - UNRELEASED
+## [0.1.1] - 2026-10-29
 
 ### Changed
 
@@ -20,6 +20,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `doctor --remote`, the error adds a line: set the flag and run `bitc sweep` to clean up what an
   earlier version left. With no provider of that type configured, `bitc doctor` warns and
   `bitc sweep` prints the same hint.
+  What to do: a host that runs jobs on a remote provider adds `experimental_remote = true` under
+  `[host]` in the host file (a repository file cannot set it). A host that uses only the local pool
+  needs no change.
 - **Breaking:** Sprites jobs are refused in this release: with a `[providers.sprites]` table or a
   pool naming it, every command except `bitc sweep` and `bitc doctor --remote` exits 78
   (including `run`, `status`, `doctor`, `config`, `wait`, `logs` and `cancel`; `version` reads no
@@ -29,6 +32,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   deploy key file is read. With `experimental_remote`, `bitc sweep` and `bitc doctor --remote` still clean up
   Sprites left by 0.1.0, through a handle that can only list them, check their owner tag and
   delete this install's; the sweep timer keeps working.
+  What to do: move Sprites pools to `local` or another provider, and remove the
+  `[providers.sprites]` table and any pool naming it. To clean up Sprites a 0.1.0 install left
+  behind, keep the table for now, set `experimental_remote = true`, run `bitc sweep`, then remove
+  the table.
+- The README is now a short landing page: install, a local quickstart the test suite runs, how a run
+  is placed, exit codes, status and known issues. Install details, macOS status, providers,
+  configuration, a comparison with other tools and the FAQ moved to [docs/install.md](docs/install.md),
+  [docs/providers.md](docs/providers.md), [docs/configuration.md](docs/configuration.md),
+  [docs/comparison.md](docs/comparison.md) and [docs/faq.md](docs/faq.md).
 
 ### Fixed
 
@@ -39,10 +51,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The shipped repository example (`examples/config/repo.bitc.toml`) declared
   `min_version = "1.0.0"`, so a 0.1.0 release build refused it with exit 78; it now declares
   `"0.1.0"`, and every shipped example is checked against a release-stamped build.
-
 - History lines stay a single atomic write (at most 4 KiB after JSON escaping): a long reason, cwd,
   resource, and as a last resort pool, job, provider or sha, is cut at a character boundary and
   marked ` [truncated]`; argv is shortened as before and sets `argv_truncated`.
+- A tool archive's symlink can no longer resolve outside the tool dir by climbing through another
+  of the archive's links (`sub/s -> ..`, then `sub/u -> s/../..`): a `..` in a link target is
+  allowed only before its first name. Writes through links were already refused.
+- On an ssh host, the `check-host --doctor` probes (including the reachability-key probe) and the
+  job launcher no longer fall back to uid or gid 0 (root), or wrap to it, when an account's ids do
+  not parse: a bad id, root's, or one outside 1..4294967294 is an error.
 
 ## [0.1.0] - 2026-10-26
 

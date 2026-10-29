@@ -131,7 +131,7 @@ func (v *fakeVM) env() agent.HostEnv {
 			return nil, fmt.Errorf("unexpected command %s", name)
 		},
 		Owner: func(os.FileInfo) (int, int) { return 0, 0 },
-		OpenAs: func(uid, gid int, path string) error {
+		OpenAs: func(uid, gid uint32, path string) error {
 			if v.open[path] {
 				return nil
 			}

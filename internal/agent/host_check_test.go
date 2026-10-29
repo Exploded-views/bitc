@@ -137,7 +137,7 @@ func (h *fakeHost) env(doctor bool) HostEnv {
 			}
 			return 0, 0
 		},
-		OpenAs: func(uid, gid int, path string) error {
+		OpenAs: func(uid, gid uint32, path string) error {
 			if h.opened[path] {
 				return nil
 			}

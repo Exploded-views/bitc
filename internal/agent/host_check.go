@@ -54,7 +54,7 @@ type HostEnv struct {
 	// Owner returns the owning uid and gid of fi.
 	Owner func(fi os.FileInfo) (uid, gid int)
 	// OpenAs tries to open path read-only as uid:gid with no groups.
-	OpenAs func(uid, gid int, path string) error
+	OpenAs func(uid, gid uint32, path string) error
 	// NetProbe runs item 5's connects and DNS query as the first slot user, in a job network
 	// namespace when Conf.Netns, else in the VM's own.
 	NetProbe func(targets []string) (NetProbeResult, error)
@@ -81,7 +81,7 @@ const SSHDSnippetText = "Match User bitc\n    AuthenticationMethods publickey\n 
 var authKeyRE = regexp.MustCompile(`^restrict,command="/opt/bitc/sbin/bitc-login" ssh-ed25519 [A-Za-z0-9+/=]+( \S.*)?$`)
 
 type pwent struct {
-	uid, gid    int
+	uid, gid    uint32
 	home, shell string
 }
 
@@ -149,9 +149,8 @@ func (c *checker) loadPasswd() {
 		if len(f) < 7 {
 			continue
 		}
-		uid, e1 := strconv.Atoi(f[2])
-		gid, e2 := strconv.Atoi(f[3])
-		if e1 == nil && e2 == nil {
+		// an account with root or bad ids is left out, never opened as
+		if uid, gid, err := parseIDs(f[0], f[2], f[3]); err == nil {
 			c.pw[f[0]] = pwent{uid: uid, gid: gid, home: f[5], shell: f[6]}
 		}
 	}
@@ -673,7 +672,7 @@ func (c *checker) slotUIDs() ([]int, error) {
 		if !ok {
 			return nil, fmt.Errorf("%s is missing", u)
 		}
-		uids = append(uids, pe.uid)
+		uids = append(uids, int(pe.uid))
 	}
 	return uids, nil
 }
@@ -861,7 +860,7 @@ func (c *checker) cron() {
 	}
 	uids := map[int]string{}
 	for _, u := range c.slotUsers() {
-		uids[c.pw[u].uid] = u
+		uids[int(c.pw[u].uid)] = u
 	}
 	for _, d := range []string{"/var/spool/cron/atjobs", "/var/spool/at"} {
 		ents, _ := os.ReadDir(c.p(d))

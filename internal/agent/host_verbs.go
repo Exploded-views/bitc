@@ -12,7 +12,6 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"os/user"
 	"regexp"
 	"runtime"
 	"sort"
@@ -535,19 +534,17 @@ func slotJanitor(args []string) int {
 // ---- helpers of doctor (check-host --doctor)
 
 func slotCred(slot int) (*syscall.SysProcAttr, error) {
-	u, err := user.Lookup("bitc-s" + strconv.Itoa(slot))
+	uid, gid, err := lookupIDs("bitc-s" + strconv.Itoa(slot))
 	if err != nil {
 		return nil, err
 	}
-	uid, _ := strconv.Atoi(u.Uid)
-	gid, _ := strconv.Atoi(u.Gid)
-	return &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid), Groups: []uint32{}}}, nil
+	return &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: uid, Gid: gid, Groups: []uint32{}}}, nil
 }
 
-func openAs(uid, gid int, path string) error {
+func openAs(uid, gid uint32, path string) error {
 	c := exec.Command("/bin/sh", "-c", `: < "$1"`, "sh", path)
 	c.Dir, c.Env = "/", []string{"PATH=" + agentPath}
-	c.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid), Groups: []uint32{}}}
+	c.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: uid, Gid: gid, Groups: []uint32{}}}
 	return c.Run()
 }
 
@@ -575,16 +572,14 @@ func NewHostEnvFor(conf HostConf, doctor bool, self string) HostEnv {
 		NetProbe:     netProbe(conf, self),
 		SeccompProbe: seccompProbe(false, self),
 		LoginProbe: func() (int, error) {
-			u, err := user.Lookup("bitc")
+			uid, gid, err := lookupIDs("bitc")
 			if err != nil {
 				return 0, err
 			}
-			uid, _ := strconv.Atoi(u.Uid)
-			gid, _ := strconv.Atoi(u.Gid)
 			c := exec.Command("/bin/sh", "-c", "/opt/bitc/sbin/bitc-login")
 			c.Env = []string{"PATH=" + agentPath, "SSH_AUTH_SOCK=/nonexistent/agent.sock", "SSH_ORIGINAL_COMMAND=probe"}
 			c.Dir = "/"
-			c.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid), Groups: []uint32{}}}
+			c.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: uid, Gid: gid, Groups: []uint32{}}}
 			err = c.Run()
 			var ee *exec.ExitError
 			if errors.As(err, &ee) {
@@ -696,18 +691,16 @@ func appendMissing(l []string, more ...string) []string {
 func netProbe(conf HostConf, self string) func(targets []string) (NetProbeResult, error) {
 	return func(targets []string) (NetProbeResult, error) {
 		res := NetProbeResult{Connect: map[string]ConnResult{}}
-		u, err := user.Lookup("bitc-s1")
+		uid, gid, err := lookupIDs("bitc-s1")
 		if err != nil {
 			return res, err
 		}
-		uid, _ := strconv.Atoi(u.Uid)
-		gid, _ := strconv.Atoi(u.Gid)
 		targets = appendMissing(append([]string(nil), targets...), selfTargets(conf)...)
 		c := exec.Command(self, append([]string{"__agent", "probe-net"}, targets...)...)
 		c.Dir = "/"
 		c.Env = []string{"PATH=" + agentPath}
 		if conf.Netns {
-			ns, err := StartJobNS(JobNSConf{Slot: 0, Uid: uid, Gid: gid, Conf: conf, Self: self, Probe: true})
+			ns, err := StartJobNS(JobNSConf{Slot: 0, Uid: int(uid), Gid: int(gid), Conf: conf, Self: self, Probe: true})
 			if err != nil {
 				return res, err
 			}
@@ -716,7 +709,7 @@ func netProbe(conf HostConf, self string) func(targets []string) (NetProbeResult
 				return res, err
 			}
 		} else {
-			c.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid), Groups: []uint32{}}}
+			c.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: uid, Gid: gid, Groups: []uint32{}}}
 		}
 		out, err := c.Output()
 		if err != nil {

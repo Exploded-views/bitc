@@ -148,3 +148,105 @@ func pipeThrough(t *testing.T, in []byte, name string, args ...string) []byte {
 	}
 	return out
 }
+
+// A symlink may point at another of the archive's links: the in-tree check must follow them, not
+// clean the path lexically. sub/s -> .. is dest itself; sub/u -> s/../.. reads as dest when
+// cleaned, but resolves to dest's parent.
+func TestExtractTarRefusesAChainedLinkThatLeaves(t *testing.T) {
+	body := tarBytes(t, func(w *tar.Writer) {
+		_ = w.WriteHeader(&tar.Header{Name: "t/sub/", Typeflag: tar.TypeDir, Mode: 0o755})
+		_ = w.WriteHeader(&tar.Header{Name: "t/sub/s", Typeflag: tar.TypeSymlink, Linkname: ".."})
+		_ = w.WriteHeader(&tar.Header{Name: "t/sub/u", Typeflag: tar.TypeSymlink, Linkname: "s/../.."})
+	})
+	dest := filepath.Join(t.TempDir(), "tool")
+	if err := os.Mkdir(dest, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err := extractTar(bytes.NewReader(body), dest)
+	if !errors.Is(err, errUnsafeArchive) {
+		real, _ := filepath.EvalSymlinks(filepath.Join(dest, "sub", "u"))
+		t.Fatalf("got %v; sub/u resolves to %q, outside %q", err, real, dest)
+	}
+}
+
+// Links between the archive's own entries that stay inside still extract.
+func TestExtractTarKeepsChainedLinksThatStayInside(t *testing.T) {
+	body := tarBytes(t, func(w *tar.Writer) {
+		_ = w.WriteHeader(&tar.Header{Name: "t/lib/a/", Typeflag: tar.TypeDir, Mode: 0o755})
+		regTar(w, "t/lib/a/tool", 0o755)
+		_ = w.WriteHeader(&tar.Header{Name: "t/cur", Typeflag: tar.TypeSymlink, Linkname: "lib/a"})
+		_ = w.WriteHeader(&tar.Header{Name: "t/bin/tool", Typeflag: tar.TypeSymlink, Linkname: "../cur/tool"})
+	})
+	dest := filepath.Join(t.TempDir(), "tool")
+	if err := os.Mkdir(dest, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := extractTar(bytes.NewReader(body), dest); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(filepath.Join(dest, "bin", "tool")); err != nil || string(b) != "x" {
+		t.Fatalf("bin/tool: %q %v", b, err)
+	}
+}
+
+// A .. after a name could climb out of a link that a later entry puts at that name, so .. is
+// allowed only at the start of a link target.
+func TestExtractTarRefusesDotDotAfterAName(t *testing.T) {
+	for _, link := range []string{"a/../b", "../cur/../bin", "./x/.."} {
+		body := tarBytes(t, func(w *tar.Writer) {
+			_ = w.WriteHeader(&tar.Header{Name: "t/lib/l", Typeflag: tar.TypeSymlink, Linkname: link})
+		})
+		dest := filepath.Join(t.TempDir(), "tool")
+		if err := os.Mkdir(dest, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := extractTar(bytes.NewReader(body), dest); !errors.Is(err, errUnsafeArchive) {
+			t.Errorf("%s: got %v", link, err)
+		}
+	}
+}
+
+// A symlink entry that cannot be created fails the extract: a second entry at the same name
+// (EEXIST), an empty target, and a parent that is a file must not leave the archive half-extracted
+// without an error.
+func TestExtractTarFailsWhenASymlinkCannotBeCreated(t *testing.T) {
+	cases := map[string]func(w *tar.Writer){
+		"duplicate": func(w *tar.Writer) {
+			_ = w.WriteHeader(&tar.Header{Name: "t/l", Typeflag: tar.TypeSymlink, Linkname: "x"})
+			_ = w.WriteHeader(&tar.Header{Name: "t/l", Typeflag: tar.TypeSymlink, Linkname: "y"})
+		},
+		"empty target": func(w *tar.Writer) {
+			_ = w.WriteHeader(&tar.Header{Name: "t/l", Typeflag: tar.TypeSymlink})
+		},
+		"parent is a file": func(w *tar.Writer) {
+			regTar(w, "t/f", 0o644)
+			_ = w.WriteHeader(&tar.Header{Name: "t/f/l", Typeflag: tar.TypeSymlink, Linkname: "x"})
+		},
+	}
+	for name, add := range cases {
+		dest := filepath.Join(t.TempDir(), "tool")
+		if err := os.Mkdir(dest, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := extractTar(bytes.NewReader(tarBytes(t, add)), dest); err == nil {
+			t.Errorf("%s: extract reported success without creating the link", name)
+		}
+	}
+}
+
+// A link entry may not be created under an earlier link: a real dir never turns into a link, so a
+// leading .. in a link target always climbs real dirs.
+func TestExtractTarRefusesALinkCreatedUnderALink(t *testing.T) {
+	body := tarBytes(t, func(w *tar.Writer) {
+		_ = w.WriteHeader(&tar.Header{Name: "t/sub/", Typeflag: tar.TypeDir, Mode: 0o755})
+		_ = w.WriteHeader(&tar.Header{Name: "t/a", Typeflag: tar.TypeSymlink, Linkname: "sub"})
+		_ = w.WriteHeader(&tar.Header{Name: "t/a/b", Typeflag: tar.TypeSymlink, Linkname: "x"})
+	})
+	dest := filepath.Join(t.TempDir(), "tool")
+	if err := os.Mkdir(dest, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := extractTar(bytes.NewReader(body), dest); !errors.Is(err, errUnsafeArchive) {
+		t.Fatalf("got %v", err)
+	}
+}

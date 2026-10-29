@@ -50,7 +50,7 @@ func TestDJ3_CancelTerminates(t *testing.T) {
 	if r := h.Run("cancel", name); r.Code != 0 || !strings.HasPrefix(r.Stdout, "cancelled ") {
 		t.Fatalf("%+v", r)
 	}
-	if r := h.Run("wait", name, "--exit", "job", "--timeout", "60s"); r.Code != 143 {
+	if r := h.Run("wait", name, "--exit", "job", "--timeout", "6000s"); r.Code != 143 {
 		t.Fatalf("%+v", r)
 	}
 	// a cancel right after started, while the supervisor starts up, is interrupted, never lost
@@ -60,7 +60,8 @@ func TestDJ3_CancelTerminates(t *testing.T) {
 	}
 	// --timeout: on a loaded host a race-built supervisor can take more than the scaled default
 	// wait to start up and see the cancel; the assertion is about the outcome, not the speed.
-	if r := h.Run("wait", early, "--exit", "job", "--timeout", "60s"); r.Code != 143 || !strings.HasPrefix(r.Stdout, "RESULT exit 143\n") {
+	// time_scale 0.01 scales --timeout too: 6000s is 60s.
+	if r := h.Run("wait", early, "--exit", "job", "--timeout", "6000s"); r.Code != 143 || !strings.HasPrefix(r.Stdout, "RESULT exit 143\n") {
 		t.Fatalf("startup cancel: %+v", r)
 	}
 	if r := h.Run("cancel", "nope"); r.Code != 66 {

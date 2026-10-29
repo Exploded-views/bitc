@@ -585,6 +585,7 @@ rows = [
   { id = "WF3", task = "3.3", ported = "TestWF3_UsesPinnedToAFullCommitSHA", desc = "every uses: (steps and reusable workflows) is pinned to a full 40-hex commit SHA; a tag, branch or short SHA fails; local ./ actions are fine; a docker:// image needs an @sha256 digest" },
   { id = "WF4", task = "3.3", ported = "TestWF4_FindingsNameFileAndLine", desc = "each workflow lint finding is reported as file:line: message" },
   { id = "WF5", task = "3.3", ported = "TestWF5_TheRepoWorkflowsPass", desc = "the lint scans .github/workflows/*.yml and *.yaml, an empty directory is an error, and this repo's workflows (privileged.yml included) pass" },
+  { id = "WF6", task = "3.3", ported = "TestWF6_CIRunsTheSecretScanOnEveryPushAndPullRequest", desc = "ci.yml runs on every push to main and every pull request (no path filter) and has a secrets job: full history (fetch-depth 0), no persisted credentials, contents: read, gitleaks installed at the version make tools pins, then make secrets (gitleaks over the whole history with the committed .gitleaks.toml; counts and rule/file/commit only)" },
 
   # PUB: contributing and gitleaks (bitc-only)
   { id = "PUB1", task = "3.3", ported = "TestPUB1_ContributorFilesExist", desc = "the contributor files exist: CONTRIBUTING (build, register rule, secrets), SECURITY, two issue forms, a pull request template" },

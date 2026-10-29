@@ -95,6 +95,16 @@ func TestRN7_TTYHoldReapsOnlyTheCommandTree(t *testing.T) {
 	h.Track(cmd.Process.Pid)
 	h.Until(func() bool { b, _ := os.ReadFile(pids); return len(strings.TrimSpace(string(b))) > 0 }, 10*time.Second)
 	leader := h.Atoi(string(must(os.ReadFile(pids))))
+	// bitc records the leader in the ticket after the command starts: kill it only once it has
+	h.Until(func() bool {
+		for _, n := range tickets(h, "lint") {
+			b, _ := os.ReadFile(filepath.Join(h.State, "pools", "lint", "tickets", n))
+			if strings.Contains(string(b), fmt.Sprintf(`"leader":%d`, leader)) {
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second)
 	sib := exec.Command("sleep", "60") // joins the caller's group after the command started
 	sib.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pgid: cmd.Process.Pid}
 	if err := sib.Start(); err != nil {

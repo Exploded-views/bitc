@@ -47,12 +47,28 @@ func (RealSlotSys) UID(slot int) (int, int, error) {
 	if err != nil {
 		return 0, 0, err
 	}
-	uid, e1 := strconv.Atoi(u.Uid)
-	gid, e2 := strconv.Atoi(u.Gid)
-	if e1 != nil || e2 != nil {
-		return 0, 0, fmt.Errorf("bitc-s%d: bad ids %s:%s", slot, u.Uid, u.Gid)
+	uid, gid, err := parseIDs(u.Username, u.Uid, u.Gid)
+	return int(uid), int(gid), err
+}
+
+// lookupIDs is the uid and gid of the account name, through parseIDs.
+func lookupIDs(name string) (uint32, uint32, error) {
+	u, err := user.Lookup(name)
+	if err != nil {
+		return 0, 0, err
 	}
-	return uid, gid, nil
+	return parseIDs(name, u.Uid, u.Gid)
+}
+
+// parseIDs parses an unprivileged account's ids: decimal, 1 to 4294967294 (0 is root, and
+// 4294967295 is (uid_t)-1, "no change"). A bad id is an error, never a fallback to 0.
+func parseIDs(name, uid, gid string) (uint32, uint32, error) {
+	u, e1 := strconv.ParseUint(uid, 10, 32)
+	g, e2 := strconv.ParseUint(gid, 10, 32)
+	if e1 != nil || e2 != nil || u == 0 || g == 0 || u == 1<<32-1 || g == 1<<32-1 {
+		return 0, 0, fmt.Errorf("%s: bad ids %q:%q", name, uid, gid)
+	}
+	return uint32(u), uint32(g), nil
 }
 
 // procUIDs returns the pids with uid as real, effective, saved or fs uid (zombies excluded).

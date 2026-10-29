@@ -398,29 +398,41 @@ func holderMounts(slot int, tools, resolvSrc string, probe bool) error {
 
 // ---- job-exec: the last root step before the job
 
-func jobExec(args []string) int {
-	var uid, gid int
-	var cgroup, cwd, prog string
-	i := 0
-	for ; i < len(args) && args[i] != "--"; i += 2 {
-		if i+1 >= len(args) {
-			return 64
+// parseJobExec parses job-exec's arguments; ok is false for a malformed or unprivileged request.
+func parseJobExec(args []string) (uid, gid uint32, cgroup, cwd, prog string, argv []string, ok bool) {
+	var uidArg, gidArg string
+	// Consume option/value pairs up to the "--" separator; everything after it is the job's argv.
+	rest := args
+	for len(rest) > 0 && rest[0] != "--" {
+		if len(rest) < 2 {
+			return 0, 0, "", "", "", nil, false
 		}
-		switch args[i] {
+		k, v := rest[0], rest[1]
+		rest = rest[2:]
+		switch k {
 		case "--uid":
-			uid, _ = strconv.Atoi(args[i+1])
+			uidArg = v
 		case "--gid":
-			gid, _ = strconv.Atoi(args[i+1])
+			gidArg = v
 		case "--cgroup":
-			cgroup = args[i+1]
+			cgroup = v
 		case "--cwd":
-			cwd = args[i+1]
+			cwd = v
 		case "--prog":
-			prog = args[i+1]
+			prog = v
 		}
 	}
-	argv := args[min(i+1, len(args)):]
-	if uid < 1 || gid < 1 || prog == "" || len(argv) == 0 {
+	if len(rest) > 0 {
+		rest = rest[1:] // the "--"
+	}
+	argv = rest
+	uid, gid, err := parseIDs("job-exec", uidArg, gidArg)
+	return uid, gid, cgroup, cwd, prog, argv, err == nil && prog != "" && len(argv) > 0
+}
+
+func jobExec(args []string) int {
+	uid, gid, cgroup, cwd, prog, argv, ok := parseJobExec(args)
+	if !ok {
 		fmt.Fprintln(os.Stderr, "bitc agent: job-exec: bad arguments")
 		return 64
 	}
@@ -466,10 +478,10 @@ func jobExec(args []string) int {
 	if err := syscall.Setgroups([]int{}); err != nil {
 		return die("setgroups", err)
 	}
-	if err := syscall.Setgid(gid); err != nil {
+	if err := syscall.Setgid(int(gid)); err != nil {
 		return die("setgid", err)
 	}
-	if err := syscall.Setuid(uid); err != nil {
+	if err := syscall.Setuid(int(uid)); err != nil {
 		return die("setuid", err)
 	}
 	err := syscall.Exec(prog, argv, env)

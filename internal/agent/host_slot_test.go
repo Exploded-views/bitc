@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -262,5 +263,38 @@ func TestSlotMutexSerialisesPrepares(t *testing.T) {
 	}
 	if won != 1 {
 		t.Errorf("%d prepares won the one slot, want 1", won)
+	}
+}
+
+// A slot mutex someone else holds is retried until it is free, not refused: the test holds it
+// first and drops it on the first retry, so the retry path runs every time
+// (TestSlotMutexSerialisesPrepares reaches it only when its goroutines happen to collide).
+func TestSlotMutexWaitsForAHeldLock(t *testing.T) {
+	h, _, _ := newSlotHost(t, 1)
+	if err := os.MkdirAll(h.slotDir(1), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(filepath.Join(h.slotDir(1), "lock"), os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		t.Fatal(err)
+	}
+	retries := 0
+	old := slotMutexRetry
+	t.Cleanup(func() { slotMutexRetry = old })
+	slotMutexRetry = func() {
+		if retries++; retries == 1 {
+			f.Close() // drops the flock: the next try takes it
+		}
+	}
+	unlock, err := h.lock([]int{1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+	if retries != 1 {
+		t.Fatalf("%d retries, want 1", retries)
 	}
 }

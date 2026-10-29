@@ -45,6 +45,29 @@ jobs:
       - name: darwin/amd64 cross-build
         run: env CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -o /dev/null ./cmd/bitc
 
+  # Secret scan on every push and pull request: gitleaks over the whole history with the
+  # committed .gitleaks.toml (make secrets prints counts and rule/file/commit only, never a match).
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.3"
+          cache: false
+      - name: install gitleaks
+        run: |
+          go install github.com/zricethezav/gitleaks/v8@v8.30.1
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: make secrets
+        run: make secrets
+
   # The macOS client on a GitHub-hosted runner: build it, run the darwin-only unit tests, then a
   # one-slot local pool runs `true` and status reads it back (README: Linux-only features).
   macos-smoke:

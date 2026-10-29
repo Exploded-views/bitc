@@ -1,6 +1,7 @@
 package conformance
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -138,4 +139,137 @@ func TestWF5_TheRepoWorkflowsPass(t *testing.T) {
 	for _, x := range f {
 		t.Error(x)
 	}
+}
+
+// WF6: every push and pull request runs the secret scan (make secrets: gitleaks over the whole
+// history with the committed .gitleaks.toml) in its own job, with the full history, no persisted
+// credentials and gitleaks pinned to the version `make tools` installs.
+func TestWF6_CIRunsTheSecretScanOnEveryPushAndPullRequest(t *testing.T) {
+	ci := string(must(os.ReadFile("../.github/workflows/ci.yml")))
+	mk := string(must(os.ReadFile("../Makefile")))
+	for _, f := range secretsJobFindings(ci, mk) {
+		t.Error(f)
+	}
+	// each way to keep the job while defeating it is a finding
+	for _, m := range []struct{ name, old, new string }{
+		{"continue-on-error on the job", "\n  secrets:\n    runs-on: ubuntu-latest\n", "\n  secrets:\n    runs-on: ubuntu-latest\n    continue-on-error: true\n"},
+		{"a scan that cannot fail", "\n        run: make secrets\n", "\n        run: make secrets || true\n"},
+		{"a skipped step", "\n      - name: make secrets\n", "\n      - name: make secrets\n        if: false\n"},
+		{"a job that skips pull requests", "\n  secrets:\n    runs-on: ubuntu-latest\n", "\n  secrets:\n    runs-on: ubuntu-latest\n    if: github.event_name == 'push'\n"},
+		{"write permission behind a comment", "\n    permissions:\n      contents: read\n    steps:\n", "\n    permissions:\n      contents: write # not contents: read\n    steps:\n"},
+		{"a workflow env that changes make", "\nenv:\n  GOTOOLCHAIN: local\n", "\nenv:\n  GOTOOLCHAIN: local\n  MAKEFLAGS: -i\n"},
+		{"a workflow env that changes gitleaks", "\nenv:\n  GOTOOLCHAIN: local\n", "\nenv:\n  GOTOOLCHAIN: local\n  GITLEAKS_CONFIG: /dev/null\n"},
+		{"a workflow env that changes the toolchain", "\nenv:\n  GOTOOLCHAIN: local\n", "\nenv:\n  GOTOOLCHAIN: auto\n"},
+		{"workflow defaults", "\nenv:\n  GOTOOLCHAIN: local\n", "\ndefaults:\n  run:\n    shell: bash {0}\n\nenv:\n  GOTOOLCHAIN: local\n"},
+		{"a step shell", "\n      - name: make secrets\n", "\n      - name: make secrets\n        shell: true {0}\n"},
+		{"a job env", "\n    timeout-minutes: 15\n    permissions:", "\n    timeout-minutes: 15\n    env:\n      MAKEFLAGS: -i\n    permissions:"},
+		{"job defaults", "\n    timeout-minutes: 15\n    permissions:", "\n    timeout-minutes: 15\n    defaults:\n      run:\n        working-directory: scripts\n    permissions:"},
+		{"job defaults with a shell", "\n    timeout-minutes: 15\n    permissions:", "\n    timeout-minutes: 15\n    defaults:\n      run:\n        shell: bash {0}\n    permissions:"},
+		{"a step env", "\n      - name: make secrets\n", "\n      - name: make secrets\n        env:\n          MAKEFLAGS: -i\n"},
+		{"an inline job env", "\n    timeout-minutes: 15\n    permissions:", "\n    timeout-minutes: 15\n    env: {MAKEFLAGS: -i}\n    permissions:"},
+		{"an inline step env", "\n      - name: make secrets\n", "\n      - name: make secrets\n        env: {MAKEFLAGS: -i}\n"},
+		{"inline job defaults", "\n    timeout-minutes: 15\n    permissions:", "\n    timeout-minutes: 15\n    defaults: {run: {working-directory: scripts}}\n    permissions:"},
+		{"a cached setup-go", "\n          cache: false\n      - name: install gitleaks\n", "\n          cache: true\n      - name: install gitleaks\n"},
+	} {
+		bad := strings.Replace(ci, m.old, m.new, 1)
+		if bad == ci {
+			t.Fatalf("%s: the mutation does not apply to ci.yml", m.name)
+		}
+		if len(secretsJobFindings(bad, mk)) == 0 {
+			t.Errorf("%s: passed", m.name)
+		}
+	}
+	// setup-go's cache input defaults to true, so leaving it out still caches: cache: false is required
+	omitted := strings.Replace(ci, "\n          cache: false\n      - name: install gitleaks\n", "\n      - name: install gitleaks\n", 1)
+	if len(secretsJobFindings(omitted, mk)) == 0 {
+		t.Error("a setup-go step without cache: false: passed")
+	}
+}
+
+// secretsJobFindings checks ci.yml's triggers and its secrets job. There is no YAML parser here, so
+// the job is read line by line with comments dropped: what must be there is an exact line, and no
+// if:, continue-on-error, shell:, env:, defaults: or || may appear anywhere in the job, since each
+// keeps the job but defeats it. setup-go must say cache: false (its default is true). The workflow
+// level may set only env GOTOOLCHAIN: local (anything else can change what make or gitleaks does)
+// and no defaults:.
+func secretsJobFindings(ci, mk string) []string {
+	var f []string
+	on := ci[:strings.Index(ci, "\njobs:")]
+	if !strings.Contains(on, "push:") || !strings.Contains(on, "pull_request:") || strings.Contains(on, "paths:") {
+		f = append(f, "ci.yml does not run on every push to main and every pull request")
+	}
+	var top []string // the workflow-level env block's keys, comments dropped
+	inEnv := false
+	for _, l := range strings.Split(on, "\n") {
+		if k := strings.Index(l, " #"); k >= 0 {
+			l = l[:k]
+		}
+		switch {
+		case strings.HasPrefix(l, "defaults:"):
+			f = append(f, "ci.yml sets workflow-level defaults:")
+		case l == "env:":
+			inEnv = true
+		case strings.TrimSpace(l) == "":
+		case strings.HasPrefix(l, " ") && inEnv:
+			top = append(top, strings.TrimSpace(l))
+		default:
+			inEnv = false
+		}
+	}
+	if len(top) != 1 || top[0] != "GOTOOLCHAIN: local" {
+		f = append(f, fmt.Sprintf("ci.yml's workflow env is %q, not exactly GOTOOLCHAIN: local", top))
+	}
+	i := strings.Index(ci, "\n  secrets:\n")
+	if i < 0 {
+		return append(f, "ci.yml has no secrets job")
+	}
+	job := ci[i+1:]
+	if j := regexp.MustCompile(`\n  [a-z][a-z-]*:\n`).FindStringIndex(job[1:]); j != nil {
+		job = job[:j[0]+1]
+	}
+	type line struct {
+		indent int
+		text   string // trimmed, without a comment or a list dash
+	}
+	var lines []line
+	for _, l := range strings.Split(job, "\n") {
+		if k := strings.Index(l, " #"); k >= 0 {
+			l = l[:k]
+		}
+		x := strings.TrimSpace(l)
+		if x == "" {
+			continue
+		}
+		lines = append(lines, line{len(l) - len(strings.TrimLeft(l, " ")), strings.TrimSpace(strings.TrimPrefix(x, "- "))})
+	}
+	has := map[string]bool{}
+	for _, l := range lines {
+		has[l.text] = true
+		if strings.HasPrefix(l.text, "if:") || strings.HasPrefix(l.text, "continue-on-error:") || strings.HasPrefix(l.text, "shell:") || strings.HasPrefix(l.text, "env:") || strings.HasPrefix(l.text, "defaults:") || strings.Contains(l.text, "||") {
+			f = append(f, "the secrets job can be skipped or cannot fail: "+l.text)
+		}
+	}
+	pin := regexp.MustCompile(`github\.com/zricethezav/gitleaks/v8@v[0-9.]+`).FindString(mk)
+	for _, want := range []string{"fetch-depth: 0", "persist-credentials: false", "cache: false", "run: make secrets", "go install " + pin} {
+		if pin == "" || !has[want] {
+			f = append(f, "the secrets job lacks the line "+want)
+		}
+	}
+	// the job's permissions block is exactly contents: read
+	var perms []string
+	for k, l := range lines {
+		if l.indent == 4 && l.text == "permissions:" {
+			for _, p := range lines[k+1:] {
+				if p.indent <= 4 {
+					break
+				}
+				perms = append(perms, p.text)
+			}
+			break
+		}
+	}
+	if len(perms) != 1 || perms[0] != "contents: read" {
+		f = append(f, fmt.Sprintf("the secrets job's permissions are %q, not exactly contents: read", perms))
+	}
+	return f
 }

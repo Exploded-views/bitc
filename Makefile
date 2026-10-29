@@ -70,8 +70,9 @@ fuzz:
 	  done; \
 	done
 
-# Whole-history secret scan (gitleaks; a maintainer step, not part of ci). Prints counts and
-# rule/file/commit only, never a match. GITLEAKS_EXTRA is an optional extra config file.
+# Whole-history secret scan (gitleaks; not part of `make ci`: the secrets job in ci.yml runs it on
+# every push and pull request). Prints counts and rule/file/commit only, never a match.
+# GITLEAKS_EXTRA is an optional extra config file.
 secrets:
 	sh scripts/secrets.sh
 
