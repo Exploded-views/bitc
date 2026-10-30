@@ -51,3 +51,7 @@ current work tree). Every key, its class (host, repo, narrow) and its default is
 [examples/config/](../examples/config/), [examples/node-monorepo/](../examples/node-monorepo/) and
 [examples/python-monorepo/](../examples/python-monorepo/). Concepts (pools, groups, tickets, nested
 holds, providers) are in [concepts.md](concepts.md).
+
+A wrapper that needs to know whether bitc is usable should run `bitc config check`, not
+`bitc version` (which reads no config). Exit 0 means a usable config; 78 means config errors.
+From 0.1.2 on it also checks the state directory's permissions (a planned fix).

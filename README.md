@@ -59,7 +59,7 @@ Download a release binary and check it against `checksums.txt`
 1.26 or newer:
 
 ```sh
-go install github.com/Exploded-views/bitc/cmd/bitc@v0.1.0
+go install github.com/Exploded-views/bitc/cmd/bitc@v0.1.1
 ```
 
 ## Quickstart (local, about two minutes)
@@ -149,7 +149,7 @@ agents at [the agent guide](docs/agent-guide.md).
 
 > [!WARNING]
 > Remote providers are experimental and off by default, and their spend accounting is still
-> being hardened. The `experimental_remote` switch below is new in the next release; v0.1.0
+> being hardened. The `experimental_remote` switch below is new in 0.1.1; v0.1.0
 > rejects it as an unknown key. See [Known issues](#known-issues).
 
 A pool can list providers in order of preference. The host file says which providers a pool may
@@ -273,7 +273,7 @@ for agents are in [docs/agent-guide.md](docs/agent-guide.md).
 
 ## Status and roadmap
 
-bitc is pre-1.0 ([v0.1.0 release notes](https://github.com/Exploded-views/bitc/releases/tag/v0.1.0)),
+bitc is pre-1.0 ([v0.1.1 release notes](https://github.com/Exploded-views/bitc/releases/tag/v0.1.1)),
 so interfaces may still change.
 
 - **Stable in intent:** the local gate (pools, slots, groups, priority lanes, memory admission,
@@ -321,6 +321,8 @@ jobs ([spec.md](docs/spec.md) section 16.1, not scheduled).
   working): it only lists Sprites, checks their owner tag and deletes this install's.
 - In 0.1.0 the shipped example `examples/config/repo.bitc.toml` declares `min_version = "1.0.0"`,
   so a 0.1.0 build refuses it (exit 78); set it to `"0.1.0"`. Fixed in 0.1.1.
+- `bitc cancel` right after `bitc run --detach` can report success while the job keeps running to
+  completion. Check with `bitc status` and cancel again; a fix is planned for 0.1.2.
 
 ## Sibling projects
 

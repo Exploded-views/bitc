@@ -16,9 +16,9 @@ cannot set it and no environment variable does.
 experimental_remote = true
 ```
 
-The switch is new on `main` and ships in the next release. The v0.1.0 release does not know the
-key (an unknown key is exit 78) and accepts provider tables without it; the cautions in
-[Known issues](../README.md#known-issues) apply to it all the same.
+The switch exists from 0.1.1. The v0.1.0 release rejects it as an unknown key (exit 78) and
+accepts provider tables without it; the cautions in [Known issues](../README.md#known-issues)
+apply to it all the same.
 
 ## What every remote provider shares
 
@@ -33,7 +33,7 @@ infrastructure failure after that point is exit 75.
 | Provider | Where the job runs | State |
 | --- | --- | --- |
 | `local` | this machine, in a slot | stable, built in |
-| `runpod` | a RunPod pod created for the job and deleted afterwards | experimental: tested against a fake API and proven live on CPU pods earlier; a live re-proof of the v0.1.0 release path is pending |
+| `runpod` | a RunPod pod created for the job and deleted afterwards | experimental: tested against a fake API and proven live on CPU pods earlier; a live re-proof of the release path is pending |
 | `sprites` | a fresh microVM (Fly Sprite) for every job | jobs **refused in this release** (exit 78, even with `experimental_remote`), see [#6](https://github.com/Exploded-views/bitc/issues/6): its network policy does not restrict egress yet, and a job would receive the forwarded environment and the deploy key. With `experimental_remote`, `bitc sweep` still cleans up Sprites left by 0.1.0 (list, owner check, delete only) |
 | `ssh` | a Linux machine you own, over ssh | experimental: implemented and tested against fakes and, in maintainer-run tests, a real sshd. Host setup: [ssh-host.md](ssh-host.md) |
 | exec plugin | anything, through an executable `bitc-provider-<type>` pinned by path and sha256 | experimental: [writing-a-provider.md](writing-a-provider.md), [provider-author-guide.md](provider-author-guide.md), [plugin-protocol.md](plugin-protocol.md) |

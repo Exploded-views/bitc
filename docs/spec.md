@@ -1424,6 +1424,10 @@ stem>" }`) makes the two pools exclude each other while callers move one at a ti
   resources are counted (8.3), never destroyed. bitc also takes `<legacy_dir>/locks/runpod-launch.lock`
   (after its own, within `launch_wait`) and appends `<pid> <name> <usd> <expiry>` to
   `<legacy_dir>/runpod-reservations` for each job, removed at its end, so legacy launches count it.
+  If the launch lock is not acquired in time, the launch is refused with exit 75 (temp-fail):
+  nothing is created, no reservation is written and the slot is released. Releases up to and
+  including 0.1.1 still launch without it; the fix is tracked as
+  [public issue #9](https://github.com/Exploded-views/bitc/issues/9).
 - Jobs a legacy launcher started before the shim switch have no record: the `wait` shim passes
   `--log <their log>` (3.2).
 
@@ -1464,8 +1468,8 @@ Each is a `changed` row in `behaviours.toml`; they are listed in 15.
 deps `go-toml/v2`, `x/sys/unix`, `mvdan.cc/sh/v3/syntax`; Go ≥ 1.26. GoReleaser on tag: linux
 amd64/arm64 tarballs and the bare `bitc_<ver>_linux_<arch>` binaries (what the agent `release` source downloads), sha256 `checksums.txt` listing both (unsigned until after v1, 16.2), `release=true` stamp.
 License MIT (`LICENSE`). Install:
-`go install github.com/Exploded-views/bitc/cmd/bitc@latest` (Homebrew and npm later, as
-`bitc`). SemVer; the public API is the exit codes, stderr lines, config schema and `status --json`.
+`go install github.com/Exploded-views/bitc/cmd/bitc@<tag>` (the current tag is in
+[install.md](install.md)); Homebrew and npm later, as `bitc`. SemVer; the public API is the exit codes, stderr lines, config schema and `status --json`.
 
 ## 14. Milestones
 
@@ -1488,8 +1492,10 @@ when" are behaviour-ID families in `conformance/behaviours.toml`.
 | 1.9 | `status`, local `sweep`, `doctor`, `version` | 1.7 | Z rows; status schema test |
 | 1.10 | Compat mode (12) | 1.3, 1.7 | no double admission either way against a fake legacy lock dir; legacy holds `db.1` → bitc takes slot 2 and gets port base+2; nested legacy call does not starve; `wait --log` on a legacy log |
 
-M1 exit: a maintainer's host runs a week in compat mode with no STARVED regressions. Its host file may
-keep `[providers.runpod]` (an M1 stub, ineligible); the legacy RunPod path stays on meanwhile.
+M1 exit: a maintainer's host runs a week in compat mode with no STARVED regressions. In a local-only
+phase its host file keeps no `[providers.*]` table: since 0.1.1 such a table without
+`[host] experimental_remote = true` is a config error (every command exits 78). If a stub is
+kept, set `experimental_remote = true`. The legacy RunPod path stays on meanwhile.
 Callers that branch on the legacy `wait` exit codes are
 updated before any shim switch (that work lives with the migrating project, not here).
 
