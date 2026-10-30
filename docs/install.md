@@ -54,7 +54,7 @@ Tracked in:
 
 - [#3](https://github.com/Exploded-views/bitc/issues/3): macOS parity (umbrella);
 - [#4](https://github.com/Exploded-views/bitc/issues/4): macOS as a client to remote providers
-  (planned for 0.1.2);
+  (planned for 0.1.3);
 - [#5](https://github.com/Exploded-views/bitc/issues/5): macOS as a remote build target (design
   first).
 

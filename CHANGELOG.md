@@ -7,6 +7,40 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-30
+
+### Changed
+
+- **Breaking:** a host file named by `--config` or `BITC_CONFIG` must now exist. If it does not,
+  every command that reads the config (all but `bitc version`) exits 78 with
+  `host file <path> (from --config|BITC_CONFIG) does not exist`, where before it ran silently with
+  no host config. A missing default host file (`$XDG_CONFIG_HOME/bitc/bitc.toml`) is still fine:
+  built-in defaults apply.
+
+### Fixed
+
+- `bitc cancel` right after `bitc run --detach` no longer signals a supervisor that is still
+  starting up. A cancel of a queued job is recorded in `status.json`, and the supervisor reads it as
+  it starts and ends the job 128+N without running the command. The 5 s start-up wait is gone.
+  `cancel` exits 69 when it cannot read or lock `status.json`, keeps a `--kill` request, and reports
+  a job whose supervisor never started as ended.
+- A cancel signal (`bitc cancel`, or INT, TERM or HUP to a foreground `bitc run`) that arrived in the
+  instant before the command started could be lost, and the command then ran to completion. The
+  run now ends 128+N.
+- `bitc config check` now runs the state dir's checks, so it exits 78 on an existing state dir
+  that is group- or world-accessible, not yours, on a network filesystem, a regular file, or
+  has an unreadable, unparsable or newer SCHEMA. It also refuses a state dir that is a
+  dangling symlink, or missing under one. That is the same exit (78) `status` and `run` give;
+  before, `config check` passed and the next command failed. A state dir that does not exist
+  yet still passes, and `config check` does not create it.
+- `bitc status` now counts a slot held by a legacy shell-pool caller (`<legacy_dir>/locks/<pool>.<n>.lock`
+  under `[compat]`) as held, so the pool line reads `lint: 1/1 slots held` where admission already
+  reported STARVED, and lists the holder under the pool. In `status --json` the holder is an
+  additive entry in the pool's `holders` with `"legacy": true` (job `"legacy"`, empty `since`,
+  `cwd` and `argv`, and `pid` 0 when the lock file holds none); `version` stays `"1"` and the
+  report-level `legacy` list is unchanged
+  ([#15](https://github.com/Exploded-views/bitc/issues/15)).
+
 ## [0.1.1] - 2026-10-29
 
 ### Changed

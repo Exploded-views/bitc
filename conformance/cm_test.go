@@ -1,6 +1,7 @@
 package conformance
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -163,5 +164,51 @@ func TestCM7_CompatGroupKeysMustNameDeclaredGroups(t *testing.T) {
 		"[compat]\nlegacy_dir = " + harness.Q(dir) + "\ngroups = { bigmen = \"bigmem\" }\n")
 	if r := h.Run("config", "check"); r.Code != 78 || !strings.Contains(r.Stderr, "compat.groups.bigmen names no declared group") {
 		t.Fatalf("%+v", r)
+	}
+}
+
+func TestCM8_StatusCountsALegacyHeldSlot(t *testing.T) {
+	h := harness.New(t)
+	dir := filepath.Join(h.Root, "legacy")
+	if err := os.MkdirAll(filepath.Join(dir, "locks"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	h.HostConfig("[compat]\nlegacy_dir = " + harness.Q(dir) + "\n[pools.lint]\nslots = 1\nwait = \"0s\"\n")
+	flockFile(t, filepath.Join(dir, "locks", "lint.1.lock"), strconv.Itoa(os.Getpid())+"\n")
+	if r := h.Run("run", "lint", "--", "true"); r.Code != 75 {
+		t.Fatalf("admission must see the legacy hold: %+v", r)
+	}
+	r := h.Run("status")
+	if !strings.Contains(r.Stdout, "lint: 1/1 slots held, 0 waiting") || !strings.Contains(r.Stdout, "slot 1  legacy holder  pid "+strconv.Itoa(os.Getpid())) {
+		t.Fatalf("status shows the legacy-held slot as free:\n%s", r.Stdout)
+	}
+	j := h.Run("--json", "status")
+	var got struct {
+		Pools []struct {
+			Name    string
+			Holders []struct {
+				Slot   int
+				Pid    int
+				Legacy bool
+			}
+		}
+	}
+	if err := json.Unmarshal([]byte(j.Stdout), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Pools) != 1 || len(got.Pools[0].Holders) != 1 || !got.Pools[0].Holders[0].Legacy ||
+		got.Pools[0].Holders[0].Slot != 1 || got.Pools[0].Holders[0].Pid != os.Getpid() {
+		t.Fatalf("holders: %s", j.Stdout)
+	}
+	var all, schema map[string]any
+	if err := json.Unmarshal([]byte(j.Stdout), &all); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(must(os.ReadFile("../docs/status.schema.json")), &schema); err != nil {
+		t.Fatal(err)
+	}
+	checkSchema(t, "$", schema, all)
+	if l, _ := all["legacy"].([]any); len(l) != 1 || !strings.HasPrefix(l[0].(string), "lint.1 held by pid ") {
+		t.Fatalf("the report-level legacy list went away: %s", j.Stdout)
 	}
 }

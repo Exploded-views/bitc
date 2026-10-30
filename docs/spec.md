@@ -115,7 +115,10 @@ record (a job a legacy launcher started, 12): legacy J8/J9 apply, so the last li
   dirs (flock, local fs, 0700, owner), config, `/proc/meminfo`, schema. `--remote`: credentials
   resolvable, API and billing reachable, cap headroom, agent source, ref namespace, known hosts.
 - **cancel**: SIGTERM to the supervisor, which applies `on_signal` (6.4); `--kill` or a second
-  `cancel` escalates; cleanup always runs. Remote: tear down, ledger `interrupted`, exit 143.
+  `cancel` escalates; cleanup always runs. A queued job (its supervisor not yet `running`) is not
+  signalled: `cancel` records `cancel_requested` (`TERM` or `KILL`) in `status.json`, and the
+  supervisor honours it as it flips to `running`: 128+N, the command never runs. `cancel` exits 69
+  when it cannot read or lock `status.json`. Remote: tear down, ledger `interrupted`, exit 143.
 
 ## 4. Exit codes and output text
 
@@ -124,7 +127,7 @@ record (a job a legacy launcher started, 12): legacy J8/J9 apply, so the last li
 | command's own (`128+N` if killed by signal N) | the command ran, locally or remotely | treat as the real result |
 | 64 `EX_USAGE` | bad arguments or malformed `BITC_*` value; unknown/invalid pool; group used as a pool; refused by policy; `--provider` not allowed; uncreatable detached log | fix the call |
 | 66 `EX_NOINPUT` | `wait`/`logs`/`cancel`: no such job | check the name |
-| 69 `EX_UNAVAILABLE` | not Linux or macOS; a Linux-only feature in the macOS build; hook could not start, timed out, printed unparsable output or exited with an unlisted code; no provider left and the last was unusable (a remote-only pool's job not eligible for remote, 8.2); a remote job's own setup step failed by itself (15.9); internal error (a bitc bug) | do not retry blindly |
+| 69 `EX_UNAVAILABLE` | not Linux or macOS; a Linux-only feature in the macOS build; hook could not start, timed out, printed unparsable output or exited with an unlisted code; no provider left and the last was unusable (a remote-only pool's job not eligible for remote, 8.2); a remote job's own setup step failed by itself (15.9); `cancel` cannot read or update the job's `status.json`; a detached supervisor cannot mark its job running; internal error (a bitc bug) | do not retry blindly |
 | 75 `EX_TEMPFAIL` | starved; hook exited 75; remote infrastructure failure after start; no provider left after a transient failure | wait and retry |
 | 78 `EX_CONFIG` | invalid config file; host-only key in a repo file; `min_version` unmet; insecure, NFS (on macOS also smbfs, afpfs, webdav) or newer-schema dirs; a pool's `memory` or a `[providers.*]` table in the macOS build | fix config |
 | 124 | `wait`: job still running | call `wait` again |
@@ -161,6 +164,8 @@ stderr lines (stdout belongs to the command):
 TOML, decoded strictly (`pelletier/go-toml/v2`, unknown fields rejected). Layers, lowest first:
 built-in defaults (5.4); the host file `$XDG_CONFIG_HOME/bitc/bitc.toml` (or `--config` /
 `BITC_CONFIG`); one repo file; env (5.6); flags. Any invalid file exits 78; there is no fallback.
+A host file named by `--config` or `BITC_CONFIG` must exist (else 78); a missing default host file
+is not an error.
 
 - **Repo file:** `.bitc.toml` at the work tree's top (`git rev-parse --show-toplevel`; outside git,
   the first one walking up from cwd, stopping at `$HOME` or `/`); never merged with nested files.
@@ -463,7 +468,9 @@ history line.
 - `run --detach` re-execs `bitc __supervise <job>` (`Setsid`, stdin `/dev/null`, output to the log)
   and returns once it has opened the log and written `spec.json`; it survives SIGHUP.
 - Record `jobs/<wt8>/<name>/`: `gen` (bumped per rerun under a record flock), `spec.json` (with the
-  log path), `status.json` (`queued|running|ended`, atomic), `out.log` (unless `--log`),
+  log path), `status.json` (`queued|running|ended`, atomic, plus `cancel_requested` when a cancel arrived while
+  queued: the supervisor flips to `running` only after its handlers exist and reads the request in the same
+  locked update), `out.log` (unless `--log`),
   `result.json`. A rerun moves the old generation to `prev-<gen>/`; a superseded supervisor keeps
   its fds and never writes the new one.
 - `wait`, `logs`, `cancel` resolve `<job>` in the cwd's work tree, or take `<wt8>/<name>`. A
@@ -1426,7 +1433,7 @@ stem>" }`) makes the two pools exclude each other while callers move one at a ti
   `<legacy_dir>/runpod-reservations` for each job, removed at its end, so legacy launches count it.
   If the launch lock is not acquired in time, the launch is refused with exit 75 (temp-fail):
   nothing is created, no reservation is written and the slot is released. Releases up to and
-  including 0.1.1 still launch without it; the fix is tracked as
+  including 0.1.2 still launch without it; the fix is tracked as
   [public issue #9](https://github.com/Exploded-views/bitc/issues/9).
 - Jobs a legacy launcher started before the shim switch have no record: the `wait` shim passes
   `--log <their log>` (3.2).

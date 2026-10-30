@@ -368,3 +368,58 @@ func TestCF9_WritableConfigRefused(t *testing.T) {
 		t.Fatalf("%d %q", r.Code, r.Stderr)
 	}
 }
+
+func TestCF12_ConfigCheckRefusesGroupAccessibleStateDir(t *testing.T) {
+	h := harness.New(t)
+	h.HostConfig("[pools.lint]\n")
+	if err := os.Mkdir(h.State, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(h.State, 0o775); err != nil {
+		t.Fatal(err)
+	}
+	want := h.State + " is group- or world-accessible (mode 775); run chmod 700"
+	if r := h.Run("config", "check"); r.Code != 78 || !strings.Contains(r.Stderr, want) {
+		t.Fatalf("%d %q", r.Code, r.Stderr)
+	}
+	// A state dir that does not exist yet is fine, and the check does not create it.
+	h2 := harness.New(t)
+	h2.HostConfig("[pools.lint]\n")
+	if r := h2.Run("config", "check"); r.Code != 0 {
+		t.Fatalf("%d %q", r.Code, r.Stderr)
+	}
+	if _, err := os.Stat(h2.State); !os.IsNotExist(err) {
+		t.Fatalf("config check created the state dir: %v", err)
+	}
+	// A dangling symlink is as unusable as status finds it: MkdirAll cannot create it.
+	h3 := harness.New(t)
+	h3.HostConfig("[pools.lint]\n")
+	if err := os.Symlink(filepath.Join(h3.Root, "nowhere"), h3.State); err != nil {
+		t.Fatal(err)
+	}
+	if r := h3.Run("config", "check"); r.Code != 78 || !strings.Contains(r.Stderr, "cannot create "+h3.State) {
+		t.Fatalf("%d %q", r.Code, r.Stderr)
+	}
+}
+
+func TestCF13_ExplicitHostFileMustExist(t *testing.T) {
+	h := harness.New(t)
+	missing := filepath.Join(h.Root, "nonexistent.toml")
+	r := h.Run("--config", missing, "config", "check")
+	if want := "host file " + missing + " (from --config) does not exist"; r.Code != 78 || !strings.Contains(r.Stderr, want) {
+		t.Errorf("--config: %d %q", r.Code, r.Stderr)
+	}
+	want := "host file " + missing + " (from BITC_CONFIG) does not exist"
+	for _, args := range [][]string{{"config", "check"}, {"status"}} {
+		if r := h.RunWith([]string{"BITC_CONFIG=" + missing}, args...); r.Code != 78 || !strings.Contains(r.Stderr, want) {
+			t.Errorf("BITC_CONFIG %v: %d %q", args, r.Code, r.Stderr)
+		}
+	}
+}
+
+func TestCF14_MissingDefaultHostFileUsesDefaults(t *testing.T) {
+	h := harness.New(t)
+	if r := h.RunWith([]string{"!BITC_CONFIG"}, "config", "check"); r.Code != 0 {
+		t.Fatalf("%d %q", r.Code, r.Stderr)
+	}
+}

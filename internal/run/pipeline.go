@@ -193,6 +193,11 @@ func signalCtx(parent context.Context, sigs []os.Signal, pending chan os.Signal)
 	return ctx, stop
 }
 
+// signalRecorded is a test seam: signalCtxPeek's goroutine calls it after taking a signal and
+// before recording it, the window in which peek still reports none. A test that sets it must not
+// use t.Parallel; signalCtxPeek reads it once, on entry.
+var signalRecorded func()
+
 // signalCtxPeek is signalCtx plus peek, which reports the remembered signal without stopping the
 // registration (runLocal keeps it for its whole life, so no signal ever finds the default action).
 func signalCtxPeek(parent context.Context, sigs []os.Signal, pending chan os.Signal) (context.Context, func() syscall.Signal, func() syscall.Signal) {
@@ -211,9 +216,13 @@ func signalCtxPeek(parent context.Context, sigs []os.Signal, pending chan os.Sig
 		}
 	}
 	stopped := make(chan struct{})
+	recorded := signalRecorded
 	exit.Go(func() {
 		select {
 		case s := <-ch:
+			if recorded != nil {
+				recorded()
+			}
 			mu.Lock()
 			if got == 0 {
 				got = s.(syscall.Signal)
@@ -255,6 +264,13 @@ func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Wri
 	sigs := cancels(inv)
 	// One cancel-signal registration lives from here until runLocal returns: after Exec, during
 	// post_run and the caller's result writing, a signal must never find the default action.
+	// gap covers the hand-off from signalCtx to Exec's own handler: without it a SIGTERM
+	// between stop() and Exec's signal.Notify would kill bitc with no cleanup. It is registered
+	// before signalCtxPeek's channel, so every signal that channel takes also lands in gap, even
+	// if its goroutine has not yet recorded it (a loaded host): Exec drains gap and forwards it.
+	gap := make(chan os.Signal, 4)
+	signal.Notify(gap, sigs...)
+	defer signal.Stop(gap)
 	ctx, stop, peek := signalCtxPeek(parent, sigs, inv.Pending)
 	defer stop()
 	interrupted := func() (Outcome, bool) {
@@ -317,10 +333,6 @@ func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Wri
 	if err != nil {
 		return failed(err)
 	}
-	// gap covers the hand-off from signalCtx to Exec's own handler: without it a SIGTERM
-	// between stop() and Exec's signal.Notify would kill bitc with no cleanup.
-	gap := make(chan os.Signal, 4)
-	signal.Notify(gap, sigs...)
 	if out, ok := interrupted(); ok {
 		signal.Stop(gap)
 		return out

@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -248,5 +251,44 @@ func TestEstimateOfAnUnknownSizeNeverAsksThePlugin(t *testing.T) {
 	got, err := r.p.Estimate(context.Background(), j)
 	if err != nil || got < 595_000 || got > 600_000 {
 		t.Fatalf("Estimate = %v, %v: the rails' highest-price probe is answered from the host's sizes", got, err)
+	}
+}
+
+// A handshake log the stub writes shows in the state dir only once it is complete: the rig's
+// await returns on existence, so a file created empty and filled a moment later (a loaded runner
+// can open that window) made TestTimeoutSendsCancelAndIsTransient read an empty cancel.log.
+func TestAHandshakeLogAppearsComplete(t *testing.T) {
+	r := newRig(t, fault("hang:estimate,append-gap"), fire("estimate", 300*time.Millisecond))
+	r.start()
+	if err := syscall.Mkfifo(filepath.Join(r.own, "gate"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.p.Estimate(context.Background(), r.job()); err == nil {
+		t.Fatal("the hung estimate did not time out")
+	}
+	r.await("gap.hit") // the stub has its line ready and has not yet put cancel.log in place
+	visible := r.exists("cancel.log")
+	var logged []byte
+	if visible {
+		logged = r.read("cancel.log")
+	}
+	// Release the stub without blocking: ENXIO means it has no reader on the gate yet.
+	r.until("the stub reached the gate", func() bool {
+		g, err := os.OpenFile(filepath.Join(r.own, "gate"), os.O_WRONLY|syscall.O_NONBLOCK, 0)
+		if err == nil {
+			g.Close()
+			return true
+		}
+		if !errors.Is(err, syscall.ENXIO) {
+			r.t.Fatal(err)
+		}
+		return false
+	})
+	if visible && !strings.Contains(string(logged), `"id":`) {
+		t.Errorf("cancel.log was visible while empty: a test that awaits the file reads nothing (%q)", logged)
+	}
+	r.await("cancel.log")
+	if !strings.Contains(string(r.read("cancel.log")), `"id":`) {
+		t.Errorf("cancel.log appeared without the cancel frame: %q", r.read("cancel.log"))
 	}
 }

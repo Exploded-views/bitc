@@ -288,7 +288,7 @@ Open issues that make up the roadmap:
 
 - [#3](https://github.com/Exploded-views/bitc/issues/3), [#4](https://github.com/Exploded-views/bitc/issues/4),
   [#5](https://github.com/Exploded-views/bitc/issues/5): macOS parity, macOS as a client to remote
-  providers (planned for 0.1.2), macOS as a remote build target (design first)
+  providers (planned for 0.1.3), macOS as a remote build target (design first)
 - [#6](https://github.com/Exploded-views/bitc/issues/6): Sprites catch-all egress deny
 - [#7](https://github.com/Exploded-views/bitc/issues/7), [#8](https://github.com/Exploded-views/bitc/issues/8):
   RunPod ordered data-centre walk with a per-pool US-only option; fallback CPU types per size
@@ -322,7 +322,7 @@ jobs ([spec.md](docs/spec.md) section 16.1, not scheduled).
 - In 0.1.0 the shipped example `examples/config/repo.bitc.toml` declares `min_version = "1.0.0"`,
   so a 0.1.0 build refuses it (exit 78); set it to `"0.1.0"`. Fixed in 0.1.1.
 - `bitc cancel` right after `bitc run --detach` can report success while the job keeps running to
-  completion. Check with `bitc status` and cancel again; a fix is planned for 0.1.2.
+  completion. Check with `bitc status` and cancel again. Fixed in 0.1.2.
 
 ## Sibling projects
 

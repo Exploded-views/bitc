@@ -7,7 +7,8 @@ is an error) and not be group- or world-writable.
 
 The **host file** (`~/.config/bitc/bitc.toml`, or `--config`, or `BITC_CONFIG`) belongs to the
 account. It sets capacities, memory floors, groups, priorities, providers, credentials, spend caps
-and per-repo grants:
+and per-repo grants. A file named by `--config` or `BITC_CONFIG` must exist, or every command
+exits 78; a missing default file just means built-in defaults:
 
 ```toml
 version = 1
@@ -54,4 +55,4 @@ holds, providers) are in [concepts.md](concepts.md).
 
 A wrapper that needs to know whether bitc is usable should run `bitc config check`, not
 `bitc version` (which reads no config). Exit 0 means a usable config; 78 means config errors.
-From 0.1.2 on it also checks the state directory's permissions (a planned fix).
+From 0.1.2 on it also checks the state directory's permissions.

@@ -10,8 +10,10 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -350,13 +352,45 @@ func envOr(k, d string) string {
 func (r req) typ(p map[string]any) any { return p["type"] }
 
 func appendTo(name, s string) error {
-	f, err := os.OpenFile(filepath.Join(state, name), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600)
+	path := filepath.Join(state, name)
+	// A new file appears whole: write it under a temporary name and link it into place, so a
+	// test that awaits the file never reads it empty. A file that exists is appended to.
+	tmp, err := os.CreateTemp(state, ".new-")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	defer tmp.Close()
+	if _, err := tmp.WriteString(s + "\n"); err != nil {
+		return err
+	}
+	appendGap(name)
+	if err := os.Link(tmp.Name(), path); err == nil {
+		return nil
+	} else if !errors.Is(err, fs.ErrExist) {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 	_, err = f.WriteString(s + "\n")
 	return err
+}
+
+// appendGap is the append-gap fault: before cancel.log is put in place, the stub says so
+// (gap.hit) and blocks until the test opens the gate FIFO, so a test can look at the one window a
+// loaded runner would otherwise open at random.
+func appendGap(name string) {
+	if name != "cancel.log" || !has("append-gap") {
+		return
+	}
+	_ = os.WriteFile(filepath.Join(state, "gap.hit"), nil, 0o600)
+	if g, err := os.Open(filepath.Join(state, "gate")); err == nil { // blocks until a writer opens it
+		_, _ = io.Copy(io.Discard, g)
+		g.Close()
+	}
 }
 
 func list(r req, p map[string]any) {

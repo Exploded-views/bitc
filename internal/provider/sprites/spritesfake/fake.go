@@ -134,6 +134,15 @@ type Fake struct {
 	// survivors: checkpoint ids kept after a Sprite's delete (the checkpoints-survive-delete
 	// behaviour, the worst case of probe 9.25), by Sprite name.
 	survivors map[string][]string
+	// beforeExecJoin, when set (under mu), runs in an exec connection's goroutine just before it
+	// joins wg: a seam for the tests that order that join against close.
+	beforeExecJoin func()
+	// beforeCreate, when set (under mu), runs in a create request just before it takes mu to add
+	// the Sprite: the same kind of seam, for the create path.
+	beforeCreate func()
+	// beforeAgentJoin, when set (under mu), runs in an agent exec's launch goroutine, with its
+	// process started and registered, just before it joins wg.
+	beforeAgentJoin func()
 }
 
 var nameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
@@ -794,6 +803,7 @@ func (f *Fake) create(w http.ResponseWriter, body []byte) {
 	}
 	labelsOff := f.once["labels-unsupported"] != 0
 	lax := f.once["lax-names"] != 0
+	beforeCreate := f.beforeCreate
 	f.mu.Unlock()
 	if err := strict(body, &req); err != nil {
 		jsonErr(w, 400, "bad_request", "invalid body: "+firstLine(err.Error()))
@@ -810,7 +820,16 @@ func (f *Fake) create(w http.ResponseWriter, body []byte) {
 		jsonErr(w, 400, "bad_request", "invalid sprite name")
 		return
 	}
+	if beforeCreate != nil {
+		beforeCreate()
+	}
 	f.mu.Lock()
+	if f.closed {
+		// close has swept the Sprites: a new one would start a server nobody stops or waits for
+		f.mu.Unlock()
+		jsonErr(w, 503, "unavailable", "the fake is closing")
+		return
+	}
 	if _, ok := f.sprites[req.Name]; ok {
 		f.mu.Unlock()
 		jsonErr(w, 409, "conflict", "sprite name already exists")
@@ -1341,6 +1360,7 @@ func (f *Fake) execWS(w http.ResponseWriter, r *http.Request, name string) {
 	f.wake(s)
 	rec := &ExecCall{Sprite: name, Query: q, MaxRun: maxRun}
 	f.execs = append(f.execs, rec)
+	beforeJoin := f.beforeExecJoin
 	f.mu.Unlock()
 
 	c, err := wsmini.Upgrade(w, r, 0)
@@ -1351,19 +1371,26 @@ func (f *Fake) execWS(w http.ResponseWriter, r *http.Request, name string) {
 		_ = c.Abort()
 		return
 	}
+	if beforeJoin != nil {
+		beforeJoin()
+	}
+	// close waits on wg and cuts the connections in s.cut: a connection that joins must be in both
+	// before close can look, and one that comes once it has begun must not join.
 	f.mu.Lock()
-	s.sessions++
-	f.mu.Unlock()
+	if f.closed {
+		f.mu.Unlock()
+		_ = c.Abort()
+		return
+	}
 	f.wg.Add(1)
+	s.sessions++
+	s.cut = append(s.cut, func() { _ = c.Abort() })
+	f.mu.Unlock()
 	defer f.wg.Done()
 	f.runExec(c, s, rec, cmd, maxRun, coldMid, truncate)
 }
 
 func (f *Fake) runExec(c *wsmini.Conn, s *sprite, rec *ExecCall, cmd []string, maxRun time.Duration, coldMid, truncate bool) {
-	cut := func() { _ = c.Abort() }
-	f.mu.Lock()
-	s.cut = append(s.cut, cut)
-	f.mu.Unlock()
 	ended := false
 	end := func() {
 		f.mu.Lock()
@@ -1660,7 +1687,11 @@ func (f *Fake) runAgent(s *sprite, argv []string, first []byte, in io.Reader, se
 	f.mu.Lock()
 	s.procs = append(s.procs, pr)
 	*pp = pr
+	beforeJoin := f.beforeAgentJoin
 	f.mu.Unlock()
+	if beforeJoin != nil {
+		beforeJoin()
+	}
 	go func() {
 		if len(first) > 0 {
 			_, _ = stdinW.Write(first)
@@ -1699,7 +1730,26 @@ func (f *Fake) runAgent(s *sprite, argv []string, first []byte, in io.Reader, se
 	pumps.Add(2)
 	go pump(outR, chStdout)
 	go pump(errR, chStderr)
-	f.wg.Add(1)
+	f.mu.Lock()
+	closed := f.closed
+	if !closed {
+		f.wg.Add(1)
+	} else {
+		// close has begun and already swept the processes: end this one here, nobody waits for it
+		signalTree(pr, syscall.SIGKILL)
+	}
+	f.mu.Unlock()
+	if closed {
+		_ = cmd.Wait()
+		close(pr.done)
+		outR.Close()
+		errR.Close()
+		select {
+		case exited <- 137:
+		default:
+		}
+		return
+	}
 	go func() {
 		defer f.wg.Done()
 		err := cmd.Wait()

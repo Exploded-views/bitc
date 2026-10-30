@@ -51,11 +51,8 @@ func Open(root string) (Layout, error) {
 	if err := MkdirPrivate(root); err != nil {
 		return Layout{}, err
 	}
-	var sfs unix.Statfs_t
-	if err := statfs(root, &sfs); err == nil {
-		if fs := networkFS(&sfs); fs != "" {
-			return Layout{}, exit.Configf("state dir %s is on %s; bitc needs a local filesystem for flock", root, fs)
-		}
+	if err := checkFS(root); err != nil {
+		return Layout{}, err
 	}
 	l := Layout{Root: root}
 	b, err := os.ReadFile(l.Schema())
@@ -67,13 +64,86 @@ func Open(root string) (Layout, error) {
 	case err != nil:
 		return Layout{}, exit.Configf("state dir %s: %v", root, err)
 	default:
-		v, perr := strconv.Atoi(strings.TrimSpace(string(b)))
-		if perr != nil || v > SchemaVersion {
-			return Layout{}, exit.Configf("state dir %s has schema %s; this bitc understands schema %d",
-				root, strings.TrimSpace(string(b)), SchemaVersion)
+		if err := checkSchema(root, b); err != nil {
+			return Layout{}, err
 		}
 	}
 	return l, nil
+}
+
+// Check runs Open's refusals on an existing state dir without creating or writing
+// anything; a missing dir passes, since the first command creates it 0700.
+func Check(root string) error {
+	if !filepath.IsAbs(root) {
+		return exit.Configf("state dir %q is not an absolute path", root)
+	}
+	var st unix.Stat_t
+	if err := unix.Stat(root, &st); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			if l := danglingLink(root); l != "" { // MkdirAll fails on a link to nowhere
+				return exit.Configf("cannot create %s: dangling symlink %s", root, l)
+			}
+			return nil
+		}
+		return exit.Configf("%s: %v", root, err)
+	}
+	if st.Mode&unix.S_IFMT != unix.S_IFDIR {
+		return exit.Configf("state dir %s is not a directory", root)
+	}
+	if err := checkOwnerMode(root, &st); err != nil {
+		return err
+	}
+	if err := checkFS(root); err != nil {
+		return err
+	}
+	b, err := os.ReadFile(Layout{Root: root}.Schema())
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return nil
+	case err != nil:
+		return exit.Configf("state dir %s: %v", root, err)
+	}
+	return checkSchema(root, b)
+}
+
+// danglingLink returns the path component of the missing root that exists as a symlink to
+// nowhere: the one directly under its nearest existing ancestor. It is "" if there is none.
+func danglingLink(root string) string {
+	for child := root; ; {
+		parent := filepath.Dir(child)
+		if parent == child {
+			return ""
+		}
+		var st unix.Stat_t
+		if unix.Stat(parent, &st) == nil {
+			if _, err := os.Lstat(child); err == nil {
+				return child
+			}
+			return ""
+		}
+		child = parent
+	}
+}
+
+// checkFS refuses a network filesystem: flock needs a local one.
+func checkFS(root string) error {
+	var sfs unix.Statfs_t
+	if err := statfs(root, &sfs); err == nil {
+		if fs := networkFS(&sfs); fs != "" {
+			return exit.Configf("state dir %s is on %s; bitc needs a local filesystem for flock", root, fs)
+		}
+	}
+	return nil
+}
+
+// checkSchema refuses a SCHEMA body this bitc cannot read.
+func checkSchema(root string, b []byte) error {
+	v, perr := strconv.Atoi(strings.TrimSpace(string(b)))
+	if perr != nil || v > SchemaVersion {
+		return exit.Configf("state dir %s has schema %s; this bitc understands schema %d",
+			root, strings.TrimSpace(string(b)), SchemaVersion)
+	}
+	return nil
 }
 
 // MkdirPrivate creates path and missing parents with 0700 and checks path itself:
@@ -86,6 +156,11 @@ func MkdirPrivate(path string) error {
 	if err := unix.Stat(path, &st); err != nil {
 		return exit.Configf("%s: %v", path, err)
 	}
+	return checkOwnerMode(path, &st)
+}
+
+// checkOwnerMode refuses a dir another user owns or group or world can reach.
+func checkOwnerMode(path string, st *unix.Stat_t) error {
 	if st.Uid != uint32(os.Getuid()) {
 		return exit.Configf("%s is not owned by you (uid %d)", path, st.Uid)
 	}

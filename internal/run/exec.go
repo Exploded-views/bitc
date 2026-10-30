@@ -77,7 +77,10 @@ func Exec(ctx context.Context, s ExecSpec) (ExecResult, error) {
 		for {
 			select {
 			case sig := <-s.Pending:
-				sigs <- sig
+				select { // a full sigs already escalates; never block before the command starts
+				case sigs <- sig:
+				default:
+				}
 			default:
 				break drain
 			}

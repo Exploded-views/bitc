@@ -8,6 +8,7 @@ import (
 	"github.com/Exploded-views/bitc/internal/config"
 	"github.com/Exploded-views/bitc/internal/exit"
 	"github.com/Exploded-views/bitc/internal/remote"
+	"github.com/Exploded-views/bitc/internal/state"
 )
 
 var configSubs = map[string]Command{}
@@ -47,6 +48,10 @@ func configCheck(ctx context.Context, g config.Flags, args []string, std Std) in
 	}
 	for _, w := range e.Warnings {
 		fmt.Fprintln(std.Err, "bitc: "+w)
+	}
+	if err := state.Check(e.Host.StateDir); err != nil {
+		fmt.Fprintln(std.Err, exit.As(err).Line)
+		return exit.Code(err)
 	}
 	if err := remote.CheckPlugins(ctx, e, std.Err); err != nil { // spawns each plugin: hello, configure (providers delta A.3.1)
 		fmt.Fprintln(std.Err, exit.As(err).Line)

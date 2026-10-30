@@ -2,7 +2,9 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/signal"
 	"strconv"
@@ -86,13 +88,31 @@ func supervise(ctx context.Context, g config.Flags, args []string, std Std) (cod
 			s.State, s.EndedAt = "ended", time.Now().UTC().Format(time.RFC3339Nano)
 		})
 	}()
-	// "running" means the handlers above exist: cancel waits for it (startup window)
-	_ = rec.UpdateStatus(gen, func(s *jobs.Status) {
-		s.State = "running"
+	// "running" means the handlers above exist: cancel signals only a running supervisor. A cancel
+	// that arrived while queued is in status.json; read it here, under the same lock, and act as
+	// if the signal had come before runLocal.
+	var asked string
+	if err := rec.UpdateStatus(gen, func(s *jobs.Status) {
+		s.State, asked = "running", s.CancelRequested
 		if ps, err := proc.ReadStat(os.Getpid()); err == nil {
 			s.Pid, s.Start = os.Getpid(), ps.Start
 		}
-	})
+	}); err != nil { // otherwise no cancel could ever reach this job
+		fmt.Fprintf(std.Err, "bitc: internal error: cannot mark the job running: %v\n", err)
+		return exit.Unavailable
+	}
+	if asked != "" {
+		select { // never block: a real SIGUSR1 may already fill usr1
+		case early <- syscall.SIGTERM:
+		default:
+		}
+		if asked == "KILL" {
+			select {
+			case usr1 <- syscall.SIGUSR1:
+			default:
+			}
+		}
+	}
 	devnull, _ := os.Open(os.DevNull)
 	inv := run.Invocation{Flags: sp.Flags, Args: sp.Args, Stdin: devnull, Stdout: std.Out, Stderr: std.Err, Env: os.Environ(), Cwd: sp.Cwd,
 		Detached: true, Pending: early}
@@ -257,20 +277,46 @@ func cancelCmd(_ context.Context, g config.Flags, args []string, std Std) int {
 		return exit.Code(err)
 	}
 	gen := rec.Gen()
-	st, err := rec.ReadStatus(gen)
-	// a queued supervisor has no handlers yet: wait (bounded) until it reports running
-	for deadline := time.Now().Add(5 * time.Second); err == nil && st.State == "queued" && !jobs.SupervisorDead(st) &&
-		time.Now().Before(deadline); st, err = rec.ReadStatus(gen) {
-		time.Sleep(20 * time.Millisecond)
+	// One locked decision. A queued supervisor may have no handlers yet, so it is never
+	// signalled: the request waits in status.json for it to flip to running (see supervise).
+	sig := "TERM"
+	if kill {
+		sig = "KILL"
 	}
-	if err != nil || st.State == "ended" || st.Pid == 0 || jobs.SupervisorDead(st) {
+	// no status.json yet: the job has not started, and cancel never creates the file
+	if _, err := rec.ReadStatus(gen); errors.Is(err, fs.ErrNotExist) {
 		fmt.Fprintf(std.Out, "%s already ended\n", args[0])
 		return 0
 	}
-	_ = syscall.Kill(st.Pid, syscall.SIGTERM)
-	if kill {
-		// a different signal never merges with the TERM: the supervisor escalates at once
-		_ = syscall.Kill(st.Pid, syscall.SIGUSR1)
+	var st jobs.Status
+	queued := false
+	err = rec.UpdateStatus(gen, func(s *jobs.Status) {
+		st = *s
+		if s.State == "queued" && !jobs.SupervisorDead(*s) && !neverStarted(*s) {
+			if s.CancelRequested != "KILL" { // a later cancel never downgrades --kill
+				s.CancelRequested = sig
+			}
+			queued = true
+		}
+	})
+	if err != nil {
+		fmt.Fprintf(std.Err, "bitc: cancel %s: status.json: %v\n", args[0], err)
+		return exit.Unavailable
+	}
+	if !queued && (st.State == "ended" || st.Pid == 0 || jobs.SupervisorDead(st)) {
+		fmt.Fprintf(std.Out, "%s already ended\n", args[0])
+		return 0
+	}
+	if !queued {
+		_ = syscall.Kill(st.Pid, syscall.SIGTERM)
+		if kill {
+			// a different signal never merges with the TERM: the supervisor escalates at once
+			_ = syscall.Kill(st.Pid, syscall.SIGUSR1)
+		}
+	}
+	if st.Pid == 0 { // detach has not recorded the pid yet
+		fmt.Fprintf(std.Out, "cancelled %s\n", args[0])
+		return 0
 	}
 	fmt.Fprintf(std.Out, "cancelled %s pid %d\n", args[0], st.Pid)
 	return 0

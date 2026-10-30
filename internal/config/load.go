@@ -62,13 +62,23 @@ func Load(o LoadOptions) (*Effective, error) {
 	}
 	var p problems
 	hostPath := firstNonEmpty(o.Flags.ConfigFile, env["BITC_CONFIG"])
+	hostFrom := "--config"
+	if o.Flags.ConfigFile == "" {
+		hostFrom = "BITC_CONFIG"
+	}
 	if hostPath == "" {
+		hostFrom = ""
 		xdg := firstNonEmpty(env["XDG_CONFIG_HOME"], filepath.Join(env["HOME"], ".config"))
 		hostPath = filepath.Join(xdg, "bitc", "bitc.toml")
 	}
+	// readLayer adds a problem on every false return except a host file that does not exist
+	// (ENOENT); so no new problem here means the file is missing, not unreadable.
+	nBefore := len(p.list)
 	host, hostExists := readLayer(&p, expandHome(hostPath, env), false)
 	if hostExists {
 		e.HostFile = host.file
+	} else if hostFrom != "" && len(p.list) == nBefore { // missing; an unreadable file already has its problem
+		p.addf("host file %s (from %s) does not exist", host.file, hostFrom)
 	}
 	applyHost(&p, e, host, env, o.Cleanup)
 	e.Worktree, e.RepoFile = findRepo(cwd, env, o.RepoFile)
@@ -115,6 +125,7 @@ func readLayer(p *problems, path string, repo bool) (layer, bool) {
 	// (regular file, owner, mode) and read through a size cap, never by path (audit #18).
 	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NONBLOCK, 0)
 	if errors.Is(err, fs.ErrNotExist) {
+		// a missing host file adds no problem on purpose; Load relies on it (see nBefore)
 		if repo {
 			p.addf("%s: no such repo file", path)
 		}

@@ -28,8 +28,7 @@ take turns instead of exhausting the machine's memory. Follow these rules.
 
 Do not probe readiness with `bitc version`: it reads no config, so it succeeds even when a bad
 config makes every other command exit 78. Use `bitc config check` instead. Exit 0 means a usable
-config; 78 means config errors. From 0.1.2 on it also checks the state directory's permissions
-(a planned fix).
+config; 78 means config errors. From 0.1.2 on it also checks the state directory's permissions.
 
 ## Retry on 75
 
@@ -73,7 +72,8 @@ like bitc's own, so prefer the default and read the first line).
 
 ## Cancel a detached job
 
-`bitc cancel <job>` stops a detached job. In 0.1.1, right after `bitc run --detach`, it can
-report success while the job keeps running. This is a known issue; the fix is planned for 0.1.2.
-Do not trust the first `cancel`: run `bitc status` (or `bitc wait <job> --exit job`) to confirm
-the job has ended, and cancel again if it is still running.
+`bitc cancel <job>` stops a detached job. Before 0.1.2, right after `bitc run --detach`, it could
+report success while the job kept running. From 0.1.2 a cancel of a job that is still starting is
+recorded, and the job ends 128+N without running its command. On 0.1.1 and earlier, do not trust
+the first `cancel`: run `bitc status` (or `bitc wait <job> --exit job`) to confirm the job has
+ended, and cancel again if it is still running.

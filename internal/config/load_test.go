@@ -371,3 +371,23 @@ func TestTestTableFixedSecretsSeam(t *testing.T) {
 // Unit tests never look at this account's real accounting dir (a host that ran remote jobs would
 // change what Load says): without [test] accounting_dir the leftover check finds nothing.
 func init() { accountDir = func() string { return "" } }
+
+func TestExplicitHostFileMustExist(t *testing.T) {
+	f := newRawFixture(t, "", "")
+	missing := filepath.Join(f.home, "nonexistent.toml")
+	_, err := Load(LoadOptions{Env: []string{"HOME=" + f.home, "BITC_CONFIG=" + missing}, Cwd: f.wt})
+	expect78(t, err, "host file "+missing+" (from BITC_CONFIG) does not exist")
+	_, err = Load(LoadOptions{Env: []string{"HOME=" + f.home}, Cwd: f.wt, Flags: Flags{ConfigFile: missing}})
+	expect78(t, err, "host file "+missing+" (from --config) does not exist")
+	// both set: --config wins and is the one named
+	other := filepath.Join(f.home, "other.toml")
+	_, err = Load(LoadOptions{Env: []string{"HOME=" + f.home, "BITC_CONFIG=" + other}, Cwd: f.wt, Flags: Flags{ConfigFile: missing}})
+	expect78(t, err, "host file "+missing+" (from --config) does not exist")
+	// ~ is expanded in the reported path
+	_, err = Load(LoadOptions{Env: []string{"HOME=" + f.home}, Cwd: f.wt, Flags: Flags{ConfigFile: "~/nope.toml"}})
+	expect78(t, err, "host file "+filepath.Join(f.home, "nope.toml")+" (from --config) does not exist")
+	// the default path may be absent: built-in defaults
+	if _, err := Load(LoadOptions{Env: []string{"HOME=" + f.home}, Cwd: f.wt}); err != nil {
+		t.Fatalf("missing default host file: %v", err)
+	}
+}

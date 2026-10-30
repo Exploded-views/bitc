@@ -49,6 +49,9 @@ type Status struct {
 	Log       string `json:"log"`
 	StartedAt string `json:"started_at"`
 	EndedAt   string `json:"ended_at,omitempty"`
+	// CancelRequested is a cancel that arrived while the job was queued ("TERM" or "KILL"): the
+	// supervisor reads it when it flips to running, under the record lock.
+	CancelRequested string `json:"cancel_requested,omitempty"`
 }
 
 func Open(l state.Layout, wt8, name string) Record {

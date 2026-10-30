@@ -11,7 +11,8 @@
         "name": {"type": "string"}, "slots": {"type": "integer"}, "last_starved": {"type": "string"},
         "holders": {"type": "array", "items": {"type": "object", "required": ["job", "slot", "pid", "cwd", "argv", "provider", "nested", "since"],
           "properties": {"job": {"type": "string"}, "slot": {"type": "integer"}, "pid": {"type": "integer"}, "cwd": {"type": "string"},
-            "argv": {"type": "array", "items": {"type": "string"}}, "provider": {"type": "string"}, "nested": {"type": "boolean"}, "since": {"type": "string"}}}},
+            "argv": {"type": "array", "items": {"type": "string"}}, "provider": {"type": "string"}, "nested": {"type": "boolean"}, "since": {"type": "string"},
+            "legacy": {"type": "boolean", "description": "true for a slot held by a legacy shell-pool caller under [compat]; such a holder has job \"legacy\", empty since, cwd and argv, and pid 0 when the lock file holds no pid"}}}},
         "waiters": {"type": "array", "items": {"type": "object", "required": ["job", "class", "pid", "since"],
           "properties": {"job": {"type": "string"}, "class": {"enum": ["high", "normal"]}, "pid": {"type": "integer"}, "since": {"type": "string"}, "group_wait": {"type": "string"}}}}
       }}},

@@ -144,6 +144,14 @@ rows = [
   { id = "DJ9", task = "1.8", ported = "TestDJ9_LogsOfADetachFailedOnItsLogReturns", desc = "logs (-f) of a job whose detach failed on its log returns 66 with an error, never polls forever" },
   { id = "DJ10", task = "1.8", ported = "TestDJ10_CancelDuringPostRunKeepsTheCommandsCode", desc = "a cancel (or two) while post_run runs cuts the hook short and the job still ends with the command's own code and result" },
   { id = "DJ11", task = "1.8", ported = "TestDJ11_WaiterBoundToASupersededGenerationGetsItsOwnResult", desc = "a waiter bound to generation 1 across a rerun gets generation 1's real result and log tail" },
+  { id = "DJ12", task = "1.8", ported = "TestDJ12_CancelOfAQueuedJobSignalsNothing", desc = "a cancel of a queued job signals nothing: the request waits in status.json for the supervisor" },
+  { id = "DJ13", task = "1.8", ported = "TestDJ13_SupervisorHonoursAStartupCancelRequest", desc = "a supervisor that finds a start-up cancel request ends the job interrupted (143) without running the command" },
+  { id = "DJ14", task = "1.8", ported = "TestDJ14_CancelOfAQueuedJobWithNoPidNamesNone", desc = "a cancel of a queued job with no pid recorded yet prints no pid" },
+  { id = "DJ15", task = "1.8", ported = "TestDJ15_CancelWithAnUnreadableStatusIsAnError", desc = "a cancel that cannot read or lock status.json exits 69, never \"already ended\"" },
+  { id = "DJ16", task = "1.8", ported = "TestDJ16_ACancelNeverDowngradesAKillRequest", desc = "a later plain cancel keeps a queued job's KILL request" },
+  { id = "DJ17", task = "1.8", ported = "TestDJ17_CancelOfAJobThatNeverStartedReportsItEnded", desc = "a cancel of a queued job whose supervisor never started reports it ended" },
+  { id = "DJ18", task = "1.8", ported = "TestDJ18_CancelDoesNotCreateAStatusFile", desc = "a cancel never creates status.json; a job with none has not started" },
+  { id = "DJ19", task = "1.8", ported = "TestDJ19_SupervisorThatCannotMarkItsJobRunningEnds69", desc = "a supervisor that cannot mark its job running ends 69 and runs nothing" },
 
   # G: host sampler (dropped)
   { id = "G1", task = "1.1", changed = "sampler-dropped", desc = "CSV host samples" },
@@ -358,6 +366,9 @@ rows = [
   { id = "CF9", task = "1.2b", ported = "TestCF9_WritableConfigRefused", desc = "a group- or world-writable config file is 78" },
   { id = "CF10", task = "1.12", ported = "TestCF10_WiderSecretLikeNamesNeedForce", desc = "a forwarded variable whose name contains PASS, CREDENTIAL, AUTH, DSN, PRIVATE, COOKIE, SESSION, CERT, DATABASE_URL or DIRECT_URL (any case) is secret-like too and must be in forward_env_force (78)" },
   { id = "CF11", task = "1.12", ported = "TestCF11_ForwardEnvEntriesMustBeVariableNames", desc = "every entry of remote.forward_env, remote_limits.forward_env_allow and remote_limits.forward_env_force must be a valid env name (not 1BAD, BAD-NAME, A=B, A$(x) or BITC_*), else 78 at load" },
+  { id = "CF12", task = "1.2b", ported = "TestCF12_ConfigCheckRefusesGroupAccessibleStateDir", desc = "config check refuses an existing state dir that is group- or world-accessible (78, the line status prints) and leaves a missing one uncreated (0)" },
+  { id = "CF13", task = "1.2b", ported = "TestCF13_ExplicitHostFileMustExist", desc = "a host file named by --config or BITC_CONFIG that does not exist is a config error (78) naming the file and where the path came from, for config check and status" },
+  { id = "CF14", task = "1.2b", ported = "TestCF14_MissingDefaultHostFileUsesDefaults", desc = "with no --config or BITC_CONFIG, a missing default host file is not an error: built-in defaults, exit 0" },
 
   # HK: env and hooks (bitc-only)
   { id = "HK1", task = "1.5b", ported = "TestHK1_CRLFHookOutputIsUnparsable", desc = "env hook output with CRLF line endings is unparsable (69), never a value with a trailing CR" },
@@ -398,6 +409,7 @@ rows = [
   { id = "CM5", task = "1.10", ported = "TestCM5_PriorityMarkersBothWays", desc = "a live legacy priority marker holds normal bitc callers back; a bitc high hold is mirrored as <pool>.prio.<pid> until release" },
   { id = "CM6", task = "audit-E", ported = "TestCM6_UnderscoreSpelledGroupStillMeetsLegacyLock", desc = "a group spelled with underscores in [compat].groups still takes the legacy lock stem (keys are canonicalised)" },
   { id = "CM7", task = "audit-E", ported = "TestCM7_CompatGroupKeysMustNameDeclaredGroups", desc = "a [compat].groups key naming no declared group, or a duplicate after canonicalisation, is a config error (78)" },
+  { id = "CM8", task = "issue-33", ported = "TestCM8_StatusCountsALegacyHeldSlot", desc = "status counts a legacy-held pool slot as held and shows its legacy holder (text and --json), with the report-level legacy list kept" },
 
   # PV: providers and selection (bitc-only)
   { id = "PV1", task = "2.1a", ported = "TestPV1_NoProviderLeft69Or75", desc = "with no provider left the call is 69 after an ineligible or unavailable failure, else 75; with no local entry after the provider (a remote-only pool) no failure prints the running-locally note, and an ineligible job ends 69 with 'bitc: <provider>: <pool>: not eligible for remote: <why>' alone and never runs locally" },

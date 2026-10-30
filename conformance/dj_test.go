@@ -55,13 +55,21 @@ func TestDJ3_CancelTerminates(t *testing.T) {
 	}
 	// a cancel right after started, while the supervisor starts up, is interrupted, never lost
 	early, _, _ := detached(t, h, "lint", "--", "sleep", "60")
-	if r := h.Run("cancel", early); r.Code != 0 {
+	dump := func() {
+		files, _ := filepath.Glob(filepath.Join(h.State, "jobs", "*", early, "status.json"))
+		for _, f := range files {
+			t.Logf("%s: %s", f, must(os.ReadFile(f)))
+		}
+	}
+	if r := h.Run("cancel", early); r.Code != 0 || !strings.HasPrefix(r.Stdout, "cancelled ") {
+		dump()
 		t.Fatalf("%+v", r)
 	}
 	// --timeout: on a loaded host a race-built supervisor can take more than the scaled default
 	// wait to start up and see the cancel; the assertion is about the outcome, not the speed.
 	// time_scale 0.01 scales --timeout too: 6000s is 60s.
 	if r := h.Run("wait", early, "--exit", "job", "--timeout", "6000s"); r.Code != 143 || !strings.HasPrefix(r.Stdout, "RESULT exit 143\n") {
+		dump()
 		t.Fatalf("startup cancel: %+v", r)
 	}
 	if r := h.Run("cancel", "nope"); r.Code != 66 {

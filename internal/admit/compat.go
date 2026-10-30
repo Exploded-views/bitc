@@ -38,9 +38,13 @@ func NewCompat(c *config.Compat, _ state.Layout) CompatLocks {
 	return &compat{c: c, dir: filepath.Join(c.LegacyDir, "locks")}
 }
 
-func (x *compat) lockPath(stem string, i int) string {
-	return filepath.Join(x.dir, fmt.Sprintf("%s.%d.lock", stem, i))
+// LegacySlotLock is <legacy_dir>/locks/<stem>.<n>.lock: the one place that format lives, shared
+// by admission (pool slots and group units) and status (legacy holders).
+func LegacySlotLock(c *config.Compat, stem string, n int) string {
+	return filepath.Join(c.LegacyDir, "locks", fmt.Sprintf("%s.%d.lock", stem, n))
 }
+
+func (x *compat) lockPath(stem string, i int) string { return LegacySlotLock(x.c, stem, i) }
 
 func (x *compat) take(path string, pid int) (func(), bool, error) {
 	if _, err := os.Stat(x.dir); err != nil {

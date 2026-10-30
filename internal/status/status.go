@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ type Holder struct {
 	Provider string   `json:"provider"`
 	Nested   bool     `json:"nested"`
 	Since    string   `json:"since"`
+	Legacy   bool     `json:"legacy,omitempty"` // a legacy shell-pool caller holds <legacy_dir>/locks/<pool>.<slot>.lock
 }
 
 type Waiter struct {
@@ -126,6 +128,7 @@ func Snapshot(e *config.Effective, l state.Layout, only []string) Report {
 					Blocking: red.String(strings.Join(t.T.GroupWait, ","))})
 			}
 		}
+		p.Holders = append(p.Holders, legacyHolders(e.Compat, n, p)...)
 		r.Pools = append(r.Pools, p)
 	}
 	for _, g := range sortedGroups(e) {
@@ -148,6 +151,32 @@ func Snapshot(e *config.Effective, l state.Layout, only []string) Report {
 		r.Remote = RemoteSection(e)
 	}
 	return r
+}
+
+// legacyHolders attributes each held <legacy_dir>/locks/<pool>.<n>.lock (the lock admission
+// takes with bitc slot n) to the pool's slot n, unless a bitc ticket already holds that slot.
+// Observe only (HeldRO); the pid is the one the legacy caller wrote into the file, if any.
+func legacyHolders(c *config.Compat, pool string, p Pool) []Holder {
+	if c == nil {
+		return nil
+	}
+	taken := map[int]bool{}
+	for _, h := range p.Holders {
+		taken[h.Slot] = true
+	}
+	var out []Holder
+	for n := 1; n <= p.Slots; n++ {
+		path := admit.LegacySlotLock(c, pool, n)
+		if taken[n] || !lock.HeldRO(path) {
+			continue
+		}
+		pid := 0
+		if b, err := os.ReadFile(path); err == nil {
+			pid, _ = strconv.Atoi(strings.TrimSpace(string(b)))
+		}
+		out = append(out, Holder{Job: "legacy", Slot: n, Pid: pid, Argv: []string{}, Provider: "local", Legacy: true})
+	}
+	return out
 }
 
 func sortedGroups(e *config.Effective) []config.Group {
@@ -184,6 +213,14 @@ func (r Report) Text(w io.Writer) {
 	for _, p := range r.Pools {
 		fmt.Fprintf(w, "%s: %d/%d slots held, %d waiting\n", p.Name, len(p.Holders), p.Slots, len(p.Waiters))
 		for _, h := range p.Holders {
+			if h.Legacy {
+				pid := ""
+				if h.Pid > 0 {
+					pid = fmt.Sprintf("  pid %d", h.Pid)
+				}
+				fmt.Fprintf(w, "  slot %d  legacy holder%s\n", h.Slot, pid)
+				continue
+			}
 			nested := ""
 			if h.Nested {
 				nested = " nested"

@@ -2,6 +2,7 @@ package status
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Exploded-views/bitc/internal/admit"
 	"github.com/Exploded-views/bitc/internal/config"
 	"github.com/Exploded-views/bitc/internal/jobs"
 	"github.com/Exploded-views/bitc/internal/lock"
@@ -157,5 +159,58 @@ func TestSweepRetentionSkipsRecordBumpedMeanwhile(t *testing.T) {
 	}
 	if st, err := rec.ReadStatus(2); err != nil || st.State != "running" {
 		t.Fatalf("live status lost: %+v %v", st, err)
+	}
+}
+
+// A legacy shell-pool caller holding <legacy_dir>/locks/<pool>.<n>.lock fills slot n of that pool.
+func TestSnapshotCountsALegacyHeldSlot(t *testing.T) {
+	l, _ := state.Open(filepath.Join(t.TempDir(), "s"))
+	legacy := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(legacy, "locks"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	f, err := lock.Open(filepath.Join(legacy, "locks", "lint.1.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.Close() })
+	if ok, _ := f.TryLock(); !ok {
+		t.Fatal("could not hold the legacy lock")
+	}
+	e := &config.Effective{Pools: map[string]*config.Pool{"lint": {Name: "lint", Slots: 1}}, Compat: &config.Compat{LegacyDir: legacy}}
+	r := Snapshot(e, l, nil)
+	b, _ := json.Marshal(r.Pools[0].Holders)
+	var hs []map[string]any
+	_ = json.Unmarshal(b, &hs)
+	if len(hs) != 1 || hs[0]["legacy"] != true || hs[0]["slot"] != float64(1) {
+		t.Fatalf("holders = %s", b)
+	}
+	if len(r.Legacy) != 1 {
+		t.Fatalf("the report-level legacy list = %v", r.Legacy)
+	}
+	var out bytes.Buffer
+	r.Text(&out)
+	if !strings.Contains(out.String(), "lint: 1/1 slots held, 0 waiting") || !strings.Contains(out.String(), "slot 1  legacy holder") {
+		t.Fatalf("text:\n%s", out.String())
+	}
+}
+
+// Status looks at the lock path admission takes for the same slot.
+func TestLegacySlotLockIsTheAdmissionPath(t *testing.T) {
+	c := &config.Compat{LegacyDir: t.TempDir()}
+	if err := os.MkdirAll(filepath.Join(c.LegacyDir, "locks"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	rel, unlock := func() (string, func()) {
+		x := admit.NewCompat(c, state.Layout{})
+		rel, ok, err := x.TrySlot("lint", 2)
+		if err != nil || !ok {
+			t.Fatalf("TrySlot: %v %v", ok, err)
+		}
+		return admit.LegacySlotLock(c, "lint", 2), rel
+	}()
+	defer unlock()
+	if !lock.HeldRO(rel) {
+		t.Fatalf("admission's slot lock is not at %s", rel)
 	}
 }
