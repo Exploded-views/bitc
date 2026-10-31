@@ -1,7 +1,8 @@
 # FAQ
 
 **Is there a daemon or a server?** No. Everything is files and `flock(2)` locks under the state
-directory, which must be on a local file system (not NFS).
+directory, which must be on a local file system (not NFS); so must the remote accounting directory
+(`~/.local/state/bitc/account`).
 
 **Does exit 75 mean my command failed?** No. It means the command did not get to run (or, for a
 remote job, that the infrastructure failed after it started; a remote job is not retried

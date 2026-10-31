@@ -7,6 +7,43 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The remote accounting directory (`~/.local/state/bitc/account`: the launch lock, ledger and
+  reservations behind the spend cap) is now refused like the state dir when it is on a network
+  filesystem, with `accounting dir <path> is on NFS; bitc needs a local filesystem for flock`. On
+  Linux that means an account dir on NFS: a remote job falls back to local with that reason (or
+  exits 69 or 75, as for any remote problem) and launches nothing; `bitc config check` and
+  `bitc status` exit 78 (status, on a host with remote providers or unfinished reservations, with
+  one line on stderr, as for the state dir); `bitc doctor --remote` prints
+  `fail accounting dir: ...` where it used to skip the account-dir checks silently. On macOS a
+  filesystem that statfs does not flag `MNT_LOCAL` (FUSE, which the type-name list missed) is now
+  refused too, for both the state and accounting dirs.
+- `bitc sweep` on a host whose home is on a network filesystem no longer just prints the refusal and
+  exits 0. It tears down the resources it can prove orphaned without trusting flock (past their own
+  expiry, with a verified owner tag or a ledger launch line), lists every other own resource with
+  its age and hourly cost without touching it (a live job on another host sharing the home is never
+  killed), reports an expired resource it could not verify or tear down on its own line, writes
+  nothing to the accounting dir and skips the git ref sweep, and exits 78 afterwards naming what it
+  tore down, listed, kept and failed on, so a sweep timer fails visibly. With no usable install
+  secret or an unusable accounting dir it tears down nothing and exits 78. Run `bitc sweep` before
+  upgrading such a host, then move the home to a local filesystem.
+
+### Fixed
+
+- On macOS, `bitc config check` now reports an unknown provider name in a pool, as Linux does.
+- On macOS, `status`, `doctor` and `sweep --dry-run` no longer make a free lock look busy to a
+  concurrent admission (a spurious wait, or with `wait = 0` a spurious STARVED or queue exit)
+  or to a legacy `flock -n`. They now read lock holders with `fcntl(F_GETLK)`, which takes no
+  lock, instead of a brief `flock` probe. Linux is unchanged.
+
+### Known issues
+
+- On Linux without a readable `/proc/locks` (no procfs, an LSM or seccomp denial, or gVisor),
+  `bitc status`, `bitc doctor` and `bitc sweep --dry-run` read pool slot holders with a brief
+  try-lock, so for that moment a concurrent admission can find a free slot busy. Linux cannot see
+  a flock without taking it; tracked for 0.1.4.
+
 ## [0.1.2] - 2026-10-30
 
 ### Changed

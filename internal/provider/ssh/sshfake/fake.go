@@ -1,3 +1,5 @@
+//go:build linux
+
 // Package sshfake is the ssh provider's test double (providers delta C.11): a fake host gate.
 // Under `[test] ssh_exec = "local"` the provider runs the sshfake gate executable instead of the
 // system ssh client, with the gate's command line as arguments. The fake keeps a host in a root

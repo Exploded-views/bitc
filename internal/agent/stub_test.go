@@ -25,7 +25,7 @@ func TestStubVerifiesTheShaBeforeExec(t *testing.T) {
 	sum := sha256hex([]byte(payload))
 	run := func(sha string) string {
 		cmd := exec.Command("sh", "-c", Stub("https://x.invalid/bitc", sha))
-		cmd.Env = []string{"PATH=" + bin + ":/usr/bin:/bin", "BITC_STUB_DIR=" + dir}
+		cmd.Env = []string{"PATH=" + bin + ":/usr/bin:/bin:/sbin", "BITC_STUB_DIR=" + dir}
 		out, _ := cmd.CombinedOutput()
 		return string(out)
 	}
@@ -48,7 +48,7 @@ func installRun(t *testing.T, sha string) (out string, installed []byte, err err
 		sha = sha256hex([]byte(payload))
 	}
 	cmd := exec.Command("sh", "-c", StubInstall("https://x.invalid/bitc", sha))
-	cmd.Env = []string{"PATH=" + bin + ":/usr/bin:/bin", "BITC_INSTALL_DIR=" + dest}
+	cmd.Env = []string{"PATH=" + bin + ":/usr/bin:/bin:/sbin", "BITC_INSTALL_DIR=" + dest}
 	o, err := cmd.CombinedOutput()
 	b, _ := os.ReadFile(filepath.Join(dest, "bitc"))
 	if st, serr := os.Stat(filepath.Join(dest, "bitc")); serr == nil && st.Mode().Perm() != 0o755 {

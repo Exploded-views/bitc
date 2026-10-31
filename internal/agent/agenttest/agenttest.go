@@ -1,3 +1,5 @@
+//go:build linux
+
 // Package agenttest is a fixture that drives agent.Run in-process as a plain user against a
 // local git repository, for the agent's own tests and the conformance suite.
 package agenttest

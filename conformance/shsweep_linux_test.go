@@ -1,3 +1,5 @@
+// Linux-only: drives the ssh fake (sshfake), which does not build elsewhere.
+
 package conformance
 
 // SH10 and the doctor and status parts of task H.3: sweep, `doctor --remote` and `status` for

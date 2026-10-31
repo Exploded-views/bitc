@@ -32,12 +32,12 @@ conformance/plugin/proto_test.go:peer.await timer safety-net only: the deadline 
 conformance/provider/runpod_test.go:runpodTarget.Configure scale pending determinism: suite-wide time_scale below 1 keeps the suite fast but also scales bounds that must not fire (the plugin-rig flake's mechanism); move to real bounds plus fire-by-name
 conformance/provider/sprites_test.go:spritesTarget.Configure scale pending determinism: suite-wide time_scale below 1 keeps the suite fast but also scales bounds that must not fire (the plugin-rig flake's mechanism); move to real bounds plus fire-by-name
 conformance/provider/sprites_test.go:spritesTarget.ListNames scale pending determinism: suite-wide time_scale below 1 keeps the suite fast but also scales bounds that must not fire (the plugin-rig flake's mechanism); move to real bounds plus fire-by-name
-conformance/provider/ssh_test.go:sshTarget.Configure scale pending determinism: suite-wide time_scale below 1 keeps the suite fast but also scales bounds that must not fire (the plugin-rig flake's mechanism); move to real bounds plus fire-by-name
+conformance/provider/ssh_linux_test.go:sshTarget.Configure scale pending determinism: suite-wide time_scale below 1 keeps the suite fast but also scales bounds that must not fire (the plugin-rig flake's mechanism); move to real bounds plus fire-by-name
 conformance/provider/suite.go:RunPS1 sleep pending determinism: fixed 50 ms waits in the provider-suite list check
 conformance/r_test.go:TestR5_OutsideFragmentsQueuesBehindHigh sleep pending determinism: sleeps 300 ms for the waiters to queue in order
-conformance/re_test.go:TestRE21_RestartKeepsTheOriginalDeadline timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
-conformance/re_test.go:TestRE24_SelfDeleteAtDeadlinePlus10m elapsed lower bound only: load can only make it later, never fail it
-conformance/re_test.go:TestRE24_SelfDeleteAtDeadlinePlus10m timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
+conformance/re_linux_test.go:TestRE21_RestartKeepsTheOriginalDeadline timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
+conformance/re_linux_test.go:TestRE24_SelfDeleteAtDeadlinePlus10m elapsed lower bound only: load can only make it later, never fail it
+conformance/re_linux_test.go:TestRE24_SelfDeleteAtDeadlinePlus10m timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
 conformance/rn_test.go:TestRN4_ForwardAndWaitIsBounded elapsed pending determinism: measures max_signal_wait (1 s) between 1 s and 4 s: a 4x upper margin
 conformance/rn_test.go:TestRN5_ClosedPipeAndFlood elapsed generous upper bound on a real bounded operation (10 s for a 50 MB pipe flood that takes well under a second); expiry = t.Fatal
 conformance/rn_test.go:TestRN8_RepeatedSignalsNeverPostponeTheKill elapsed pending determinism: signals every 300 ms for up to 6 s; the verdict rides on the kill landing inside that window
@@ -59,25 +59,25 @@ conformance/sh_priv_test.go:TestSH16_ConcurrentJobsHaveSeparateNetworksAndNoLAN 
 conformance/sh_priv_test.go:TestSH22_TunnelAccountCanOnlyListenOnItsOnePort sleep pending determinism: privileged-only test (not in make ci); fixed waits for the rig's processes
 conformance/sh_priv_test.go:TestSH22_TunnelAccountCanOnlyListenOnItsOnePort timer pending determinism: privileged-only test (not in make ci); fixed waits for the rig's processes
 conformance/sh_priv_test.go:TestSH7_JobsAreIsolatedAndLeaveNothingBehind sleep pending determinism: privileged-only test (not in make ci); fixed waits for the rig's processes
-conformance/shprov_test.go:shRepo scale pending determinism: suite-wide time_scale below 1 keeps the suite fast but also scales bounds that must not fire (the plugin-rig flake's mechanism); move to real bounds plus fire-by-name
+conformance/shprov_linux_test.go:shRepo scale pending determinism: suite-wide time_scale below 1 keeps the suite fast but also scales bounds that must not fire (the plugin-rig flake's mechanism); move to real bounds plus fire-by-name
 conformance/shrig_priv_test.go:rigJob.wait sleep pending determinism: privileged-only test (not in make ci); fixed waits for the rig's processes
-conformance/shupload2_test.go:s2Rig.run ctx safety-net only: an overall 90 s cap on a rig run; expiry is a failure
-conformance/shupload_agent_test.go:TestSH36_StallsHitTheIdleTimeoutAndTheOverallDeadline elapsed pending determinism: the refusal must come within 5 s; measures the agent's idle bound with a modest margin
-conformance/shupload_agent_test.go:TestSH36_StallsHitTheIdleTimeoutAndTheOverallDeadline sleep the fake or stub simulates provider timing on purpose (latency, a silent peer, idle and janitor clocks); behaviour under test, not a verdict margin
-conformance/shupload_agent_test.go:upRig.run timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
+conformance/shupload2_linux_test.go:s2Rig.run ctx safety-net only: an overall 90 s cap on a rig run; expiry is a failure
+conformance/shupload_agent_linux_test.go:TestSH36_StallsHitTheIdleTimeoutAndTheOverallDeadline elapsed pending determinism: the refusal must come within 5 s; measures the agent's idle bound with a modest margin
+conformance/shupload_agent_linux_test.go:TestSH36_StallsHitTheIdleTimeoutAndTheOverallDeadline sleep the fake or stub simulates provider timing on purpose (latency, a silent peer, idle and janitor clocks); behaviour under test, not a verdict margin
+conformance/shupload_agent_linux_test.go:upRig.run timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
 conformance/spprov_test.go:TestSP17_ReadAndTailRejectBadArguments timer pending determinism: a 2 ms select case decides whether output arrived
 conformance/spprov_test.go:TestSP18_HostCompletesFromAnIdleSprite sleep poll interval of a loop that ends on a condition (or fails on its deadline); the interval decides no verdict
 conformance/spprov_test.go:TestSP7_AttachClassification elapsed generous upper bound on a real bounded operation (30 s for a refusal that comes at once); expiry = t.Fatal
 conformance/spprov_test.go:scanSprites timer poll interval of a loop that ends on a condition (or fails on its deadline); the interval decides no verdict
 conformance/spprov_test.go:spRepo scale pending determinism: suite-wide time_scale below 1 keeps the suite fast but also scales bounds that must not fire (the plugin-rig flake's mechanism); move to real bounds plus fire-by-name
 conformance/spprov_test.go:waitFile sleep poll interval of a loop that ends on a condition (or fails on its deadline); the interval decides no verdict
-conformance/xd_test.go:TestXD10_ASecondBootKeepsTheFirstAgentsIdentity timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
-conformance/xd_test.go:TestXD11_TheJobSurvivesTheBootChannelDropping timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
-conformance/xd_test.go:TestXD3_BootStdinThroughTheBinary timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
-conformance/xd_test.go:TestXD7_TailReportsADeadAgentAndStops timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
-conformance/xd_test.go:TestXD7_TailStreamsByOffsetWithHeartbeatsAndEnds timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
-conformance/xd_test.go:TestXD8_TeardownKillsTheRecordedProcessesOnlyAndRemovesTheJob timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
-conformance/xd_test.go:TestXD9_TailDoesNotSayDoneBeforeTheAgentHasWrittenExit timer negative check (500 ms: no done before the exit is written) plus a 10 s safety net; load can only hide a bug
+conformance/xd_linux_test.go:TestXD10_ASecondBootKeepsTheFirstAgentsIdentity timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
+conformance/xd_linux_test.go:TestXD11_TheJobSurvivesTheBootChannelDropping timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
+conformance/xd_linux_test.go:TestXD3_BootStdinThroughTheBinary timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
+conformance/xd_linux_test.go:TestXD7_TailReportsADeadAgentAndStops timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
+conformance/xd_linux_test.go:TestXD7_TailStreamsByOffsetWithHeartbeatsAndEnds timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
+conformance/xd_linux_test.go:TestXD8_TeardownKillsTheRecordedProcessesOnlyAndRemovesTheJob timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
+conformance/xd_linux_test.go:TestXD9_TailDoesNotSayDoneBeforeTheAgentHasWrittenExit timer negative check (500 ms: no done before the exit is written) plus a 10 s safety net; load can only hide a bug
 conformance/xd_test.go:waitFor sleep poll interval of a loop that ends on a condition (or fails on its deadline); the interval decides no verdict
 internal/admit/admit_test.go:TestContextCancelRemovesTicket ctx fires against a peer that never answers (a hang, a held slot, a silent server), so it fires whatever the runner's speed
 internal/admit/admit_test.go:TestOneSlotThenStarved elapsed lower bound only: STARVED no sooner than the 200 ms wait; a slow host only waits longer, never fails
@@ -100,18 +100,18 @@ internal/proctest/proctest_test.go:TestZombieIsGone sleep poll interval of a loo
 internal/provider/fake/fake.go:Fake.Estimate sleep the fake or stub simulates provider timing on purpose (latency, a silent peer, idle and janitor clocks); behaviour under test, not a verdict margin
 internal/provider/fake/fake.go:Fake.Watch timer the fake or stub simulates provider timing on purpose (latency, a silent peer, idle and janitor clocks); behaviour under test, not a verdict margin
 internal/provider/plugin/rig_test.go:rig.until sleep poll interval of a loop that ends on a condition (or fails on its deadline); the interval decides no verdict
-internal/provider/plugin/spawn_test.go:TestClosingStopsThePluginWithinItsGrace sleep poll interval of a loop that ends on a condition (or fails on its deadline); the interval decides no verdict
+internal/provider/plugin/spawn_linux_test.go:TestClosingStopsThePluginWithinItsGrace sleep poll interval of a loop that ends on a condition (or fails on its deadline); the interval decides no verdict
 internal/provider/plugin/stubplugin/main.go:handle sleep the fake or stub simulates provider timing on purpose (latency, a silent peer, idle and janitor clocks); behaviour under test, not a verdict margin
 internal/provider/plugin/stubplugin/main.go:sleeper sleep the fake or stub simulates provider timing on purpose (latency, a silent peer, idle and janitor clocks); behaviour under test, not a verdict margin
-internal/provider/plugin/watch_test.go:TestWatchStopsWhenTheContextEnds ctx fires against a peer that never answers (a hang, a held slot, a silent server), so it fires whatever the runner's speed
+internal/provider/plugin/watch_linux_test.go:TestWatchStopsWhenTheContextEnds ctx fires against a peer that never answers (a hang, a held slot, a silent server), so it fires whatever the runner's speed
 internal/provider/runpod/runpodfake/fake.go:Fake.create sleep the fake or stub simulates provider timing on purpose (latency, a silent peer, idle and janitor clocks); behaviour under test, not a verdict margin
 internal/provider/runpod/runpodfake/fake.go:Fake.logs sleep the fake or stub simulates provider timing on purpose (latency, a silent peer, idle and janitor clocks); behaviour under test, not a verdict margin
 internal/provider/runpod/runpodfake/fake.go:Fake.start sleep the fake or stub simulates provider timing on purpose (latency, a silent peer, idle and janitor clocks); behaviour under test, not a verdict margin
 internal/provider/runpod/runpodfake/fake.go:New timer external process start, polled; expiry = a failure (failure-only)
-internal/provider/runpod/runpodfake/fake_test.go:TestAPodBootsBeginsAndExits sleep pending determinism: fixed waits in the fake's own tests
+internal/provider/runpod/runpodfake/fake_linux_test.go:TestAPodBootsBeginsAndExits sleep pending determinism: fixed waits in the fake's own tests
 internal/provider/runpod/runpodfake/fake_test.go:TestHoldRecordsThenAnswersOnRelease sleep pending determinism: fixed waits in the fake's own tests
 internal/provider/runpod/runpodfake/fake_test.go:TestHoldRecordsThenAnswersOnRelease timer pending determinism: a 200 ms select decides that a held answer has not come yet
-internal/provider/runpod/runpodfake/fake_test.go:TestSelfDeleteLandsOnTheFake sleep pending determinism: fixed waits in the fake's own tests
+internal/provider/runpod/runpodfake/fake_linux_test.go:TestSelfDeleteLandsOnTheFake sleep pending determinism: fixed waits in the fake's own tests
 internal/provider/runpod/watch_test.go:TestOutputStallIsBounded timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
 internal/provider/runpod/watch_test.go:TestWatchBacksOffOn429AndHonoursRetryAfter elapsed lower bound only: load can only make it later, never fail it
 internal/provider/runpod/watch_test.go:TestWatchBacksOffOnLogErrors ctx pending determinism: runs the watch for 2.5 s and counts the log calls
@@ -121,26 +121,26 @@ internal/provider/runpod/watch_test.go:TestWatchIgnoresEmptyAndFailedStartedAtRe
 internal/provider/runpod/watch_test.go:TestWatchSeesRestartFromStartedAt ctx safety-net only: an overall 10 s cap; expiry is a failure
 internal/provider/runpod/watch_test.go:slowWriter.Write sleep the fake or stub simulates provider timing on purpose (latency, a silent peer, idle and janitor clocks); behaviour under test, not a verdict margin
 internal/provider/runpod/watch_test.go:stateWatch ctx pending determinism: each state case runs the watch under a 6 s cap; the scaled watch must finish inside it
-internal/provider/sprites/exec_test.go:TestTailReturnsAtOnceWhenTheFrameHandlerFails sleep pending determinism: a fixed 10 ms wait
-internal/provider/sprites/exec_test.go:TestTailReturnsAtOnceWhenTheFrameHandlerFails timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
-internal/provider/sprites/exec_test.go:TestTailThatIsCutIsErrStreamEnded sleep pending determinism: fixed 50 ms and 500 ms waits before cutting the tail
-internal/provider/sprites/exec_test.go:TestTailThatIsCutIsErrStreamEnded timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
+internal/provider/sprites/exec_linux_test.go:TestTailReturnsAtOnceWhenTheFrameHandlerFails sleep pending determinism: a fixed 10 ms wait
+internal/provider/sprites/exec_linux_test.go:TestTailReturnsAtOnceWhenTheFrameHandlerFails timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
+internal/provider/sprites/exec_linux_test.go:TestTailThatIsCutIsErrStreamEnded sleep pending determinism: fixed 50 ms and 500 ms waits before cutting the tail
+internal/provider/sprites/exec_linux_test.go:TestTailThatIsCutIsErrStreamEnded timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
 internal/provider/sprites/provider_test.go:newProv scale pending determinism: suite-wide time_scale below 1 keeps the suite fast but also scales bounds that must not fire (the plugin-rig flake's mechanism); move to real bounds plus fire-by-name
 internal/provider/sprites/spritesfake/fake.go:Fake.close timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
 internal/provider/sprites/spritesfake/fake.go:Fake.janitor elapsed the fake or stub simulates provider timing on purpose (latency, a silent peer, idle and janitor clocks); behaviour under test, not a verdict margin
 internal/provider/sprites/spritesfake/fake.go:Fake.janitor timer the fake or stub simulates provider timing on purpose (latency, a silent peer, idle and janitor clocks); behaviour under test, not a verdict margin
 internal/provider/sprites/spritesfake/fake.go:Fake.runAgent timer the fake or stub simulates provider timing on purpose (latency, a silent peer, idle and janitor clocks); behaviour under test, not a verdict margin
 internal/provider/sprites/spritesfake/fake.go:Fake.runExec timer the fake or stub simulates provider timing on purpose (latency, a silent peer, idle and janitor clocks); behaviour under test, not a verdict margin
-internal/provider/sprites/spritesfake/fake_test.go:TestFakeCutSessionsDropsTheConnectionsButNotTheJob timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
-internal/provider/sprites/spritesfake/fake_test.go:TestFakeExecOutlivesItsConnectionOnlyForMaxRun sleep pending determinism: fixed waits against the fake's own max-run clock
-internal/provider/sprites/spritesfake/fake_test.go:TestFakeSessionsDontHoldASprite sleep pending determinism: fixed waits against the fake's own idle clock
-internal/provider/sprites/spritesfake/fake_test.go:TestFakeTaskKeepsASpriteRunning sleep pending determinism: fixed waits against the fake's own idle clock
-internal/provider/sprites/spritesfake/fake_test.go:agentPID sleep poll interval of a loop that ends on a condition (or fails on its deadline); the interval decides no verdict
+internal/provider/sprites/spritesfake/fake_linux_test.go:TestFakeCutSessionsDropsTheConnectionsButNotTheJob timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
+internal/provider/sprites/spritesfake/fake_linux_test.go:TestFakeExecOutlivesItsConnectionOnlyForMaxRun sleep pending determinism: fixed waits against the fake's own max-run clock
+internal/provider/sprites/spritesfake/fake_linux_test.go:TestFakeSessionsDontHoldASprite sleep pending determinism: fixed waits against the fake's own idle clock
+internal/provider/sprites/spritesfake/fake_linux_test.go:TestFakeTaskKeepsASpriteRunning sleep pending determinism: fixed waits against the fake's own idle clock
+internal/provider/sprites/spritesfake/fake_linux_test.go:agentPID sleep poll interval of a loop that ends on a condition (or fails on its deadline); the interval decides no verdict
 internal/provider/sprites/spritesfake/fake_test.go:waitFor sleep poll interval of a loop that ends on a condition (or fails on its deadline); the interval decides no verdict
-internal/provider/sprites/watch_test.go:TestLaunchReportsTheCreateTimeAheadOfProvisioning elapsed generous upper bound on a real bounded operation (1 min for a create time taken at once); expiry = t.Fatal
-internal/provider/sprites/watch_test.go:TestWatchResumesADroppedTailFromItsOffsets sleep pending determinism: a fixed 300 ms wait before dropping the tail
-internal/provider/sprites/watch_test.go:rig.waitStdout sleep poll interval of a loop that ends on a condition (or fails on its deadline); the interval decides no verdict
-internal/provider/sprites/watch_test.go:rig.watch timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
+internal/provider/sprites/watch_linux_test.go:TestLaunchReportsTheCreateTimeAheadOfProvisioning elapsed generous upper bound on a real bounded operation (1 min for a create time taken at once); expiry = t.Fatal
+internal/provider/sprites/watch_linux_test.go:TestWatchResumesADroppedTailFromItsOffsets sleep pending determinism: a fixed 300 ms wait before dropping the tail
+internal/provider/sprites/watch_linux_test.go:rig.waitStdout sleep poll interval of a loop that ends on a condition (or fails on its deadline); the interval decides no verdict
+internal/provider/sprites/watch_linux_test.go:rig.watch timer safety-net only: expiry = t.Fatal or a reported kill, never a pass
 internal/provider/ssh/upload_cancel_test.go:TestSH35_TheTempRefIsGoneAfterTheContextIsCancelledDuringBundleCreate sleep pending determinism: a fixed 50 ms wait places the cancel inside the bundle create
 internal/remote/orchestrate_test.go:TestOrchestrateKeepsSignalsUntilStopSignals sleep negative check: waits to give a wrong implementation a chance to misbehave; load can only hide a bug, never fail a correct build
 internal/remote/orchestrate_test.go:TestWalkSignalInRetryWindowIsNotLost sleep pending determinism: a fixed 200 ms wait places the signal in the retry window

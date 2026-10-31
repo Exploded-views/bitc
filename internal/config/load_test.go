@@ -42,7 +42,10 @@ func withRemoteFlag(host string) string {
 
 func newRawFixture(t *testing.T, host, repo string) *fixture {
 	t.Helper()
-	home := t.TempDir()
+	home, err := filepath.EvalSymlinks(t.TempDir()) // macOS: /var/folders is a symlink to /private/var
+	if err != nil {
+		t.Fatal(err)
+	}
 	f := &fixture{t: t, home: home, host: filepath.Join(home, "bitc.toml"), wt: filepath.Join(home, "wt")}
 	if err := os.MkdirAll(f.wt, 0o755); err != nil {
 		t.Fatal(err)
@@ -87,12 +90,18 @@ func expect78(t *testing.T, err error, frags ...string) {
 }
 
 func TestDefaultsAndPools(t *testing.T) {
+	// memory admission is Linux-only (the darwin gate refuses the key), so off Linux the same
+	// config is loaded without it and the rest of the local-pool defaults are still checked
+	mem := ""
+	if platformGOOS == "linux" {
+		mem = `memory = "8GiB", `
+	}
 	f := newFixture(t, `version = 1
 defaults = { slots = 2, wait = "5m" }
 groups = { bigmem = { units = 1 } }
 [pools]
 lint = {}
-heavy = { slots = 1, wait = "1h", memory = "8GiB", groups = { bigmem = 1 } }
+heavy = { slots = 1, wait = "1h", `+mem+`groups = { bigmem = 1 } }
 `, "")
 	e := mustLoad(t, f)
 	if e.Host.Poll != 5*time.Second || e.Host.MemoryFloor != 6<<30 || e.Host.UnknownPools != "refuse" {
@@ -102,7 +111,7 @@ heavy = { slots = 1, wait = "1h", memory = "8GiB", groups = { bigmem = 1 } }
 	if lint.Slots != 2 || lint.Wait != 5*time.Minute || lint.OnSignal != "terminate" || strings.Join(lint.Providers, ",") != "local" {
 		t.Fatalf("lint %+v", lint)
 	}
-	if heavy.Slots != 1 || heavy.Wait != time.Hour || heavy.Memory != 8<<30 || heavy.Groups["bigmem"] != 1 {
+	if heavy.Slots != 1 || heavy.Wait != time.Hour || (mem != "" && heavy.Memory != 8<<30) || heavy.Groups["bigmem"] != 1 {
 		t.Fatalf("heavy %+v", heavy)
 	}
 	if e.Detach.WaitTimeout != 9*time.Minute || e.RemoteLimits.OnFailure != "next" {
@@ -208,6 +217,7 @@ func TestEnvOverrides(t *testing.T) {
 }
 
 func TestCredentialFiles(t *testing.T) {
+	pinLinux(t)
 	home := t.TempDir()
 	key := filepath.Join(home, "rp.key")
 	host := "version = 1\n[providers.runpod]\napi_key_file = " + `"` + key + `"` + "\ndaily_usd = 25\nimage = \"x\"\nsizes = { cpu8 = { cpu_type = \"cpu3c\", vcpu = 8, usd_per_hour = 0.24 } }\n"
@@ -238,6 +248,7 @@ func TestCredentialFiles(t *testing.T) {
 // The 0600 rule follows the decoded providers, not the bytes: a comment naming api_key_file
 // must not hide an inline api_key.
 func TestInlineKeyNeedsMode600(t *testing.T) {
+	pinLinux(t)
 	f := newFixture(t, "version = 1\n# api_key_file is the usual way\n[providers.runpod]\napi_key = \"inline-k\"\ndaily_usd = 1\nimage = \"x\"\nsizes = {}\n", "")
 	if err := os.Chmod(f.host, 0o644); err != nil {
 		t.Fatal(err)
@@ -254,6 +265,7 @@ func TestInlineKeyNeedsMode600(t *testing.T) {
 }
 
 func TestTestTableNeedsLoopbackEndpoints(t *testing.T) {
+	pinLinux(t)
 	prov := "\n[providers.runpod]\ndaily_usd = 1\nimage = \"x\"\nsizes = {}\n"
 	_, err := newFixture(t, "version = 1\n[test]\nprocfs_root = \"/tmp/p\"\n"+prov, "").load()
 	expect78(t, err, "[test]", "loopback")
@@ -289,6 +301,7 @@ func TestResolve(t *testing.T) {
 }
 
 func TestUnknownProviderType(t *testing.T) {
+	pinLinux(t)
 	_, err := newFixture(t, "version = 1\n[providers.nope]\ndaily_usd = 1\n", "").load()
 	expect78(t, err, "providers.nope", "unknown provider type")
 	_, err = newFixture(t, "version = 1\n[pools.x]\nproviders = [\"nope\", \"local\"]\n", "").load()

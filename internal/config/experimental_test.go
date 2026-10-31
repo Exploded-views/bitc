@@ -11,6 +11,7 @@ const remoteHost = "version = 1\n[pools]\nheavy = {}\n[providers.runpod]\ndaily_
 
 // The gate at load: refused without the host flag, accepted with it, never set by the repo file.
 func TestExperimentalRemoteGate(t *testing.T) {
+	pinLinux(t)
 	_, err := newRawFixture(t, remoteHost, "").load()
 	expect78(t, err, "bitc: "+ExperimentalRemoteRefusal)
 	if strings.Contains(err.Error(), ExperimentalRemoteCleanup) {
@@ -33,6 +34,7 @@ func TestExperimentalRemoteGate(t *testing.T) {
 
 // sweep and doctor --remote (Cleanup) and a host with remote leftovers get the cleanup line.
 func TestExperimentalRemoteCleanupLine(t *testing.T) {
+	pinLinux(t)
 	f := newRawFixture(t, remoteHost+"[test]\naccounting_dir = \"ACCT\"\n", "")
 	acct := filepath.Join(f.home, "acct")
 	body, _ := os.ReadFile(f.host)
@@ -91,6 +93,7 @@ func TestSpritesRefusalDarwinPrecedence(t *testing.T) {
 // On Linux the refusal is listed first, before the experimental line, and only the [test] seam
 // with loopback endpoints bypasses it (the endpoint part is SPR1's: sprites registers there).
 func TestSpritesRefusalOnLinux(t *testing.T) {
+	pinLinux(t)
 	host := "version = 1\n[pools]\nheavy = { providers = [\"sprites\", \"local\"] }\n"
 	_, err := newRawFixture(t, host, "").load()
 	expect78(t, err, "bitc: "+SpritesRefusal, ExperimentalRemoteRefusal)
@@ -168,6 +171,7 @@ func TestRemoteLeftoversPeek(t *testing.T) {
 
 // In a cleanup, a pool naming sprites without a [providers.sprites] table is told how to clean up.
 func TestCleanupPoolNamingSpritesWithoutATableGetsTheHint(t *testing.T) {
+	pinLinux(t)
 	f := newRawFixture(t, "version = 1\n[host]\nexperimental_remote = true\n[pools]\nheavy = { providers = [\"sprites\", \"local\"] }\n", "")
 	_, err := Load(LoadOptions{Env: []string{"HOME=" + f.home, "BITC_CONFIG=" + f.host}, Cwd: f.wt, Cleanup: true})
 	expect78(t, err, `pools.heavy.providers names "sprites"`, "to clean up Sprites left by 0.1.0, configure [providers.sprites] with [host] experimental_remote = true and run bitc sweep")

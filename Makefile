@@ -4,7 +4,7 @@ PKG     := github.com/Exploded-views/bitc
 LDFLAGS := -s -w -X $(PKG)/internal/version.Version=$(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//' || echo dev) \
            -X $(PKG)/internal/version.Commit=$(shell git rev-parse --short=12 HEAD 2>/dev/null)
 
-.PHONY: build test coverage coverage-ratchet conformance conformance-race lint vuln ci tools tools-ci snapshot release-check examples fuzz privileged secrets linkcheck
+.PHONY: build test coverage coverage-ratchet conformance conformance-race lint darwin-vet vuln ci tools tools-ci snapshot release-check examples fuzz privileged secrets linkcheck
 
 build:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $(BIN) ./cmd/bitc
@@ -37,9 +37,14 @@ conformance-race:
 	CGO_ENABLED=1 $(GO) build -race -o dist/bitc-race ./cmd/bitc
 	$(GO) test -race -timeout 30m ./conformance/... -bin=dist/bitc-race
 
-lint:
+lint: darwin-vet
 	$(GO) vet ./...
 	golangci-lint run
+
+# The test code must compile for darwin: test code that needs Linux carries a linux build constraint
+# or a _linux file name.
+darwin-vet:
+	GOOS=darwin $(GO) vet ./...
 
 # Advisory (not in ci): maintainers run it on main from time to time; it blocks a release.
 # Needs network access to vuln.go.dev.

@@ -1,3 +1,5 @@
+// Linux-only: drives the ssh fake host (sshfake), which does not build elsewhere.
+
 package provider
 
 import (
@@ -8,7 +10,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/Exploded-views/bitc/internal/provider"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Exploded-views/bitc/conformance/harness"
+	"github.com/Exploded-views/bitc/internal/provider"
 	"github.com/Exploded-views/bitc/internal/provider/ssh/sshfake"
 )
 

@@ -1,3 +1,5 @@
+//go:build linux
+
 // Command sshfakegate is the fake ssh host gate the conformance suite runs in place of ssh
 // (providers delta C.11): `sshfakegate --root DIR -- <gate command line>`.
 package main

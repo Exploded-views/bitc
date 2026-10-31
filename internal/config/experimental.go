@@ -46,7 +46,7 @@ func checkExperimentalRemote(p *problems, e *Effective, host fileSchema, goos st
 }
 
 // accountDir is state.AccountDir without creating it: <passwd home>/.local/state/bitc/account,
-// "" when there is no home. Unit tests replace it so they never read this account's real dir.
+// "" when there is no home. It must agree with state.accountPath. Unit tests replace it so they never read this account's real dir.
 var accountDir = func() string {
 	if u, err := user.Current(); err == nil && u.HomeDir != "" {
 		return filepath.Join(u.HomeDir, ".local", "state", "bitc", "account")

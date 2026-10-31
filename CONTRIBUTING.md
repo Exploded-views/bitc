@@ -94,7 +94,7 @@ conformance suite.
 Some tests (for example the ssh host setup) must act as root: they create users, mounts and
 namespaces, and use a firewall. They are tagged privileged, they are not part of `make ci`, and
 they never run on a contributor's or a CI machine by default. The maintainers run them on a
-dedicated host or an isolated runner after review. Do not run `scripts/privileged.sh` yourself.
+dedicated host or an isolated runner after review, and only on a ref they have reviewed. Do not run `scripts/privileged.sh` yourself.
 If your change touches privileged code, say so in the pull request and a maintainer will run the
 suite; you can still add and run the unprivileged tests with `make ci`.
 

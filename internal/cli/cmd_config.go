@@ -53,6 +53,10 @@ func configCheck(ctx context.Context, g config.Flags, args []string, std Std) in
 		fmt.Fprintln(std.Err, exit.As(err).Line)
 		return exit.Code(err)
 	}
+	if err := accountDirRefusal(e); err != nil {
+		fmt.Fprintln(std.Err, exit.As(err).Line)
+		return exit.Code(err)
+	}
 	if err := remote.CheckPlugins(ctx, e, std.Err); err != nil { // spawns each plugin: hello, configure (providers delta A.3.1)
 		fmt.Fprintln(std.Err, exit.As(err).Line)
 		return exit.Code(err)

@@ -12,6 +12,7 @@ import (
 
 	"github.com/Exploded-views/bitc/internal/config"
 	"github.com/Exploded-views/bitc/internal/provider"
+	"github.com/Exploded-views/bitc/internal/state"
 )
 
 type doctorStub struct {
@@ -75,5 +76,17 @@ func TestDoctorPrintsTheProvidersOwnLines(t *testing.T) {
 	failed, _ := Doctor(e, &out)
 	if !failed || !strings.Contains(out.String(), "fail thing org: thing x is foreign\n") || !strings.Contains(out.String(), "warn thing installs: two\n") {
 		t.Fatalf("%q", out.String())
+	}
+}
+
+// A refused (network filesystem) accounting dir is a FAIL line with the reason, not a silent skip.
+func TestDoctorFailsOnAnAccountDirOnANetworkFilesystem(t *testing.T) {
+	e, _ := doctorEnv(t)
+	defer state.StubNetworkFS("")()
+	var out bytes.Buffer
+	failed, _ := Doctor(e, &out)
+	want := "fail accounting dir: accounting dir " + e.Test.AccountingDir + " is on NFS; bitc needs a local filesystem for flock"
+	if !failed || !strings.Contains(out.String(), want) {
+		t.Fatalf("failed=%v %q", failed, out.String())
 	}
 }

@@ -26,6 +26,7 @@ func fbHost(typ, extra string) string {
 // FB1 (config part): the default is the declaration for a built-in and "resource" for a plugin;
 // the host may narrow, and a plugin may opt in up to its declaration.
 func TestFallbackUntilDefaultsAndNarrowing(t *testing.T) {
+	pinLinux(t)
 	for _, c := range []struct{ typ, extra, want, cap string }{
 		{"fbattach", "", "attach", "attach"},
 		{"fbattach", "fallback_until = \"resource\"\n", "resource", "attach"},
@@ -43,6 +44,7 @@ func TestFallbackUntilDefaultsAndNarrowing(t *testing.T) {
 }
 
 func TestFallbackUntilValidation78(t *testing.T) {
+	pinLinux(t)
 	for _, c := range []struct{ typ, extra, msg string }{
 		{"fbattach", "fallback_until = \"later\"\n", `providers.fbattach.fallback_until: must be "resource" or "attach": "later"`},
 		{"fbattach", "fallback_until = 3\n", `providers.fbattach.fallback_until: must be "resource" or "attach"`},

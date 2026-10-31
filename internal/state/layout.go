@@ -51,7 +51,7 @@ func Open(root string) (Layout, error) {
 	if err := MkdirPrivate(root); err != nil {
 		return Layout{}, err
 	}
-	if err := checkFS(root); err != nil {
+	if err := checkFS("state dir", root); err != nil {
 		return Layout{}, err
 	}
 	l := Layout{Root: root}
@@ -93,7 +93,7 @@ func Check(root string) error {
 	if err := checkOwnerMode(root, &st); err != nil {
 		return err
 	}
-	if err := checkFS(root); err != nil {
+	if err := checkFS("state dir", root); err != nil {
 		return err
 	}
 	b, err := os.ReadFile(Layout{Root: root}.Schema())
@@ -126,11 +126,15 @@ func danglingLink(root string) string {
 }
 
 // checkFS refuses a network filesystem: flock needs a local one.
-func checkFS(root string) error {
+func checkFS(what, root string) error { return checkFSAt(what, root, root) }
+
+// checkFSAt names root in the refusal but asks statfs about at: root itself, or for a dir not yet
+// created its nearest existing parent.
+func checkFSAt(what, root, at string) error {
 	var sfs unix.Statfs_t
-	if err := statfs(root, &sfs); err == nil {
+	if err := statfs(at, &sfs); err == nil {
 		if fs := networkFS(&sfs); fs != "" {
-			return exit.Configf("state dir %s is on %s; bitc needs a local filesystem for flock", root, fs)
+			return exit.Configf("%s %s is on %s; bitc needs a local filesystem for flock", what, root, fs)
 		}
 	}
 	return nil

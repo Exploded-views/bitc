@@ -17,14 +17,3 @@ func TestFB15_NothingCrossesBeforeAttach(t *testing.T) {
 		}
 	})
 }
-
-// PS1: list completeness with a paginated list and five overlapping jobs.
-func TestPS1_ListCompleteness(t *testing.T) {
-	for _, tg := range []Target{&fakeTarget{}, &runpodTarget{}, &pluginTarget{}, &sshTarget{slots: 5}} {
-		t.Run(tg.Name(), func(t *testing.T) {
-			h := harness.New(t)
-			tg.Configure(t, h)
-			RunPS1(t, tg, h)
-		})
-	}
-}

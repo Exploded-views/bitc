@@ -7,7 +7,7 @@ useDefault = true
 # Fake credentials used by the tests, listed by their exact fake value. None is a real secret;
 # the tests use them to check that bitc keeps secrets out of argv, logs and output.
 [[allowlists]]
-description = "fake API keys in tests and in the plan's test listings (sk-test-..., sk-live-..., sk-pt-... with the digits 0123456789)"
+description = "fake API keys in tests (and in the v1 plan's test listings, still in this repo's history) (sk-test-..., sk-live-..., sk-pt-... with the digits 0123456789)"
 regexTarget = "secret"
 regexes = ['''^sk-(test|live|pt)-0123456789(abcdef)?$''']
 
@@ -21,4 +21,4 @@ regexes = ['''^(PRIVATE-)?KEY(-MATERIAL)?-(0123|7f3a)$''', '''^KEYMATERIAL-0123$
 [[allowlists]]
 description = "generated fake private key block in the SSH provider test"
 targetRules = ["private-key"]
-paths = ['''^conformance/provider/ssh_test\.go$''']
+paths = ['''^conformance/provider/ssh(_linux)?_test\.go$'''] # ssh_test.go in history before #51

@@ -56,3 +56,10 @@ type ForeignOrg interface {
 	error
 	ForeignOrg() (name, org string)
 }
+
+// SecretUser is implemented by a provider or cleanup handle that verifies owner tags with the
+// install secret: the sweep hands it the secret it has already read, so a network-filesystem home
+// (where the provider's own account-dir lookup is refused) still verifies.
+type SecretUser interface {
+	UseInstallSecret([]byte)
+}

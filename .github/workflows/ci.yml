@@ -68,7 +68,7 @@ jobs:
       - name: make secrets
         run: make secrets
 
-  # The macOS client on a GitHub-hosted runner: build it, run the darwin-only unit tests, then a
+  # The macOS client on a GitHub-hosted runner: build it, run the full unit suite, then a
   # one-slot local pool runs `true` and status reads it back (README: Linux-only features).
   macos-smoke:
     runs-on: macos-latest
@@ -83,10 +83,15 @@ jobs:
         with:
           go-version: "1.27.3"
           cache: true
+      # CGO_ENABLED=0 like the releases (Makefile, .goreleaser.yaml), so CI tests what ships
       - name: build
+        env:
+          CGO_ENABLED: "0"
         run: go build -o bitc ./cmd/bitc
-      - name: darwin unit tests
-        run: go test -run 'Darwin|NetworkFSLabel|StatFromKinfo|LinuxOnly' ./internal/state/ ./internal/proc/ ./internal/exit/
+      - name: unit tests
+        env:
+          CGO_ENABLED: "0"
+        run: go test -count=1 ./internal/... ./cmd/...
       - name: smoke
         env:
           BITC_CONFIG: ${{ runner.temp }}/bitc.toml

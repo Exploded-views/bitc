@@ -1,3 +1,5 @@
+// Linux-only: drives the ssh fake (sshfake), which does not build elsewhere.
+
 package conformance
 
 // The SH rows of the ssh provider (providers delta C.11, task H.2): bitc runs against the sshfake
@@ -7,7 +9,6 @@ package conformance
 import (
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -21,36 +22,6 @@ import (
 	"github.com/Exploded-views/bitc/internal/lock"
 	"github.com/Exploded-views/bitc/internal/provider/ssh/sshfake"
 )
-
-func shWire(b []byte) []byte {
-	out := make([]byte, 4, 4+len(b))
-	binary.BigEndian.PutUint32(out, uint32(len(b)))
-	return append(out, b...)
-}
-
-// shHostKey is a syntactically valid ssh-ed25519 line (the bytes are not a real point).
-func shHostKey() string {
-	blob := append(shWire([]byte("ssh-ed25519")), shWire(make([]byte, 32))...)
-	return "ssh-ed25519 " + base64.StdEncoding.EncodeToString(blob)
-}
-
-// shKey writes an unencrypted OpenSSH private key container (not a real key), mode 0600.
-func shKey(t *testing.T, path, cipher string) {
-	t.Helper()
-	body := append([]byte("openssh-key-v1\x00"), shWire([]byte(cipher))...)
-	body = append(body, shWire([]byte("none"))...)
-	body = append(body, shWire(nil)...)
-	body = append(body, 0, 0, 0, 1)
-	body = append(body, shWire([]byte("pub"))...)
-	body = append(body, shWire([]byte("priv"))...)
-	enc := base64.StdEncoding.EncodeToString(body)
-	if err := os.WriteFile(path, []byte("-----BEGIN OPENSSH PRIVATE KEY-----\n"+enc+"\n-----END OPENSSH PRIVATE KEY-----\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(path, 0o600); err != nil {
-		t.Fatal(err)
-	}
-}
 
 type shOpts struct {
 	slots    int                       // fake host and [providers.ssh] slots (default 2)

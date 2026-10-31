@@ -55,4 +55,5 @@ holds, providers) are in [concepts.md](concepts.md).
 
 A wrapper that needs to know whether bitc is usable should run `bitc config check`, not
 `bitc version` (which reads no config). Exit 0 means a usable config; 78 means config errors.
-From 0.1.2 on it also checks the state directory's permissions.
+From 0.1.2 on it also checks the state directory's permissions. It also refuses (78) an existing
+state or accounting directory on a network filesystem.

@@ -59,7 +59,7 @@ Download a release binary and check it against `checksums.txt`
 1.26 or newer:
 
 ```sh
-go install github.com/Exploded-views/bitc/cmd/bitc@v0.1.1
+go install github.com/Exploded-views/bitc/cmd/bitc@v0.1.2
 ```
 
 ## Quickstart (local, about two minutes)
@@ -273,7 +273,7 @@ for agents are in [docs/agent-guide.md](docs/agent-guide.md).
 
 ## Status and roadmap
 
-bitc is pre-1.0 ([v0.1.1 release notes](https://github.com/Exploded-views/bitc/releases/tag/v0.1.1)),
+bitc is pre-1.0 ([v0.1.2 release notes](https://github.com/Exploded-views/bitc/releases/tag/v0.1.2)),
 so interfaces may still change.
 
 - **Stable in intent:** the local gate (pools, slots, groups, priority lanes, memory admission,

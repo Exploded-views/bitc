@@ -20,7 +20,7 @@ import (
 )
 
 // RemoteSweep is the remote part of sweep.
-var RemoteSweep func(ctx context.Context, e *config.Effective, dryRun bool, provider string, foreign bool, out io.Writer)
+var RemoteSweep func(ctx context.Context, e *config.Effective, dryRun bool, provider string, foreign bool, out io.Writer) error
 
 // Sweep cleans local state (spec 3.3): dead tickets and their process groups, dead
 // supervisors' records (lost), history rotation, retention and stale artifact staging dirs. It never fails on one bad item.

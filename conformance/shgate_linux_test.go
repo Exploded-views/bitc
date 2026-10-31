@@ -1,3 +1,5 @@
+// Linux-only: uses shEnv, whose rig is built on the ssh fake (sshfake), which does not build elsewhere.
+
 package conformance
 
 // Every verb the ssh provider sends is replayed through the real scripts/ssh-gate.sh grammar

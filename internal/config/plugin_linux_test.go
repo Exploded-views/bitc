@@ -1,3 +1,5 @@
+// Linux-only: the fixture copies /proc/self/exe as the pinned ELF plugin (the macOS shim is PR6 of #4).
+
 package config
 
 import (

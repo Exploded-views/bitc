@@ -1,3 +1,5 @@
+// Linux-only: these start a real plugin through `/proc/self/exe __plugin-exec` (the macOS shim is PR6 of #4).
+
 package plugin
 
 import (

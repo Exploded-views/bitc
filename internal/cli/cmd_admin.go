@@ -49,6 +49,10 @@ func init() {
 				return exit.Usage
 			}
 		}
+		if err := accountDirRefusal(e); err != nil {
+			fmt.Fprintln(std.Err, exit.As(err).Line)
+			return exit.Code(err)
+		}
 		r := status.Snapshot(e, l, pools)
 		if asJSON {
 			b, _ := json.MarshalIndent(r, "", "  ")
@@ -84,7 +88,10 @@ func init() {
 			fmt.Fprintln(std.Err, "bitc: remote "+config.LeftoverHint(t))
 		}
 		if status.RemoteSweep != nil {
-			status.RemoteSweep(ctx, e, dry, provider, foreign, std.Out)
+			if err := status.RemoteSweep(ctx, e, dry, provider, foreign, std.Out); err != nil {
+				fmt.Fprintln(std.Err, exit.As(err).Line)
+				return exit.Code(err)
+			}
 		}
 		return 0
 	})
@@ -138,4 +145,14 @@ func loadState(g config.Flags, std Std, cleanup bool) (*config.Effective, state.
 		return nil, state.Layout{}, exit.Code(err)
 	}
 	return e, l, 0
+}
+
+// accountDirRefusal is the accounting dir's refusal (a network filesystem, 78) for status and
+// config check, as the state dir's is: only on a host with remote providers or unfinished reservations, and it
+// never creates the dir.
+func accountDirRefusal(e *config.Effective) error {
+	if len(e.Providers) == 0 && len(config.RemoteLeftovers(e)) == 0 {
+		return nil
+	}
+	return state.CheckAccountDir(e)
 }

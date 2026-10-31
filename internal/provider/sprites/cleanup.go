@@ -59,6 +59,13 @@ func (c *Cleaner) List(ctx context.Context, prefixes []string) ([]provider.Resou
 	return listResources(ctx, c.api, c.set, c.eff, prefixes)
 }
 
+// UseInstallSecret sets the secret directly: the sweep passes the one it read.
+func (c *Cleaner) UseInstallSecret(b []byte) {
+	c.secretMu.Lock()
+	c.secret = b
+	c.secretMu.Unlock()
+}
+
 // Owner is the owner tag of a Sprite whose name verifies under this install's secret, else "".
 // It makes no API call: the tag is part of the name.
 func (c *Cleaner) Owner(_ context.Context, id string) (string, error) {

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -363,7 +364,7 @@ func mergePools(p *problems, e *Effective, host layer, repo *layer) {
 			pool.Providers = hp.Providers
 		}
 		for _, t := range pool.Providers {
-			if t != "local" && e.Providers[t] == nil && (t != "sprites" || !e.spritesRefused) && platformGOOS == "linux" {
+			if t != "local" && e.Providers[t] == nil && (t != "sprites" || !e.spritesRefused) && (platformGOOS == "linux" || !slices.Contains(e.platformRefused, t)) {
 				hint := ""
 				if t == "sprites" && e.spritesCleanup {
 					hint = "; to clean up Sprites left by 0.1.0, configure [providers.sprites] with [host] experimental_remote = true and run bitc sweep"

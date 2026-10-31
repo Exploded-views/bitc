@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Exploded-views/bitc/internal/config"
+	"github.com/Exploded-views/bitc/internal/exit"
 	"github.com/Exploded-views/bitc/internal/provider"
 	"github.com/Exploded-views/bitc/internal/remote/gitref"
 	"github.com/Exploded-views/bitc/internal/state"
@@ -61,23 +62,40 @@ type sweepInput struct {
 	now       time.Time
 	out       io.Writer
 	errw      io.Writer
+	// readOnly: the accounting dir is on a network filesystem, where flock (and so every
+	// reservation and ticket) cannot be trusted. Only a resource past its own expiry is torn down;
+	// every own resource that is not is listed, and nothing is written.
+	readOnly bool
+}
+
+// sweepResult counts what one provider's sweep tore down and what it left (listed, kept for want of
+// an owner tag, or failed to tear down).
+type sweepResult struct{ torn, would, listed, kept, failed int }
+
+// describe is the age and hourly cost of r; the age is "unknown" when the provider gave no creation time.
+func describe(r provider.Resource, now time.Time) string {
+	age := "unknown"
+	if !r.Created.IsZero() {
+		age = now.Sub(r.Created).Round(time.Minute).String()
+	}
+	return "age " + age + " cost " + r.USDPerHour.Dollars() + "/h"
 }
 
 // sweepProvider tears down own resources past E whose owner tag verifies (or that have a
 // ledger launch line); with --foreign also other installs' prefixed resources past E.
-func sweepProvider(ctx context.Context, in sweepInput) {
+func sweepProvider(ctx context.Context, in sweepInput) (res sweepResult) {
 	list, err := in.prov.List(ctx, []string{in.prefix})
 	if err != nil {
 		var fo provider.ForeignOrg
 		if errors.As(err, &fo) { // a Sprite of another org fails the whole list: name it, never touch it
 			name, org := fo.ForeignOrg()
 			fmt.Fprintf(in.errw, "bitc: sweep: %s: %v; %s belongs to organization %q and is never touched; nothing was swept: delete it by hand\n", in.typ, err, name, org)
-			return
+			return res
 		}
 		fmt.Fprintf(in.errw, "bitc: sweep: %s: %v\n", in.typ, err)
-		return
+		return res
 	}
-	if !in.dry && in.dir != "" {
+	if !in.dry && !in.readOnly && in.dir != "" {
 		stampSweep(in.dir, in.now)
 	}
 	noun := in.typ
@@ -85,24 +103,39 @@ func sweepProvider(ctx context.Context, in sweepInput) {
 		noun = in.rules.Noun
 	}
 	var orphans map[string]bool
-	if OrphanNames != nil && in.dir != "" {
+	if OrphanNames != nil && in.dir != "" && !in.readOnly {
 		orphans = OrphanNames(in.dir)
+	}
+	tags := map[string]string{} // asked once per resource, whichever branches want it
+	owner := func(r provider.Resource) string {
+		if tag, ok := tags[r.ID]; ok {
+			return tag
+		}
+		tag, err := in.prov.Owner(ctx, r.ID)
+		if err != nil {
+			fmt.Fprintf(in.errw, "bitc: sweep: %s: owner check of %s: %v\n", in.typ, r.ID, err)
+		}
+		tags[r.ID] = tag
+		return tag
 	}
 	teardown := func(r provider.Resource) bool {
 		if in.dry {
+			res.would++
 			return false
 		}
 		if err := in.prov.Teardown(ctx, r.ID); err != nil {
-			fmt.Fprintf(in.errw, "bitc: sweep: %s: could not tear down %s: %v\n", in.typ, r.ID, err)
+			fmt.Fprintf(in.errw, "bitc: sweep: %s: could not tear down %s: %v (%s)\n", in.typ, r.ID, err, describe(r, in.now))
+			res.failed++
 			return false
 		}
+		res.torn++
 		return true
 	}
 	for _, r := range list {
 		// An orphan reservation never shields its resource: a verified owner tag is enough, and a
 		// confirmed teardown drops the orphan (spec 8.3).
 		if orphans[r.Name] && r.Install == in.install {
-			if tag, _ := in.prov.Owner(ctx, r.ID); provider.OwnerMatches(in.secret, r.Name, tag) {
+			if provider.OwnerMatches(in.secret, r.Name, owner(r)) {
 				fmt.Fprintf(in.out, "swept %s %s (orphaned by a pre-attach discard)\n", noun, r.Name)
 				if teardown(r) && DropOrphan != nil {
 					DropOrphan(in.dir, r.Name)
@@ -114,11 +147,16 @@ func sweepProvider(ctx context.Context, in sweepInput) {
 		if !pastE {
 			// one resource per job: an own one that no live reservation of this host accounts for
 			// and that is older than start_timeout lost its job process (design 2.4)
-			if in.goneAfter > 0 && r.Install == in.install && !in.reserved[r.Name] && !r.Created.IsZero() && in.now.Sub(r.Created) > in.goneAfter {
-				if tag, _ := in.prov.Owner(ctx, r.ID); provider.OwnerMatches(in.secret, r.Name, tag) {
+			if in.goneAfter > 0 && !in.readOnly && r.Install == in.install && !in.reserved[r.Name] && !r.Created.IsZero() && in.now.Sub(r.Created) > in.goneAfter {
+				if provider.OwnerMatches(in.secret, r.Name, owner(r)) {
 					fmt.Fprintf(in.out, "swept %s %s (job process gone)\n", noun, r.Name)
 					teardown(r)
 				}
+			}
+			if in.readOnly && r.Install == in.install {
+				fmt.Fprintf(in.out, "listed %s %s (%s) %s: not torn down, it cannot be shown orphaned without the lock files\n",
+					in.typ, r.ID, r.Name, describe(r, in.now))
+				res.listed++
 			}
 			continue
 		}
@@ -131,11 +169,11 @@ func sweepProvider(ctx context.Context, in sweepInput) {
 			teardown(r)
 		}
 		if r.Install == in.install {
-			tag, _ := in.prov.Owner(ctx, r.ID)
-			if provider.OwnerMatches(in.secret, r.Name, tag) || in.launched[r.Name] {
+			if provider.OwnerMatches(in.secret, r.Name, owner(r)) || in.launched[r.Name] {
 				tear("resource")
 			} else {
-				fmt.Fprintf(in.errw, "bitc: sweep: %s: %s has no verified owner tag; kept\n", in.typ, r.ID)
+				fmt.Fprintf(in.errw, "bitc: sweep: %s: %s has no verified owner tag; kept (%s)\n", in.typ, r.ID, describe(r, in.now))
+				res.kept++
 			}
 			continue
 		}
@@ -143,6 +181,7 @@ func sweepProvider(ctx context.Context, in sweepInput) {
 			tear("foreign resource")
 		}
 	}
+	return res
 }
 
 // stampSweep records that a sweep listed this provider's resources just now.
@@ -166,18 +205,26 @@ func LastSweep(dir string) (time.Time, bool) {
 }
 
 // Sweep is the remote part of `bitc sweep` (spec 8.3). It always returns; problems are noted.
-func Sweep(ctx context.Context, e *config.Effective, dry bool, only string, foreign bool, out io.Writer) {
-	acct, err := state.AccountDir(e)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "bitc: sweep:", err)
-		return
+func Sweep(ctx context.Context, e *config.Effective, dry bool, only string, foreign bool, out io.Writer) error {
+	acct, netfs, err := state.AccountDirOnNetworkFS(e)
+	if err != nil && netfs != "" { // an existing dir that fails its owner or mode check
+		return netfsSweepError(acct, netfs, sweepResult{}, fmt.Sprintf("unusable accounting dir (%v), so nothing was torn down; ", err))
 	}
-	secret, err := state.InstallSecret(acct)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "bitc: sweep:", err)
-		return
+		return nil
+	}
+	var secret []byte
+	if netfs != "" { // read-only: a missing or unreadable secret is not made, and nothing is provably ours
+		if secret, err = state.ReadInstallSecret(acct); err != nil {
+			return netfsSweepError(acct, netfs, sweepResult{}, fmt.Sprintf("no usable install secret (%v), so nothing was torn down; ", err))
+		}
+	} else if secret, err = state.InstallSecret(acct); err != nil {
+		fmt.Fprintln(os.Stderr, "bitc: sweep:", err)
+		return nil
 	}
 	install := state.Install16(secret)
+	var total sweepResult
 	for typ, core := range e.Providers {
 		if only != "" && only != typ {
 			continue
@@ -186,7 +233,7 @@ func Sweep(ctx context.Context, e *config.Effective, dry bool, only string, fore
 			continue
 		}
 		dir := filepath.Join(acct, "remote", typ)
-		if PruneReservations != nil {
+		if PruneReservations != nil && netfs == "" {
 			for _, name := range PruneReservations(dir, dry) {
 				fmt.Fprintf(out, "swept reservation %s (its process is gone)\n", name)
 			}
@@ -199,19 +246,30 @@ func Sweep(ctx context.Context, e *config.Effective, dry bool, only string, fore
 			if full, ok := p.(provider.Provider); ok {
 				defer CloseProvider(full)
 			}
+			if su, ok := p.(provider.SecretUser); ok {
+				su.UseInstallSecret(secret)
+			}
 			in := sweepInput{prov: p, typ: typ, dir: dir, prefix: core.NamePrefix + "-", install: install, secret: secret,
-				launched: launchedNames(dir), foreign: foreign, dry: dry, now: time.Now(), out: out, errw: os.Stderr}
+				launched: launchedNames(dir), foreign: foreign, dry: dry, now: time.Now(), out: out, errw: os.Stderr, readOnly: netfs != ""}
 			if core.CleanupOnly { // a verified owner tag only: never a ledger line or another install's resource
 				in.launched, in.foreign = nil, false
 			}
 			if sr, ok := p.(provider.SweepRules); ok {
 				in.rules = sr.SweepRules()
 				in.goneAfter = e.Scale(in.rules.GoneAfter)
-				if LiveReservations != nil {
+				if LiveReservations != nil && netfs == "" {
 					in.reserved = LiveReservations(dir)
 				}
 			}
-			sweepProvider(ctx, in)
+			r := sweepProvider(ctx, in)
+			total.torn += r.torn
+			total.would += r.would
+			total.listed += r.listed
+			total.kept += r.kept
+			total.failed += r.failed
+		}
+		if netfs != "" { // the refs are shared with jobs on other hosts that this home cannot show are dead
+			continue
 		}
 		for _, prefix := range []string{core.Transport.RefPrefix, gitref.AgentRefPrefix} {
 			refs, err := gitref.SweepRefs(ctx, e.Worktree, core.Transport.Remote, prefix, install, 3*time.Hour, dry)
@@ -223,6 +281,10 @@ func Sweep(ctx context.Context, e *config.Effective, dry bool, only string, fore
 			}
 		}
 	}
+	if netfs != "" {
+		return netfsSweepError(acct, netfs, total, "")
+	}
+	return nil
 }
 
 func launchedNames(dir string) map[string]bool {
@@ -258,4 +320,16 @@ func sweepHandle(ctx context.Context, typ string, core *config.Provider, e *conf
 		return nil, err
 	}
 	return p, nil
+}
+
+// netfsSweepError is the 78 a sweep ends with on a network-filesystem home: what it tore down, what
+// it left, and the steps it skipped.
+func netfsSweepError(acct, netfs string, r sweepResult, why string) error {
+	if r.would > 0 {
+		why += fmt.Sprintf("dry run: would tear down %d, ", r.would)
+	}
+	return exit.Configf("sweep: accounting dir %s is on %s, where flock cannot be trusted: %store down %d provably expired resource(s), "+
+		"left %d listed above (not shown orphaned without the lock files, so not torn down), %d kept (past expiry, no verified owner tag) "+
+		"and %d failed to tear down, and skipped every write (reservation pruning, the sweep stamp, the git ref sweep); "+
+		"move the home to a local filesystem and sweep again", acct, netfs, why, r.torn, r.listed, r.kept, r.failed)
 }

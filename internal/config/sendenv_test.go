@@ -18,6 +18,7 @@ func init() {
 }
 
 func TestSendEnvDefaultsAndSource(t *testing.T) {
+	pinLinux(t)
 	for _, c := range []struct {
 		typ, extra, want, src string
 		multi                 bool
@@ -39,6 +40,7 @@ func TestSendEnvDefaultsAndSource(t *testing.T) {
 }
 
 func TestSendEnvValidation78(t *testing.T) {
+	pinLinux(t)
 	for _, c := range []struct{ typ, extra, msg string }{
 		{"sedefault", "send_env = \"all\"\n", `providers.sedefault.send_env: must be "none", "forwarded" or "forced": "all"`},
 		{"sedefault", "send_env = true\n", `providers.sedefault.send_env: must be "none", "forwarded" or "forced": true`},

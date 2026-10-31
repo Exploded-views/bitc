@@ -1,0 +1,24 @@
+# The privileged test suites (scripts/privileged.sh) on a GitHub-hosted runner: its own kernel and
+# root, discarded after the job, so no test can touch a developer host. Manual dispatch only; it is
+# never part of the regular `ci` workflow.
+name: privileged
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit or branch to test"
+        required: true
+        default: main
+permissions: { contents: read }
+concurrency: { group: privileged, cancel-in-progress: false }
+jobs:
+  privileged:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - name: Privileged suites in a throwaway container on this throwaway runner
+        run: sh scripts/privileged.sh

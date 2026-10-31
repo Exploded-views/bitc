@@ -58,6 +58,18 @@ Each torn-down item is one `swept ...` line on stdout; problems are `bitc: sweep
 lines on stderr. Sweep exits 0 unless its own arguments are wrong (64) or the config is invalid
 (78), so a provider outage never fails the unit: read the journal for the stderr lines.
 
+The one other 78 is a home on a network filesystem (NFS): flock, and so every reservation, cannot be
+trusted there. Sweep then tears down only resources past their own expiry (with a verified owner
+tag or a ledger launch line), prints every other own resource as a `listed ...` line with its age and
+hourly cost without touching it, skips every write (reservation pruning, the sweep stamp, the git
+ref sweep), creates nothing in the accounting dir, and exits 78 after the teardown, naming what it
+tore down, listed, kept (expired, no verified owner tag) and failed on, so the timer fails visibly.
+With no usable install secret (missing, unreadable) or an unusable dir it tears down nothing and
+still exits 78. `--foreign` still tears down other installs' resources past their own expiry. Move
+the home to a local filesystem. Sweep hands the install secret it read to the Sprites cleanup
+handle, so an expired Sprite is verified and torn down there; the `ssh` and plugin providers need
+the account dir themselves and fail closed on NFS (an error line, nothing torn down).
+
 Run `bitc sweep --dry-run` to see what a sweep would remove without removing it. Only resources
 carrying this install's verified owner tag are torn down; another install's resources are touched
 only with `--foreign`.

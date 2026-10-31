@@ -1,3 +1,5 @@
+// Linux-only: drives the ssh fake (sshfake) and the Linux host agent (agent), which do not build elsewhere.
+
 package conformance
 
 // SH34 (the host's git items) and SH38 (Task H.5 integrator): `check-host --doctor` relays the two

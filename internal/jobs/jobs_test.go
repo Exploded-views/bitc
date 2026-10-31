@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +22,11 @@ func TestTerminateAddsNewlineOnlyWhenNeeded(t *testing.T) {
 		"out\r":   "out\r\n__EXIT__ 3\n",
 		"out\x00": "out\x00\n__EXIT__ 3\n",
 	} {
+		if runtime.GOOS != "linux" {
+			// lastByte cannot read the job's own write-only fd off Linux (lastbyte_other.go): the
+			// marker always starts on a fresh line, after an empty one at worst.
+			want = in + "\n__EXIT__ 3\n"
+		}
 		p := filepath.Join(t.TempDir(), "log")
 		_ = os.WriteFile(p, []byte(in), 0o600)
 		f, _ := os.OpenFile(p, os.O_WRONLY|os.O_APPEND, 0)

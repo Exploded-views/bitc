@@ -1,3 +1,5 @@
+// Linux-only: drives the ssh fake (sshfake) and the Linux host agent (agent), which do not build elsewhere.
+
 package conformance
 
 // SH34 and SH35 (Task H.5, controller side): the ssh upload transport. The commit goes to the

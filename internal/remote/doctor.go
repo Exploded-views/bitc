@@ -28,10 +28,12 @@ func Doctor(e *config.Effective, out io.Writer) (failed, unusable bool) {
 	}
 	ctx := context.Background()
 	var install string
-	if acct, err := state.AccountDir(e); err == nil {
-		if secret, err := state.InstallSecret(acct); err == nil {
-			install = state.Install16(secret)
-		}
+	if acct, err := state.AccountDir(e); err != nil {
+		// not a silent skip: the launch lock, ledger and spend cap live there (a network
+		// filesystem is refused, spec 9)
+		line("fail", "accounting dir", exit.As(err).Reason)
+	} else if secret, err := state.InstallSecret(acct); err == nil {
+		install = state.Install16(secret)
 	}
 	var started []provider.Provider
 	defer func() {

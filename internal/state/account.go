@@ -11,22 +11,88 @@ import (
 	"os/user"
 	"path/filepath"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/Exploded-views/bitc/internal/config"
 	"github.com/Exploded-views/bitc/internal/exit"
 )
 
-// AccountDir is <passwd home>/.local/state/bitc/account (spec 2, 9). No env, flag or key moves
-// it, so a private BITC_DIR or BITC_CONFIG cannot multiply the cap; only [test] accounting_dir.
-func AccountDir(e *config.Effective) (string, error) {
+// accountPath is the accounting dir's path, without creating it. config.accountDir (experimental.go)
+// computes the same path for its read-only leftovers scan: the two must agree.
+func accountPath(e *config.Effective) (string, error) {
 	if e.Test != nil && e.Test.AccountingDir != "" {
-		return e.Test.AccountingDir, MkdirPrivate(e.Test.AccountingDir)
+		return e.Test.AccountingDir, nil
 	}
 	u, err := user.Current()
 	if err != nil || u.HomeDir == "" {
 		return "", exit.Unavailablef("cannot find your home directory in the passwd database: %v", err)
 	}
-	dir := filepath.Join(u.HomeDir, ".local", "state", "bitc", "account")
-	return dir, MkdirPrivate(dir)
+	return filepath.Join(u.HomeDir, ".local", "state", "bitc", "account"), nil
+}
+
+// AccountDir is <passwd home>/.local/state/bitc/account (spec 2, 9). No env, flag or key moves
+// it, so a private BITC_DIR or BITC_CONFIG cannot multiply the cap; only [test] accounting_dir.
+// Like the state dir it is refused (78) on a network filesystem: the launch lock, the ledger and
+// the reservations that hold the spend cap need a reliable flock.
+func AccountDir(e *config.Effective) (string, error) {
+	dir, err := accountPath(e)
+	if err != nil {
+		return "", err
+	}
+	if err := MkdirPrivate(dir); err != nil {
+		return dir, err
+	}
+	return dir, checkFS("accounting dir", dir)
+}
+
+// AccountDirOnNetworkFS is AccountDir for sweep, which still has work to do on a network
+// filesystem: it returns the dir and, instead of refusing, the name of the network filesystem
+// ("" for a local one). The caller must then treat the dir as read-only and its locks as untrusted;
+// a dir that does not exist yet is not created there.
+func AccountDirOnNetworkFS(e *config.Effective) (dir, netfs string, err error) {
+	dir, err = accountPath(e)
+	if err != nil {
+		return "", "", err
+	}
+	var sfs unix.Statfs_t
+	if statfs(nearestExisting(dir), &sfs) == nil {
+		netfs = networkFS(&sfs)
+	}
+	if _, serr := os.Stat(dir); netfs != "" && serr != nil {
+		return dir, netfs, nil // missing on a network filesystem: creating it would be a write
+	}
+	return dir, netfs, MkdirPrivate(dir) // an existing dir is only checked
+}
+
+// ReadInstallSecret is InstallSecret without creating anything: a missing secret is an error.
+func ReadInstallSecret(dir string) ([]byte, error) {
+	return readSecret(filepath.Join(dir, "install-secret"))
+}
+
+// nearestExisting is path, or for a path not yet created its nearest existing parent.
+func nearestExisting(path string) string {
+	at := path
+	for {
+		if _, err := os.Stat(at); err == nil {
+			return at
+		}
+		parent := filepath.Dir(at)
+		if parent == at {
+			return at
+		}
+		at = parent
+	}
+}
+
+// CheckAccountDir is AccountDir's filesystem refusal without creating anything. Its callers are
+// config check and status. A missing dir is judged by its nearest existing parent, so a fresh
+// network-filesystem home is refused before the first remote command creates the dir there.
+func CheckAccountDir(e *config.Effective) error {
+	dir, err := accountPath(e)
+	if err != nil {
+		return nil // no home: the remote commands say so; config check never needed one
+	}
+	return checkFSAt("accounting dir", dir, nearestExisting(dir))
 }
 
 // InstallSecret returns the 32-byte install secret, creating it once. The file appears

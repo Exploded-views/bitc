@@ -1,3 +1,5 @@
+// Linux-only: drives agent.Run in-process (agent), which does not build elsewhere.
+
 package conformance
 
 // SH36 and SH37: the root side and stage 2 of the ssh upload transport, driven in-process on a

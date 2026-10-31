@@ -8,7 +8,10 @@ import "os"
 type Stat struct {
 	Pid, PPid, Pgrp int
 	State           byte
-	Start           uint64 // field 22, clock ticks since boot
+	// Start identifies the process incarnation; compare it for equality only. Linux: field 22
+	// of /proc/<pid>/stat, clock ticks since boot. darwin: kinfo_proc p_starttime (wall clock
+	// since the Unix epoch) folded into microseconds.
+	Start uint64
 }
 
 // IsAncestor reports whether (pid, start) is this process or one of its ancestors.

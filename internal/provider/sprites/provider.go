@@ -132,7 +132,13 @@ func (p *Provider) installSecret() ([]byte, error) {
 	return b, nil
 }
 
-// UseInstallSecret sets the secret directly (tests).
+var (
+	_ provider.SecretUser = (*Provider)(nil)
+	_ provider.SecretUser = (*Cleaner)(nil)
+)
+
+// UseInstallSecret sets the secret directly: tests, and the sweep, which passes the one it read
+// (a network-filesystem home refuses the provider's own account-dir lookup).
 func (p *Provider) UseInstallSecret(b []byte) {
 	p.secretMu.Lock()
 	p.secret = b

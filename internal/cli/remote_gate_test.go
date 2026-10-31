@@ -12,6 +12,7 @@ import (
 // sweep and doctor --remote load with Cleanup: their refusal of remote providers without
 // [host] experimental_remote says how to clean up; status does not.
 func TestSweepAndDoctorRemoteRefusalNamesSweep(t *testing.T) {
+	t.Cleanup(config.SetPlatformForTest("linux")) // the test means Linux; the darwin gate refuses remote providers first
 	dir := t.TempDir()
 	host := filepath.Join(dir, "bitc.toml")
 	// [test] accounting_dir: an empty dir of its own, never this account's real one

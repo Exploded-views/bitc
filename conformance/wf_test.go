@@ -128,7 +128,7 @@ func TestWF5_TheRepoWorkflowsPass(t *testing.T) {
 	if _, _, err := checkWorkflowDir(t.TempDir()); err == nil {
 		t.Error("an empty workflows directory passed")
 	}
-	// this repo's own workflows, privileged.yml (private tree only) included
+	// this repo's own workflows
 	n, f, err := checkWorkflowDir("../.github/workflows")
 	if err != nil {
 		t.Fatal(err)

@@ -93,8 +93,9 @@ func redactAll(red *redact.Set, in []string) []string {
 func iso(ns int64) string { return time.Unix(0, ns).UTC().Format(time.RFC3339) }
 
 // Snapshot reads tickets, locks and memory without taking any lock: holders come from
-// /proc/locks (lock.HeldRO), so a concurrent `--wait 0s` caller or a legacy `flock -n` never
-// sees a lock made busy by status (read-only, best effort).
+// /proc/locks on Linux and fcntl(F_GETLK) on darwin (lock.HeldRO; neither takes a lock), so a
+// concurrent `--wait 0s` caller or a legacy `flock -n` never sees a lock made busy by status
+// (read-only, best effort; except on a Linux without /proc/locks, see lock.HeldRO).
 func Snapshot(e *config.Effective, l state.Layout, only []string) Report {
 	r := Report{Version: "1", Time: time.Now().UTC().Format(time.RFC3339), Pools: []Pool{}, Groups: []Group{}}
 	names := only

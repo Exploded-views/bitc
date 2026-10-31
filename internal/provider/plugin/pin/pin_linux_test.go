@@ -1,3 +1,5 @@
+// Linux-only: the fixtures copy /proc/self/exe and pin accepts ELF only until PR6 of #4 (Mach-O in the pin).
+
 package pin
 
 import (

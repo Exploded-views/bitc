@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -42,73 +41,9 @@ func fakeSpec(t *testing.T) string {
 	return enc
 }
 
-// A pod past D + 10m deletes itself, and the DELETE lands on the fake, never on the real API.
-func TestSelfDeleteLandsOnTheFake(t *testing.T) {
-	f := New(t, Options{Bin: buildBitc(t)})
-	past := strconv.FormatInt(time.Now().Add(-11*time.Minute).Unix(), 10)
-	body, _ := json.Marshal(v2Body(map[string]any{"name": "bitc-x", "env": map[string]string{"BITC_SPEC": fakeSpec(t),
-		"BITC_DEADLINE": past, "BITC_PROVIDER_TYPE": "runpod", "BITC_API_BASE": f.URL()}}))
-	resp, err := http.Post(f.URL()+"/v2/pods", "application/json", bytes.NewReader(body))
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = resp.Body.Close()
-	deadline := time.Now().Add(30 * time.Second)
-	for time.Now().Before(deadline) {
-		for i, c := range f.Calls() {
-			if c == "DELETE /v2/pods/pod1" {
-				if a := f.Auth()[i]; a != "Bearer scoped-pod1" {
-					t.Fatalf("auth %q", a)
-				}
-				return
-			}
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	t.Fatalf("the fake never saw the self-delete: %v", f.Calls())
-}
-
-func TestAPodBootsBeginsAndExits(t *testing.T) {
-	bin := buildBitc(t)
-	enc := fakeSpec(t)
-	f := New(t, Options{Bin: bin})
-	body, _ := json.Marshal(v2Body(map[string]any{"name": "bitc-x", "env": map[string]string{"BITC_SPEC": enc,
-		"BITC_DEADLINE": "9999999999", "BITC_PROVIDER_TYPE": "runpod"}}))
-	resp, err := http.Post(f.URL()+"/v2/pods", "application/json", bytes.NewReader(body))
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = resp.Body.Close()
-	if resp.StatusCode != 201 {
-		t.Fatal(resp.Status)
-	}
-	deadline := time.Now().Add(20 * time.Second)
-	for time.Now().Before(deadline) {
-		f.mu.Lock()
-		var lines []string
-		for _, p := range f.pods {
-			for _, l := range p.log {
-				lines = append(lines, l.Line)
-			}
-		}
-		f.mu.Unlock()
-		joined := strings.Join(lines, "\n")
-		if strings.Contains(joined, "__BITC_EXIT__ nn 0") {
-			b := strings.Index(joined, "__BITC_BOOT__ nn")
-			g := strings.Index(joined, "__BITC_BEGIN__ nn")
-			if b < 0 || g < b {
-				t.Fatal(joined)
-			}
-			return
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	t.Fatal("no exit marker")
-}
-
 // A held call is recorded, answers only after Release, and answers normally then.
 func TestHoldRecordsThenAnswersOnRelease(t *testing.T) {
-	f := New(t, Options{Bin: "/bin/false"})
+	f := New(t, Options{Bin: toolBin(t, "false")})
 	f.Behave("hold GET /v2/billing/pods")
 	done := make(chan int, 1)
 	go func() {
@@ -160,7 +95,7 @@ func createWith(t *testing.T, f *Fake, spec agent.Spec, apiBase string) (int, st
 // BITC_API_BASE is always the fake's URL, whatever the request asked for, so no test can ever
 // reach the real RunPod API.
 func TestCreateForcesTestModeAndTheFakesAPIBase(t *testing.T) {
-	f := New(t, Options{Bin: "/bin/true"})
+	f := New(t, Options{Bin: toolBin(t, "true")})
 	code, id := createWith(t, f, agent.Spec{Job: "j1", Argv: []string{"true"}}, "https://api.runpod.io")
 	if code != 201 {
 		t.Fatalf("status %d", code)
@@ -188,7 +123,7 @@ func TestCreateForcesTestModeAndTheFakesAPIBase(t *testing.T) {
 
 // The fake refuses a pod whose spec would make the agent contact a host that is not loopback.
 func TestCreateRefusesNonLoopbackHosts(t *testing.T) {
-	f := New(t, Options{Bin: "/bin/true"})
+	f := New(t, Options{Bin: toolBin(t, "true")})
 	for _, spec := range []agent.Spec{
 		{Job: "j1", CloneURL: "https://github.com/example/repo.git", TestRoot: t.TempDir(), Unprivileged: true},
 		{Job: "j2", CloneURL: "git@github.com:example/repo.git", TestRoot: t.TempDir(), Unprivileged: true},
@@ -225,7 +160,7 @@ func postRaw(t *testing.T, f *Fake, body map[string]any) (int, string) {
 // POST /v2/pods is strict like the real API: the v1-style keys, an unknown key or a missing
 // required key is a 422 with a JSON error naming the field, and no pod is made.
 func TestCreateIsStrictAboutTheV2Shape(t *testing.T) {
-	f := New(t, Options{Bin: "/bin/true"})
+	f := New(t, Options{Bin: toolBin(t, "true")})
 	env := map[string]any{"BITC_SPEC": "x"}
 	old := map[string]any{"name": "bitc-x", "imageName": "debian", "computeType": "CPU", "cpuFlavorIds": []string{"cpu3c"},
 		"vcpuCount": 8, "cloudType": "SECURE", "containerDiskInGb": 40, "ports": []string{"8090/http"},
@@ -254,4 +189,14 @@ func TestCreateIsStrictAboutTheV2Shape(t *testing.T) {
 	if n := len(f.Bodies()); n != 0 {
 		t.Errorf("%d pods were made from invalid bodies", n)
 	}
+}
+
+// toolBin finds a no-op "agent" (true, false): they live in /usr/bin on macOS and /bin on some Linux images.
+func toolBin(t *testing.T, name string) string {
+	t.Helper()
+	p, err := exec.LookPath(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
 }

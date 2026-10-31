@@ -94,19 +94,32 @@ func Held(path string) bool {
 
 func fcntlGetfd(fd int) (int, error) { return unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0) }
 
-// HeldRO reports whether any process holds a flock on path, read from /proc/locks without
-// taking the lock, so an observer never makes a free lock look busy to a concurrent
-// non-blocking caller. It matches the device and inode /proc/locks prints. A missing file is
-// not held; if /proc/locks is unreadable it falls back to Held. Locks of processes outside
-// this pid namespace are not listed there.
+// inProbe is a test seam: HeldRO calls it while it inspects the lock, at the latest point
+// where a lock taken by the probe itself would still be in force. It is a plain variable: a test
+// that sets it must not run in parallel, and no HeldRO caller may outlive the test that started it.
+var inProbe func()
+
+// procLocksPath is where HeldRO reads the kernel's lock table; a test points it elsewhere to reach
+// the fallback. The same rules as inProbe apply: only tests write it, never in parallel.
+var procLocksPath = "/proc/locks"
+
+// HeldRO reports whether any process holds a flock on path without making a free lock look busy
+// to a concurrent non-blocking caller (#55). Linux reads /proc/locks, matching the device and
+// inode it prints; darwin asks fcntl(F_GETLK), which sees flock locks there. Neither takes the
+// lock. A missing file is not held. Without /proc/locks, Linux falls back to a brief try-lock,
+// which can make a free lock look busy for that moment; darwin uses it only if F_GETLK fails.
+// Locks of processes outside this pid namespace are not listed in /proc/locks.
 func HeldRO(path string) bool {
 	var st unix.Stat_t
 	if unix.Lstat(path, &st) != nil {
 		return false
 	}
-	b, err := os.ReadFile("/proc/locks")
+	b, err := os.ReadFile(procLocksPath)
 	if err != nil {
-		return Held(path)
+		return heldNoProcLocks(path)
+	}
+	if inProbe != nil {
+		inProbe()
 	}
 	maj, mnr := devMajorMinor(&st)
 	for _, line := range strings.Split(string(b), "\n") {

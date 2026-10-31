@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Exploded-views/bitc/internal/config"
 	"github.com/Exploded-views/bitc/internal/exit"
 	"github.com/Exploded-views/bitc/internal/redact"
 )
@@ -14,6 +15,7 @@ import (
 // job path: a host file with [providers.sprites] is 78 with the Sprites jobs line, whatever the
 // flag, before anything is created (SPR1, SPR2).
 func TestPrepareRefusesSpritesJobs(t *testing.T) {
+	t.Cleanup(config.SetPlatformForTest("linux")) // the test means Linux; the darwin gate refuses remote providers first
 	dir := t.TempDir()
 	host := filepath.Join(dir, "bitc.toml")
 	body := "version = 1\n[host]\nexperimental_remote = true\n[pools.heavy]\nproviders = [\"sprites\", \"local\"]\n" +
