@@ -12,7 +12,7 @@ pat=${1:?usage: scrub.sh [--tree] PATTERNS_FILE}
 fail() { echo "scrub: $*" >&2; exit 2; }
 [ -r "$pat" ] || fail "cannot read the pattern file"
 # grep -f would read a " #class=<name>" tag as part of its pattern, which then matches nothing
-tag=$(grep -n -i -E '#[[:space:]]*class' "$pat" | head -1 | cut -d: -f1)
+tag=$(grep -a -n -i -E '#[[:space:]]*class' "$pat" | head -1 | cut -d: -f1)
 [ -z "$tag" ] || fail "line $tag of the pattern file holds a #class tag"
 git rev-parse --git-dir >/dev/null || fail "not a readable git repo"
 # names [REV]: matching file names in REV (the work tree if none); git grep exits 1 on no match
