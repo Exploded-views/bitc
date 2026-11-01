@@ -40,6 +40,7 @@ conformance-race:
 lint: darwin-vet
 	$(GO) vet ./...
 	golangci-lint run
+	sh scripts/scrub_test.sh
 
 # The test code must compile for darwin: test code that needs Linux carries a linux build constraint
 # or a _linux file name.
