@@ -288,7 +288,7 @@ Open issues that make up the roadmap:
 
 - [#3](https://github.com/Exploded-views/bitc/issues/3), [#4](https://github.com/Exploded-views/bitc/issues/4),
   [#5](https://github.com/Exploded-views/bitc/issues/5): macOS parity, macOS as a client to remote
-  providers (planned for 0.1.3), macOS as a remote build target (design first)
+  providers (planned for 0.1.4), macOS as a remote build target (design first)
 - [#6](https://github.com/Exploded-views/bitc/issues/6): Sprites catch-all egress deny
 - [#7](https://github.com/Exploded-views/bitc/issues/7), [#8](https://github.com/Exploded-views/bitc/issues/8):
   RunPod ordered data-centre walk with a per-pool US-only option; fallback CPU types per size
