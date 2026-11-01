@@ -27,6 +27,11 @@ g commit -q --allow-empty -m 'mentions SEKRIT'
 want 1 "$t/r" --tree "$t/pat"; has 'commit message or identity lines match'
 want 2 "$t/plain" --tree "$t/pat"; has '^scrub: not a readable git repo$'
 want 2 "$t/r" --tree "$t/missing"                   # unreadable pattern file
+# a "#class=" tag would be read as part of its pattern and match nothing, so it is refused
+printf 'nomatch\nsekrit #class=name\n' >"$t/tagged"
+want 2 "$t/r" "$t/tagged"; has '^scrub: line 2 of the pattern file holds a #class tag$'
+printf 'sekrit # Class = name\n' >"$t/tagged"
+want 2 "$t/r" "$t/tagged"; has '^scrub: line 1 of the pattern file holds a #class tag$'
 g branch -q -m main trunk
 want 2 "$t/r" --tree "$t/pat"                       # no main: the range cannot be read
 echo "scrub_test: ok"
