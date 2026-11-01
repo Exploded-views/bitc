@@ -42,7 +42,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - On Linux without a readable `/proc/locks` (no procfs, an LSM or seccomp denial, or gVisor),
   `bitc status`, `bitc doctor` and `bitc sweep --dry-run` read pool slot holders with a brief
   try-lock, so for that moment a concurrent admission can find a free slot busy. Linux cannot see
-  a flock without taking it; tracked for 0.1.4.
+  a flock without taking it; tracked for 0.1.4 in #24.
 
 ## [0.1.2] - 2026-10-30
 
