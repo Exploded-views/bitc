@@ -391,3 +391,27 @@ func TestGC9_StarvedLineNamesUnitsAndWait(t *testing.T) {
 	}
 	solo.Release()
 }
+
+// A run that finds a one-slot pool held and another run already waiting ahead of it starves on
+// the queue: the line, and result.json's reason, say "queue" and the wait.
+func TestGC10_StarvedInTheQueueNamesTheWait(t *testing.T) {
+	h := harness.New(t)
+	h.HostConfig("[pools.solo]\nslots = 1\n")
+	hold := h.Hold(nil, "solo")
+	ahead := h.Start("run", "solo", "--", "true")
+	h.Until(func() bool { return len(tickets(h, "solo")) == 2 }, 20*time.Second)
+	res := filepath.Join(h.Root, "queue.json")
+	const reason = "queue; waited 0s"
+	r := h.Run("run", "--wait", "0s", "--result", res, "solo", "--", "true")
+	if r.Code != 75 || r.Stderr != "STARVED solo ("+reason+")\n" {
+		t.Fatalf("%+v", r)
+	}
+	var out struct{ Outcome, Reason string }
+	if err := json.Unmarshal(must(os.ReadFile(res)), &out); err != nil || out.Outcome != "starved" || out.Reason != reason {
+		t.Fatalf("result.json: %+v (%v)", out, err)
+	}
+	hold.Release()
+	if r := ahead.Wait(); r.Code != 0 {
+		t.Fatalf("the run ahead: %+v", r)
+	}
+}
