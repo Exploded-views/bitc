@@ -1,21 +1,21 @@
 # Installing bitc
 
-The current release is [v0.1.2](https://github.com/Exploded-views/bitc/releases/tag/v0.1.2). It
+The current release is [v0.1.3](https://github.com/Exploded-views/bitc/releases/tag/v0.1.3). It
 runs on Linux (amd64 or arm64); the macOS builds (Apple silicon or Intel) run local pools only
 ([macOS status](#macos-status)).
 
 ## Release binaries
 
-Each release publishes a tarball `bitc_0.1.2_<os>_<arch>.tar.gz` (`<os>` is `linux` or `darwin`,
+Each release publishes a tarball `bitc_0.1.3_<os>_<arch>.tar.gz` (`<os>` is `linux` or `darwin`,
 `<arch>` is `amd64` or `arm64`; it holds `bitc`, `LICENSE` and `README.md`), the bare binary
-`bitc_0.1.2_<os>_<arch>`, and `checksums.txt`. Download an asset and `checksums.txt` and verify the
+`bitc_0.1.3_<os>_<arch>`, and `checksums.txt`. Download an asset and `checksums.txt` and verify the
 asset before use:
 
 ```sh
-curl -LO https://github.com/Exploded-views/bitc/releases/download/v0.1.2/bitc_0.1.2_linux_amd64.tar.gz
-curl -LO https://github.com/Exploded-views/bitc/releases/download/v0.1.2/checksums.txt
-grep bitc_0.1.2_linux_amd64.tar.gz checksums.txt | sha256sum -c -
-tar -xzf bitc_0.1.2_linux_amd64.tar.gz bitc
+curl -LO https://github.com/Exploded-views/bitc/releases/download/v0.1.3/bitc_0.1.3_linux_amd64.tar.gz
+curl -LO https://github.com/Exploded-views/bitc/releases/download/v0.1.3/checksums.txt
+grep bitc_0.1.3_linux_amd64.tar.gz checksums.txt | sha256sum -c -
+tar -xzf bitc_0.1.3_linux_amd64.tar.gz bitc
 install -m 0755 bitc ~/.local/bin/bitc      # or any other directory on your PATH
 bitc version --json
 ```
@@ -23,7 +23,7 @@ bitc version --json
 On macOS, use `shasum -a 256 -c -` in place of `sha256sum -c -`.
 
 `bitc version --json` prints one compact JSON line, for example
-`{"commit":"80a9517","config_schema":1,"release":true,"state_schema":1,"version":"0.1.2"}`.
+`{"commit":"9bc24e8","config_schema":1,"release":true,"state_schema":1,"version":"0.1.3"}`.
 `release` is `true` only for release builds. Checksums are unsigned for now; signed checksums are
 planned after 1.0. [RELEASING.md](RELEASING.md) describes what a release contains.
 
@@ -35,7 +35,7 @@ you, with the same checksum checks.
 To build from source you need Go 1.26 or newer (CI tests 1.27.3):
 
 ```sh
-go install github.com/Exploded-views/bitc/cmd/bitc@v0.1.2
+go install github.com/Exploded-views/bitc/cmd/bitc@v0.1.3
 ```
 
 A build made this way reports `"release":false`. That matters only for remote providers: the
@@ -47,16 +47,15 @@ toolchain.
 
 ## macOS status
 
-The v0.1.2 macOS builds are **local pools only**: `run`, `status`, `wait`, `logs` and `cancel` over
+The v0.1.3 macOS builds are **local pools only**: `run`, `status`, `wait`, `logs` and `cancel` over
 `flock` pools, plus detached jobs, groups, priority lanes, nested holds, `doctor` and `config`.
 Memory floors (a pool's `memory` key) and any `[providers.*]` table are refused with exit 78.
 Tracked in:
 
 - [#3](https://github.com/Exploded-views/bitc/issues/3): macOS parity (umbrella);
 - [#4](https://github.com/Exploded-views/bitc/issues/4): macOS as a client to remote providers
-  (planned for 0.1.4);
-- [#5](https://github.com/Exploded-views/bitc/issues/5): macOS as a remote build target (design
-  first).
+  (planned for 0.1.5);
+- macOS as a remote build target: planned but not scheduled ([ROADMAP.md](ROADMAP.md)).
 
 Linux-only features, and other differences on macOS:
 

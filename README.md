@@ -59,7 +59,7 @@ Download a release binary and check it against `checksums.txt`
 1.26 or newer:
 
 ```sh
-go install github.com/Exploded-views/bitc/cmd/bitc@v0.1.2
+go install github.com/Exploded-views/bitc/cmd/bitc@v0.1.3
 ```
 
 ## Quickstart (local, about two minutes)
@@ -273,7 +273,7 @@ for agents are in [docs/agent-guide.md](docs/agent-guide.md).
 
 ## Status and roadmap
 
-bitc is pre-1.0 ([v0.1.2 release notes](https://github.com/Exploded-views/bitc/releases/tag/v0.1.2)),
+bitc is pre-1.0 ([v0.1.3 release notes](https://github.com/Exploded-views/bitc/releases/tag/v0.1.3)),
 so interfaces may still change.
 
 - **Stable in intent:** the local gate (pools, slots, groups, priority lanes, memory admission,
@@ -287,15 +287,12 @@ so interfaces may still change.
 Open issues that make up the roadmap:
 
 - [#3](https://github.com/Exploded-views/bitc/issues/3), [#4](https://github.com/Exploded-views/bitc/issues/4),
-  [#5](https://github.com/Exploded-views/bitc/issues/5): macOS parity, macOS as a client to remote
-  providers (planned for 0.1.4), macOS as a remote build target (design first)
-- [#6](https://github.com/Exploded-views/bitc/issues/6): Sprites catch-all egress deny
-- [#7](https://github.com/Exploded-views/bitc/issues/7), [#8](https://github.com/Exploded-views/bitc/issues/8):
-  RunPod ordered data-centre walk with a per-pool US-only option; fallback CPU types per size
+  [#26](https://github.com/Exploded-views/bitc/issues/26): macOS parity, macOS as a client to remote
+  providers and exec plugins on macOS (planned for 0.1.5)
 - [#10](https://github.com/Exploded-views/bitc/issues/10): IO-pressure admission (`io_pressure_max`)
 
-Later: signed checksums after 1.0, packages under the name `bitc`, and volume caches for remote
-jobs ([spec.md](docs/spec.md) section 16.1, not scheduled).
+Planned but not scheduled (macOS as a remote build target, Sprites egress, RunPod placement, the
+remote-runner features and the later items): [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Known issues
 
