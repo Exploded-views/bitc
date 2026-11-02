@@ -408,6 +408,11 @@ func noLinksOnPath(dest, target string) error {
 	return nil
 }
 
+// afterKeyWritten is a test seam: fetchCode calls it right after it has written the deploy key and
+// before the fetch command runs. It is a package global read by every fetchCode, so a test that
+// sets it must not use t.Parallel (nor run beside one that does).
+var afterKeyWritten func()
+
 // fetchCode clones exactly the ref with the deploy key and pinned known hosts, checks the tip
 // is the sha, then shreds the key (spec 8.4 step 4). A local path is allowed only unprivileged.
 func fetchCode(s Spec, work, keyDir, deployKey string, mount func(dir string) (func() error, error)) error {
@@ -451,6 +456,9 @@ func fetchCode(s Spec, work, keyDir, deployKey string, mount func(dir string) (f
 		kh := filepath.Join(keyDir, "known_hosts")
 		_ = os.WriteFile(key, []byte(strings.TrimSpace(deployKey)+"\n"), 0o600)
 		_ = os.WriteFile(kh, []byte(s.KnownHosts), 0o600)
+		if afterKeyWritten != nil {
+			afterKeyWritten()
+		}
 		cmd := fmt.Sprintf("ssh -i %s -o IdentitiesOnly=yes -o UserKnownHostsFile=%s -o StrictHostKeyChecking=yes -o BatchMode=yes", key, kh)
 		fetch = append([]string{"-c", "core.sshCommand=" + cmd}, fetch...)
 		defer shred(key, keyDir, unmount)
