@@ -18,7 +18,8 @@ printf 'ok  \tex/p\t0.5s\tcoverage: 70.0%% of statements\n?   \tex/n\t[no test f
 # both legs present: merged in the order given
 want 0 "$t/merged.txt" "$t" core providers
 [ "$(grep -c 'coverage:' "$t/merged.txt")" = 2 ] || fail "merged output lacks a leg's lines"
-grep -q 'ex/a' "$t/merged.txt" && grep -q 'ex/p' "$t/merged.txt" || fail "merged output lacks a package"
+grep -q 'ex/a' "$t/merged.txt" || fail "merged output lacks ex/a"
+grep -q 'ex/p' "$t/merged.txt" || fail "merged output lacks ex/p"
 
 # a missing leg file is refused, and the leg is named
 rm -f "$t/merged.txt"

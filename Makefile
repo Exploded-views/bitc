@@ -4,7 +4,7 @@ PKG     := github.com/Exploded-views/bitc
 LDFLAGS := -s -w -X $(PKG)/internal/version.Version=$(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//' || echo dev) \
            -X $(PKG)/internal/version.Commit=$(shell git rev-parse --short=12 HEAD 2>/dev/null)
 
-.PHONY: build test coverage coverage-ratchet conformance conformance-race lint darwin-vet vuln ci tools tools-ci snapshot release-check examples fuzz privileged secrets linkcheck
+.PHONY: build test test-unit coverage-merge conformance-shard conformance-race-shard docs coverage coverage-ratchet conformance conformance-race lint darwin-vet vuln ci tools tools-ci snapshot release-check examples fuzz privileged secrets linkcheck
 
 build:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $(BIN) ./cmd/bitc
@@ -15,6 +15,29 @@ COVER_OUT := dist/test-cover.txt
 test:
 	@mkdir -p dist
 	@$(GO) test -race -cover ./internal/... ./cmd/... >$(COVER_OUT) 2>&1; rc=$$?; cat $(COVER_OUT); exit $$rc
+
+# The same unit run in two legs, one CI job each (ci.yml: unit): providers is the provider and remote
+# packages (the slow ones), core is every other package under internal and cmd. Each leg writes
+# dist/test-cover-$(LEG).txt; `make coverage-merge` puts the legs back together.
+UNIT_LEGS ?= providers core
+LEG_RE    := /internal/(provider|remote)(/|$$)
+test-unit:
+	@mkdir -p dist
+	@case "$(LEG)" in \
+	  providers) pk="./internal/provider/... ./internal/remote/..." ;; \
+	  core) pk=$$($(GO) list ./internal/... ./cmd/... | grep -Ev '$(LEG_RE)') ;; \
+	  *) echo "make test-unit: LEG must be providers or core, not '$(LEG)'" >&2; exit 2 ;; \
+	esac; \
+	out=dist/test-cover-$(LEG).txt; \
+	$(GO) test -race -cover $$pk >$$out 2>&1; rc=$$?; cat $$out; exit $$rc
+
+# Merges the legs' outputs in dist/ into $(COVER_OUT), refusing a leg that is missing, empty or failed
+# (scripts/coverage-merge.sh), then runs the coverage floors on the merged run: a package missing from
+# it is a failure there, so coverage is never checked per leg.
+coverage-merge:
+	sh scripts/coverage-merge_test.sh
+	sh scripts/coverage-merge.sh $(COVER_OUT) dist $(UNIT_LEGS)
+	$(MAKE) coverage
 
 # Per-package statement coverage may not fall below coverage-floors.json (scripts/coverage-floors.sh).
 # Reads the output of the last `make test`; the script's own self-check runs first.
@@ -37,10 +60,26 @@ conformance-race:
 	CGO_ENABLED=1 $(GO) build -race -o dist/bitc-race ./cmd/bitc
 	$(GO) test -race -timeout 30m ./conformance/... -bin=dist/bitc-race
 
+# One shard of the conformance suite (scripts/conformance-shards.sh: package, -run and -skip). `make ci`
+# runs the whole suite unsharded; CI runs the shards in parallel, and the shard check in make lint
+# fails when a test belongs to none or to two.
+SHARD ?=
+conformance-shard: build
+	@set -e; cs=scripts/conformance-shards.sh; pkg=$$(sh $$cs pkg "$(SHARD)"); run=$$(sh $$cs run "$(SHARD)"); skip=$$(sh $$cs skip "$(SHARD)"); \
+	$(GO) test -race -timeout 20m "$$pkg" -run "$$run" $${skip:+-skip "$$skip"} -bin=$(BIN)
+
+conformance-race-shard:
+	@set -e; cs=scripts/conformance-shards.sh; pkg=$$(sh $$cs pkg "$(SHARD)"); run=$$(sh $$cs run "$(SHARD)"); skip=$$(sh $$cs skip "$(SHARD)"); \
+	CGO_ENABLED=1 $(GO) build -race -o dist/bitc-race ./cmd/bitc; \
+	$(GO) test -race -timeout 30m "$$pkg" -run "$$run" $${skip:+-skip "$$skip"} -bin=dist/bitc-race
+
 lint: darwin-vet
 	$(GO) vet ./...
 	golangci-lint run
 	sh scripts/scrub_test.sh
+	sh scripts/retry_test.sh
+	sh scripts/coverage-merge_test.sh
+	sh scripts/conformance-shards_test.sh
 
 # The test code must compile for darwin: test code that needs Linux carries a linux build constraint
 # or a _linux file name.
@@ -64,6 +103,9 @@ examples: build
 # Every relative markdown link must resolve (scripts/linkcheck.sh).
 linkcheck:
 	sh scripts/linkcheck.sh
+
+# What the docs CI job runs: the example configs load, every markdown link resolves.
+docs: examples linkcheck
 
 ci: lint test coverage conformance conformance-race examples linkcheck
 

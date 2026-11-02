@@ -6,6 +6,7 @@ name: release
 
 on:
   pull_request:
+  merge_group:
   push:
     tags: ['v*']
 
@@ -36,7 +37,7 @@ jobs:
           cache: true
       - name: Install pinned tools
         run: |
-          make tools-ci
+          sh scripts/retry.sh 3 20 make tools-ci
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: goreleaser check
         run: goreleaser check
@@ -63,7 +64,7 @@ jobs:
           cache: false
       - name: Install pinned tools
         run: |
-          make tools-ci
+          sh scripts/retry.sh 3 20 make tools-ci
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: goreleaser release (draft)
         run: goreleaser release --clean
