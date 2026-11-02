@@ -352,3 +352,42 @@ func TestGC8_DetachedRunCarriesUnits(t *testing.T) {
 		t.Errorf("detached result.json: units %v, want cpu 3", got)
 	}
 }
+
+// A run that starves says what it asked for and what expired, in the STARVED line, in
+// result.json's reason and in the history line: units wanted of the group's size, and the wait
+// as configured; a slot starvation says "slots busy" and the wait.
+func TestGC9_StarvedLineNamesUnitsAndWait(t *testing.T) {
+	h := harness.New(t)
+	h.HostConfig(gcHost + "[pools.solo]\nslots = 1\n")
+	gate := h.Hold(nil, "--units", "cpu=3", "work")
+	res := filepath.Join(h.Root, "starved.json")
+	const group = "group cpu busy: wanted 2 of 4 units; waited 1s"
+	r := h.Run("run", "--units", "cpu=2", "--wait", "1s", "--name", "sg", "--result", res, "work", "--", "true")
+	if r.Code != 75 || r.Stderr != "STARVED work ("+group+")\n" {
+		t.Fatalf("%+v", r)
+	}
+	b, err := os.ReadFile(res)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out struct{ Outcome, Reason string }
+	if err := json.Unmarshal(b, &out); err != nil || out.Outcome != "starved" || out.Reason != group {
+		t.Fatalf("result.json: %s (%v)", b, err)
+	}
+	found := false
+	for _, l := range lines(t, filepath.Join(h.State, "history.jsonl")) {
+		var e struct{ Event, Job, Reason string }
+		if json.Unmarshal([]byte(l), &e) == nil && e.Event == "starved" && e.Job == "sg" {
+			found = e.Reason == group
+		}
+	}
+	if !found {
+		t.Errorf("no history starved line with reason %q", group)
+	}
+	gate.Release()
+	solo := h.Hold(nil, "solo")
+	if r := h.Run("run", "--wait", "1s", "solo", "--", "true"); r.Code != 75 || r.Stderr != "STARVED solo (slots busy; waited 1s)\n" {
+		t.Fatalf("%+v", r)
+	}
+	solo.Release()
+}

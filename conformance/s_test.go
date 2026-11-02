@@ -148,7 +148,7 @@ func TestT1_StarvedAfterWait(t *testing.T) {
 	hold := h.Hold(nil, "lint")
 	t0 := time.Now()
 	r := h.Run("run", "lint", "--", "echo", "ran")
-	if r.Code != 75 || r.Stderr != "STARVED lint\n" || r.Stdout != "" {
+	if r.Code != 75 || r.Stderr != "STARVED lint (slots busy; waited 1s)\n" || r.Stdout != "" {
 		t.Fatalf("%+v", r)
 	}
 	if d := time.Since(t0); d < time.Second { // starved no sooner than the wait

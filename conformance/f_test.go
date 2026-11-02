@@ -140,7 +140,7 @@ func TestT2_ReasonRecomputedEveryAttempt(t *testing.T) {
 	side := h.Hold(nil, "side") // takes bigmem: the waiter's group_wait is empty after a memory failure
 	setMem(h, root, 9000)
 	r := w.Wait()
-	if r.Code != 75 || r.Stderr != "STARVED heavy (group bigmem busy)\n" {
+	if r.Code != 75 || r.Stderr != "STARVED heavy (group bigmem busy: wanted 1 of 1 units; waited 4s)\n" {
 		t.Fatalf("a stale memory reason survived: %+v", r)
 	}
 	side.Release()
