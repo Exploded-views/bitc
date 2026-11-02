@@ -6,9 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
-	"sync/atomic"
 	"testing"
 )
 
@@ -20,7 +18,7 @@ type mountRec struct {
 	mounted      bool
 	unmounted    bool
 	fail         error
-	saw          atomic.Bool // the key file was seen on the mounted dir at some point
+	saw          bool // the key file was on the mounted dir when fetchCode had just written it
 }
 
 func (m *mountRec) mount(dir string) (func() error, error) {
@@ -30,22 +28,7 @@ func (m *mountRec) mount(dir string) (func() error, error) {
 	m.dir, m.mounted = dir, true
 	_, err := os.Stat(filepath.Join(dir, "key"))
 	m.keyAtMount = err == nil
-	stop := make(chan struct{})
-	go func() { // the key is written between the mount and the fetch: poll until the unmount
-		for {
-			select {
-			case <-stop:
-				return
-			default:
-			}
-			if _, err := os.Stat(filepath.Join(dir, "key")); err == nil {
-				m.saw.Store(true)
-			}
-			runtime.Gosched()
-		}
-	}()
 	return func() error {
-		close(stop)
 		m.unmounted = true
 		_, err := os.Stat(filepath.Join(dir, "key"))
 		m.keyAtUnmount = err == nil
@@ -65,6 +48,13 @@ func TestDeployKeyLivesOnlyOnTheMountedTmpfsAndIsGoneBeforeTheFetchReturns(t *te
 	m := &mountRec{}
 	root := t.TempDir()
 	keyDir := filepath.Join(root, "key")
+	// no t.Parallel: the seam is a package global. It runs after the key is written and before the
+	// fetch command, so the observation does not depend on scheduling.
+	afterKeyWritten = func() {
+		_, err := os.Stat(filepath.Join(keyDir, "key"))
+		m.saw = err == nil
+	}
+	t.Cleanup(func() { afterKeyWritten = nil })
 	err := fetchCode(sshSpec(t), filepath.Join(root, "work"), keyDir, "SECRET-KEY-BYTES", m.mount)
 	if err == nil {
 		t.Fatal("the fetch cannot succeed here")
@@ -74,7 +64,7 @@ func TestDeployKeyLivesOnlyOnTheMountedTmpfsAndIsGoneBeforeTheFetchReturns(t *te
 		t.Fatalf("the key dir was not mounted (mounted %v at %q)", m.mounted, m.dir)
 	case m.keyAtMount:
 		t.Fatal("the key existed before the tmpfs was mounted")
-	case !m.saw.Load():
+	case !m.saw:
 		t.Fatal("the key never appeared on the mounted dir")
 	case !m.unmounted:
 		t.Fatal("the tmpfs was not unmounted")
