@@ -67,7 +67,7 @@ Hidden: `bitc __supervise <job>` (detached supervisor), `bitc __agent` (remote s
 ### 3.1 `run`
 
 ```
-bitc run [--detach] [--name N] [--log PATH] [--wait DUR] [--local | --provider P]
+bitc run [--detach] [--name N] [--log PATH] [--wait DUR] [--units G=K]... [--local | --provider P]
          [--artifacts a,b] [--result PATH] <pool> [--] <cmd> [args...]
 ```
 
@@ -76,6 +76,14 @@ bitc run [--detach] [--name N] [--log PATH] [--wait DUR] [--local | --provider P
 - `--wait` may only shorten the pool's wait. `--local` forces `local`. `--provider P`: P must be a
   remote provider in the pool's effective list (else 64); the list becomes `[P]` plus `local` if
   listed; eligibility, cap and breaker still apply. `--artifacts`: a subset of the declared ones.
+- `--units G=K` (repeatable, one per group): replaces the pool's unit count of group `G` for this run
+  only. `G` must be a group in the pool's `groups`; `K` is an integer `1..N`, `N` = `groups.<G>.units`,
+  and at most the pool's `groups_max.<G>` if set (5.3). A malformed or repeated value, `K` of 0 or
+  above `N` or `groups_max`, or a group the pool does not list is 64 with a one-line message naming
+  the group and the limit. A pool whose effective providers lack `local` refuses it (64): units are
+  local group admission. Admission is unchanged (6.2): the ticket asks for `K` units all or none, in
+  ticket-time order, and nothing running is preempted. `status`, `result.json` and the history
+  `start` and `end` lines show the units held per group; a detached run keeps the flag.
 - `--detach`: runs pipeline steps 1–4, opens the log and writes `spec.json` (any failure:
   64/69/75/78, empty stdout; an uncreatable log is 64); starts a supervisor in a new session; prints
   exactly `started <name> pid <pid> log <path>` (absolute). Everything from step 6 on, `pre_run`
@@ -138,7 +146,8 @@ everything and exits 69, never Go's 2 and never 75: a bug that fails every time 
 retrying agent forever. 75 means only a genuine wait-and-retry (starved, lost, provider transient).
 `result.json`: `{origin: "bitc"|"command", outcome:
 "ok"|"command-failed"|"starved"|"refused"|"config"|"unavailable"|"interrupted"|"lost"|"internal",
-exit_code, reason, pool, slot, provider, job, generation, hold_started, wait_ms, run_ms}`; every
+exit_code, reason, pool, slot, provider, job, generation, hold_started, units, wait_ms, run_ms}`
+(`units`: the group units held, `{"cpu": 7}`, absent when the pool holds none); every
 detached job writes it in its record, a foreground run only with `--result PATH`.
 
 stderr lines (stdout belongs to the command):
@@ -206,6 +215,7 @@ only (repo: 78). **narrowable**: others may only narrow it (widening: 78 in a fi
 | `[host]` except `state_dir`, `poll` | host | — | — |
 | `host.state_dir` / `host.poll` | host | `BITC_DIR`, `--state-dir` / `BITC_POLL` (≥ 100ms) | replaces |
 | `slots`, `memory`, `groups`, `groups.<g>.units`, `[priority]` | host | — | — |
+| `pools.<p>.groups_max.<g>` | host | `--units <g>=<k>` may not ask for more; `<g>` must be in the pool's `groups`, the value `1..groups.<g>.units` (else 78 naming the key) | — |
 | `[defaults] wait`, `pools.<p>.wait` | host, narrow=min | repo `wait`, `--wait` | minimum |
 | `pools.<p>.providers` | host, narrow=exclude | repo `providers_exclude`, `BITC_PROVIDER=local`, `--local`, `--provider` | host order; removals only |
 | `pools.<p>.remote_limits.timeout` | host, narrow=min | repo `[pools.<p>.remote] timeout` | minimum |
@@ -392,7 +402,10 @@ group, not a pool`.
 3. **Wait:** sleep `poll` and retry; inotify on the same `tickets/` dirs wakes it early (a hold
    ends by unlocking, then unlinking its ticket).
 4. **Deadline:** `start + wait` passed → `STARVED <pool>` with the last reason, 75. `wait = "0s"`
-   makes one attempt. Fairness: FIFO per class for slots, FIFO by ticket time for group units.
+   makes one attempt. Fairness: FIFO per class for slots, FIFO by ticket time for group units. With
+   `--units` the count `k` of step 2 is the flag's; a waiting heavy ticket therefore blocks every
+   later ticket of the group (a light run that arrives after it waits too), and a running hold is
+   never preempted.
 
 ### 6.3 Environment
 

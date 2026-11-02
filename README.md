@@ -263,6 +263,7 @@ for agents are in [docs/agent-guide.md](docs/agent-guide.md).
 | Read | For |
 | --- | --- |
 | [docs/agent-guide.md](docs/agent-guide.md) | the rules an AI agent follows when it runs commands through bitc |
+| [docs/local-heavy-pool.md](docs/local-heavy-pool.md) | one machine, four pools sharing its cores: gate, heavy, light, bench |
 | [docs/concepts.md](docs/concepts.md) | pools, slots, groups, tickets, nested holds, providers, state |
 | [docs/configuration.md](docs/configuration.md), [docs/config-reference.md](docs/config-reference.md) | the two config files, and every key with its class and default |
 | [docs/exit-codes.md](docs/exit-codes.md) | exit codes, stderr lines, `wait` outcomes, `result.json` |

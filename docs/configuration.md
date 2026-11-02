@@ -25,6 +25,10 @@ wait = "1h"
 memory = "8GiB"                # an admission reservation, not a limit on the command
 ```
 
+A pool can share a group of units with other pools (`groups = { cpu = 3 }`), and a run can ask
+for a different count with `bitc run --units cpu=2`. `groups_max = { cpu = 6 }` in the pool caps
+what `--units` may ask for. See [`local-heavy-pool.md`](local-heavy-pool.md).
+
 ## The repo file
 
 The **repo file** (`.bitc.toml` at the top of a work tree) belongs to the project. It can add
