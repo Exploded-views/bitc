@@ -396,7 +396,12 @@ func TestWF7_CoverageNeedsEveryUnitLeg(t *testing.T) {
 	if want := wfList(t, wfJob(t, "ci.yml", "unit"), "leg"); strings.Join(legs, " ") != strings.Join(want, " ") {
 		t.Errorf("coverage expects legs %v, the unit matrix has %v", legs, want)
 	}
-	if strings.Contains(cov, "continue-on-error") || strings.Contains(cov, "if:") {
+	// a failed unit leg must fail the coverage check, not skip it (a skipped required check passes):
+	// needs: alone skips the job, so it runs unless the run was cancelled
+	if !regexp.MustCompile(`(?m)^    if: \$\{\{ !cancelled\(\) \}\}$`).MatchString(cov) {
+		t.Error("coverage is skipped when a unit leg fails: it needs if: ${{ !cancelled() }}")
+	}
+	if strings.Contains(cov, "continue-on-error") || len(regexp.MustCompile(`(?m)^\s*(- )?if:`).FindAllString(cov, -1)) != 1 {
 		t.Error("coverage can be skipped or cannot fail")
 	}
 	wfScript(t, "../scripts/coverage-merge_test.sh")
@@ -476,6 +481,33 @@ func TestWF7_ToolInstallRetriesBoundedly(t *testing.T) {
 		}
 	}
 	wfScript(t, "../scripts/retry_test.sh")
+	// nothing else is retried: retry.sh appears in the workflows only on make tools-ci lines
+	files, _ := filepath.Glob("../.github/workflows/*.yml")
+	for _, f := range files {
+		for i, l := range strings.Split(string(must(os.ReadFile(f))), "\n") {
+			if strings.Contains(l, "retry.sh") && !strings.HasSuffix(strings.TrimSpace(l), "make tools-ci") {
+				t.Errorf("%s:%d: retry.sh wraps something other than make tools-ci: %q", f, i+1, l)
+			}
+		}
+	}
+}
+
+// The TIM1 cap ratchet compares with main, so the conformance shard that runs it needs the whole
+// history. fetch-depth is a literal 0: in an expression 0 is falsy, so `x && 0 || 1` is always 1.
+func TestWF7_TheTIM1ShardChecksOutTheWholeHistory(t *testing.T) {
+	owner := strings.TrimSpace(wfScript(t, "../scripts/conformance-shards.sh", "owners", "./conformance", "TestTIM1_CapOnlyGoesDown"))
+	if owner == "" || strings.Contains(owner, "\n") {
+		t.Fatalf("TestTIM1_CapOnlyGoesDown has owners %q, want exactly one", owner)
+	}
+	for _, j := range []string{"conformance", "conformance-race"} {
+		b := wfJob(t, "ci.yml", j)
+		if !regexp.MustCompile(`(?m)^\s+fetch-depth: 0$`).MatchString(b) {
+			t.Errorf("%s (shard %s runs TIM1): fetch-depth is not the literal 0:\n%s", j, owner, b)
+		}
+		if strings.Contains(b, "&& 0 ||") {
+			t.Errorf("%s: a fetch-depth expression with a falsy 0 in the middle is always the other value", j)
+		}
+	}
 }
 
 func atoiOr(s string) int {
@@ -492,6 +524,12 @@ func TestWF7_ReleasingDocNamesTheJobs(t *testing.T) {
 		if !strings.Contains(doc, "`"+j+"`") {
 			t.Errorf("docs/RELEASING.md does not name the `%s` job", j)
 		}
+	}
+	if strings.Contains(doc, "each one `make` command") {
+		t.Error("docs/RELEASING.md says every job is one make command; build, macos-smoke and secrets are not")
+	}
+	if strings.Contains(doc, "A missing, empty or failed leg fails it by name") || !strings.Contains(doc, "dry run runs in the merge queue") {
+		t.Error("docs/RELEASING.md misstates what a failed leg does to coverage, or omits the dry run in the merge queue")
 	}
 	if !strings.Contains(doc, "merge queue") || !strings.Contains(doc, "merge_group") {
 		t.Error("docs/RELEASING.md does not say the merge queue runs the same jobs (merge_group)")

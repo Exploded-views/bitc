@@ -33,4 +33,8 @@ rc=0; sh "$rt" x 0 true >/dev/null 2>&1 || rc=$?
 [ "$rc" = 2 ] || fail "non-numeric tries: exit $rc, want 2"
 rc=0; sh "$rt" 3 0 >/dev/null 2>&1 || rc=$?
 [ "$rc" = 2 ] || fail "no command: exit $rc, want 2"
+rc=0; sh "$rt" 0 0 true >/dev/null 2>&1 || rc=$?
+[ "$rc" = 2 ] || fail "zero tries: exit $rc, want 2"
+rc=0; sh "$rt" 3 x true >/dev/null 2>&1 || rc=$?
+[ "$rc" = 2 ] || fail "non-numeric delay: exit $rc, want 2"
 echo "retry_test: ok"
