@@ -180,10 +180,17 @@ func TestAgentStartingAsCloseWaitsDoesNotJoinTheWaitGroup(t *testing.T) {
 	}
 	defer func() { _ = conn.Abort() }()
 	// a fail-only deadline, as in spinUntil: a launch that never reaches the join ends the test
-	select {
-	case <-reached:
-	case <-time.After(time.Minute):
-		t.Fatal("the agent launch never reached its WaitGroup join")
+	deadline := time.Now().Add(time.Minute)
+	for reachedJoin := false; !reachedJoin; {
+		select {
+		case <-reached:
+			reachedJoin = true
+		default:
+			if !time.Now().Before(deadline) {
+				t.Fatal("the agent launch never reached its WaitGroup join")
+			}
+			runtime.Gosched()
+		}
 	}
 	f.mu.Lock()
 	pr := f.sprites["a"].procs[0]
