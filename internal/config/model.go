@@ -27,6 +27,7 @@ type LoadOptions struct {
 // RunFlags are the narrowing flags of `bitc run` (spec 3.1, 5.3).
 type RunFlags struct {
 	Wait      string    // --wait raw value, "" if absent
+	Timeout   string    // --timeout raw value, "" if absent
 	Local     bool      // --local
 	Provider  string    // --provider P
 	Artifacts *[]string // --artifacts a,b (nil if absent)
@@ -105,6 +106,7 @@ type Pool struct {
 	AdHoc            bool
 	Slots            int
 	Wait             time.Duration
+	Timeout          time.Duration  // 0: no limit on a local run
 	Memory           Size           // 0: no memory admission
 	Groups           map[string]int // group -> units consumed
 	Providers        []string       // effective list, host order

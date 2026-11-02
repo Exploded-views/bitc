@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Exploded-views/bitc/internal/exit"
 	"github.com/Exploded-views/bitc/internal/proctest"
 )
 
@@ -131,5 +132,49 @@ func TestStartedRecordsACommandReapedBeforeTheRecord(t *testing.T) {
 	}
 	if !called {
 		t.Fatal("Started was not called with the leader's pid, pgid and start")
+	}
+}
+
+func TestTimeoutTerminatesTheGroupAndExits124(t *testing.T) {
+	pidFile := filepath.Join(t.TempDir(), "bg")
+	s := spec(t, "sh", "-c", `sleep 30 & echo $! > "$1"; wait`, "_", pidFile)
+	s.Timeout = 600 * time.Millisecond
+	r, err := Exec(context.Background(), s)
+	if err != nil || r.Code != exit.TimedOut || !r.TimedOut || r.Interrupted != 0 {
+		t.Fatalf("%+v %v", r, err)
+	}
+	b, _ := os.ReadFile(pidFile)
+	pid, _ := strconv.Atoi(strings.TrimSpace(string(b)))
+	if pid == 0 || !proctest.Gone(pid) { // Exec reaps the group before it returns
+		t.Fatalf("the command's child %d outlived the time limit", pid)
+	}
+}
+
+func TestTimeoutSigkillsAfterGraceAndStillExits124(t *testing.T) {
+	ready := filepath.Join(t.TempDir(), "ready")
+	s := spec(t, "sh", "-c", `trap "" TERM; : > "$1"; while :; do sleep 0.05; done`, "_", ready)
+	s.Timeout = 600 * time.Millisecond
+	r, _ := Exec(context.Background(), s)
+	if r.Code != exit.TimedOut || !r.TimedOut {
+		t.Fatalf("%+v", r)
+	}
+}
+
+func TestNoTimeoutAndASlowFinishAreNotTimedOut(t *testing.T) {
+	s := spec(t, "sh", "-c", "exit 3")
+	s.Timeout = time.Hour
+	if r, _ := Exec(context.Background(), s); r.Code != 3 || r.TimedOut {
+		t.Fatalf("%+v", r)
+	}
+}
+
+// A signal that came first keeps its 128+N under forward-and-wait: the limit does not turn it
+// into 124 nor cut its max_signal_wait short.
+func TestSignalBeforeTheLimitKeepsItsCodeUnderForwardAndWait(t *testing.T) {
+	s := spec(t, "sh", "-c", `trap 'sleep 3; exit 130' INT; kill -INT $PPID; while :; do sleep 0.05; done`)
+	s.OnSignal, s.MaxSignalWait, s.Timeout = "forward-and-wait", 30*time.Second, 2*time.Second
+	r, err := Exec(context.Background(), s)
+	if err != nil || r.Code != 130 || r.TimedOut || r.Interrupted != syscall.SIGINT {
+		t.Fatalf("%+v %v", r, err)
 	}
 }

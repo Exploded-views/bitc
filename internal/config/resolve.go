@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -15,6 +16,7 @@ import (
 type runState struct {
 	usage    []string
 	wait     *time.Duration
+	timeout  *time.Duration
 	local    bool
 	provider string
 	arts     *[]string
@@ -274,6 +276,16 @@ func (e *Effective) ApplyRunFlags(f RunFlags) error {
 		}
 		st.wait = &d
 	}
+	if f.Timeout != "" {
+		d, err := ParseDuration(f.Timeout)
+		if err == nil && d == 0 {
+			err = errors.New("must be greater than 0")
+		}
+		if err != nil {
+			return exit.Usagef("--timeout %q %v", f.Timeout, err)
+		}
+		st.timeout = &d
+	}
 	st.local, st.provider, st.arts = f.Local, f.Provider, f.Artifacts
 	return nil
 }
@@ -305,6 +317,9 @@ func (e *Effective) Resolve(name string) (*Pool, error) {
 			return nil, exit.Usagef("--wait %s is longer than pool %s's wait %s (it may only shorten it)", *st.wait, canon, pool.Wait)
 		}
 		pool.Wait = *st.wait
+	}
+	if st.timeout != nil && (pool.Timeout == 0 || *st.timeout < pool.Timeout) { // narrows only, never an error
+		pool.Timeout = *st.timeout
 	}
 	if st.local || e.EnvProvider == "local" {
 		pool.Providers = []string{"local"}

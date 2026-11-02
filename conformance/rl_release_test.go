@@ -163,6 +163,9 @@ func TestREL4_ReleaseWorkflowUploadsADraftWithTheJobToken(t *testing.T) {
 	if !regexp.MustCompile(`(?m)^pull_request:`).MatchString(onText) {
 		t.Error("release.yml does not run on pull_request")
 	}
+	if !regexp.MustCompile(`(?m)^merge_group:`).MatchString(onText) {
+		t.Error("release.yml does not run on merge_group")
+	}
 	if !regexp.MustCompile(`(?m)^tags:\s*\[\s*['"]?v\*['"]?\s*\]$`).MatchString(onText) {
 		t.Errorf("release.yml has no push tags: ['v*'] trigger:\n%s", onText)
 	}
@@ -202,8 +205,8 @@ func TestREL4_ReleaseWorkflowUploadsADraftWithTheJobToken(t *testing.T) {
 	dry, rel := jobText(di, dend), jobText(ri, rend)
 
 	// which event runs which job
-	if !regexp.MustCompile(`(?m)^    if: github\.event_name == 'pull_request'$`).MatchString(dry) {
-		t.Error("the dry-run job is not limited to pull_request")
+	if !regexp.MustCompile(`(?m)^    if: github\.event_name == 'pull_request' \|\| github\.event_name == 'merge_group'$`).MatchString(dry) {
+		t.Error("the dry-run job is not limited to pull_request and merge_group")
 	}
 	if !regexp.MustCompile(`(?m)^    if: github\.event_name == 'push' && startsWith\(github\.ref, 'refs/tags/v'\)$`).MatchString(rel) {
 		t.Error("the release job is not limited to a pushed v* tag")

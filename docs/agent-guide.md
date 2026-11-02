@@ -9,7 +9,11 @@ take turns instead of exhausting the machine's memory. Follow these rules.
 2. **Exit 75 means retry.** The pool was busy, or a remote machine failed after the job started.
    Wait a little and run the same command again. Never report 75 as a test failure.
 3. **Exit 124 from `wait` means call `wait` again.** The job is still running. Never treat it as
-   a failure or start the job again.
+   a failure or start the job again. **Exit 124 from `run` is different:** the pool's time limit
+   ended the command (`bitc: <pool>: time limit ... reached; terminated`). That is a failure: do
+   not simply retry it. Under `wait --exit job` a timed-out job returns 124 on every call (stdout
+   `RESULT exit 124`, not `RUNNING`), so a loop that keys on 124 alone never ends: keep the default
+   `--exit zero` and read the `RESULT` line.
 4. **Exit 69 means stop and report.** It is an internal error, an unusable hook, a remote setup
    step that failed by itself or no usable provider. Do not retry it: tell the person what the
    `bitc:` line said.

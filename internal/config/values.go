@@ -51,6 +51,26 @@ func ParseDuration(s string) (time.Duration, error) {
 	return total, nil
 }
 
+// FormatDuration is d in the spec's duration grammar (5.2), largest units first: 90m is "1h30m".
+// A duration that is not whole milliseconds is rounded up to the next one.
+func FormatDuration(d time.Duration) string {
+	ms := int64((d + time.Millisecond - 1) / time.Millisecond)
+	if ms <= 0 {
+		return "0s"
+	}
+	var b strings.Builder
+	for _, u := range []struct {
+		name string
+		ms   int64
+	}{{"d", 86400000}, {"h", 3600000}, {"m", 60000}, {"s", 1000}, {"ms", 1}} {
+		if n := ms / u.ms; n > 0 {
+			fmt.Fprintf(&b, "%d%s", n, u.name)
+			ms -= n * u.ms
+		}
+	}
+	return b.String()
+}
+
 var sizeUnits = map[string]int64{"KiB": 1 << 10, "MiB": 1 << 20, "GiB": 1 << 30, "TiB": 1 << 40}
 
 // ParseSize accepts <int><KiB|MiB|GiB|TiB> (spec 5.2).
