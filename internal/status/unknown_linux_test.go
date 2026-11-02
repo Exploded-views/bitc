@@ -112,3 +112,66 @@ func TestSweepDryRunNeverCountsAnUnknownSlotReclaimable(t *testing.T) {
 		t.Fatalf("no unknown note:\n%s", out.String())
 	}
 }
+
+const waitingTicket = `{"pid":43,"job":"test","class":1,"state":"waiting","argv":["go","test"],"cwd":"/w","wait_started":1}`
+
+// A waiter occupies no slot: it never counts toward the pool line's "N unknown" (only holders do).
+func TestUnknownWaiterRendersItsOwnSuffixAndIsNotCountedAsASlot(t *testing.T) {
+	noProcLocks(t)
+	l, _ := state.Open(filepath.Join(t.TempDir(), "s"))
+	writeTicket(t, l, "lint", ticketName, waitingTicket)
+	e := &config.Effective{Pools: map[string]*config.Pool{"lint": {Name: "lint", Slots: 2}}}
+	r := Snapshot(e, l, nil)
+	if len(r.Pools[0].Waiters) != 1 || !r.Pools[0].Waiters[0].Unknown || len(r.Pools[0].Holders) != 0 {
+		t.Fatalf("pool = %+v", r.Pools[0])
+	}
+	b, _ := json.Marshal(r.Pools[0].Waiters)
+	if !strings.Contains(string(b), `"unknown":true`) {
+		t.Fatalf("waiter json: %s", b)
+	}
+	var out bytes.Buffer
+	r.Text(&out)
+	if !strings.Contains(out.String(), "lint: 0/2 slots held, 1 waiting\n") || strings.Contains(out.String(), "1 unknown, 1 waiting") {
+		t.Fatalf("pool line counts the waiter as an unknown slot:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "  waiting  test  normal  pid 43  since ") || !strings.HasSuffix(strings.Split(out.String(), "\n")[1], "  unknown") {
+		t.Fatalf("waiter line:\n%s", out.String())
+	}
+}
+
+func TestSnapshotShowsAnUnreadableGroupUnitAsUnknown(t *testing.T) {
+	noProcLocks(t)
+	l, _ := state.Open(filepath.Join(t.TempDir(), "s"))
+	f, err := lock.Open(l.GroupUnitLock("gpu", 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.Close() })
+	e := &config.Effective{Groups: map[string]config.Group{"gpu": {Name: "gpu", Units: 2}}}
+	r := Snapshot(e, l, nil)
+	g := r.Groups[0]
+	if len(g.Held) != 0 || len(g.Unknown) != 1 || g.Unknown[0] != 1 {
+		t.Fatalf("group = %+v", g)
+	}
+	b, _ := json.Marshal(r.Groups)
+	if !strings.Contains(string(b), `"unknown":[1]`) || !strings.Contains(string(b), `"held":[]`) {
+		t.Fatalf("group json: %s", b)
+	}
+	var out bytes.Buffer
+	r.Text(&out)
+	if !strings.Contains(out.String(), "group gpu: 0/2 units held, 1 unknown") {
+		t.Fatalf("text:\n%s", out.String())
+	}
+}
+
+// /proc/locks that opens but cannot be read (a directory stands in for it) is just as unreadable
+// for Inspect, so doctor must warn too.
+func TestDoctorWarnsWhenProcLocksOpensButCannotBeRead(t *testing.T) {
+	t.Cleanup(lock.SetProcLocksPath(t.TempDir()))
+	l, _ := state.Open(filepath.Join(t.TempDir(), "s"))
+	var out bytes.Buffer
+	Doctor(&config.Effective{Test: &config.Test{AccountingDir: t.TempDir()}}, l, &out)
+	if n := strings.Count(out.String(), "warn locks: /proc/locks unreadable"); n != 1 {
+		t.Fatalf("%d warnings, want 1:\n%s", n, out.String())
+	}
+}

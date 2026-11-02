@@ -60,3 +60,32 @@ func TestSetProcLocksPathAndVisible(t *testing.T) {
 		t.Skip("this host cannot read /proc/locks")
 	}
 }
+
+// A directory opens but cannot be read: Inspect says unknown, so HoldersVisible must say false.
+func TestHoldersVisibleAgreesWithInspectWhenProcLocksOpensButCannotBeRead(t *testing.T) {
+	defer func(p string) { procLocksPath = p }(procLocksPath)
+	procLocksPath = t.TempDir()
+	p := filepath.Join(t.TempDir(), "unit.1.lock")
+	b, err := Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	if s := Inspect(p); s != StateUnknown {
+		t.Fatalf("Inspect = %v, want unknown", s)
+	}
+	if HoldersVisible() {
+		t.Fatal("HoldersVisible is true though Inspect cannot read /proc/locks")
+	}
+}
+
+func TestSetProcLocksPathPanicsOutsideTests(t *testing.T) {
+	defer func(f func() bool) { underTest = f }(underTest)
+	underTest = func() bool { return false }
+	defer func() {
+		if recover() == nil {
+			t.Fatal("SetProcLocksPath did not panic outside tests")
+		}
+	}()
+	SetProcLocksPath("/nonexistent")
+}
