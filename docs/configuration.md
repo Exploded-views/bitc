@@ -23,7 +23,14 @@ slots = 1
 slots = 1
 wait = "1h"
 memory = "8GiB"                # an admission reservation, not a limit on the command
+timeout = "2h"                 # ends a local run after 2h (exit 124); unset: no limit
 ```
+
+`timeout` is a duration (`30s`, `2h`, `1h30m`; not `0s`). It ends a **local** run that is still going
+that long after its command started, with the same SIGTERM, grace and SIGKILL as a signal, and exits
+**124** after printing `bitc: <pool>: time limit <dur> reached; terminated`. `bitc run --timeout DUR`
+can only shorten it (or set one where the pool has none); a longer value is accepted and ignored.
+A remote run has its own `remote_limits.timeout`, and `--timeout` does not apply to it.
 
 ## The repo file
 

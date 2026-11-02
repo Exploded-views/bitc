@@ -26,6 +26,18 @@ func dur(p *problems, file, key string, s *string, def time.Duration) time.Durat
 	return d
 }
 
+// positiveDur is a duration that may be unset (0) but not "0s": a limit of zero would end the run
+// before it began, and 0 as "no limit" would invite exactly that mistake.
+func positiveDur(p *problems, file, key string, s *string) time.Duration {
+	d := dur(p, file, key, s, 0)
+	if s != nil && d == 0 {
+		if _, err := ParseDuration(*s); err == nil {
+			p.addf("%s: %s = %q must be greater than 0 (leave it unset for no limit)", file, key, *s)
+		}
+	}
+	return d
+}
+
 func size(p *problems, file, key string, s *string, def Size) Size {
 	if s == nil {
 		return def
@@ -348,6 +360,7 @@ func mergePools(p *problems, e *Effective, host layer, repo *layer) {
 		} else if repoDefSet && repoDefWait < pool.Wait {
 			pool.Wait = repoDefWait // the repo's [defaults].wait narrows an explicit host pool wait too
 		}
+		pool.Timeout = positiveDur(p, host.file, key+".timeout", hp.Timeout)
 		pool.Memory = size(p, host.file, key+".memory", hp.Memory, 0)
 		for g, units := range hp.Groups {
 			gc := CanonName(g)

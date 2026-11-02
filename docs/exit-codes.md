@@ -11,7 +11,7 @@ never Go's default 2. stdout belongs to the command: bitc writes only the stderr
 | 69 | unavailable | not Linux or macOS; a Linux-only feature in the macOS build (`bitc: <feature> runs on Linux only (this is a darwin build)`); a hook could not start, timed out or printed unparsable output; no provider is usable; a remote job's own setup step failed; an internal error (a bitc bug) | do not retry blindly: stop and report |
 | 75 | temporary failure | starved; a hook asked to wait; a remote infrastructure failure after the job started | wait, then run again |
 | 78 | config | invalid config file; a host-only key in a repo file; a pool's `memory` or a `[providers.*]` table in the macOS build; `min_version` not met; an insecure, NFS or newer-schema state dir, or an accounting dir on NFS (`bitc sweep` there: after tearing down what is provably expired) | fix the configuration |
-| 124 | still running | `wait` only: the job has not ended | call `wait` again |
+| 124 | still running; time limit | `wait`: the job has not ended. A local run: bitc ended it at its time limit (`pools.<p>.timeout`, `run --timeout`) | `wait`: call it again. A run: raise the limit or fix the command |
 
 An internal error or panic prints `bitc: internal error: <msg>`, releases everything and exits 69.
 It is never 75, so a bug that fails every time cannot keep a retrying caller looping.
@@ -29,6 +29,7 @@ It is never 75, so a bug that fails every time cannot keep a retrying caller loo
 | `bitc: <provider>: <pool> job <job> on <resource> (<size>) at <sha12>` | a remote job was launched |
 | `pod: <line>` | output of the remote setup steps |
 | `bitc: <pool>: refused: <reason>` | 64 from a refuse rule or hook |
+| `bitc: <pool>: time limit <dur> reached; terminated` | 124 from a local run that reached its time limit; the command was sent SIGTERM, then SIGKILL after `grace` |
 | `bitc: <message>` | every other note, warning or error |
 
 ## `wait` outcomes

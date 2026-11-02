@@ -67,13 +67,16 @@ Hidden: `bitc __supervise <job>` (detached supervisor), `bitc __agent` (remote s
 ### 3.1 `run`
 
 ```
-bitc run [--detach] [--name N] [--log PATH] [--wait DUR] [--local | --provider P]
+bitc run [--detach] [--name N] [--log PATH] [--wait DUR] [--timeout DUR] [--local | --provider P]
          [--artifacts a,b] [--result PATH] <pool> [--] <cmd> [args...]
 ```
 
 - Flags precede `<pool>`; the rest is the argv, passed to `execve` verbatim (no shell). Steps run
   in the order of the pipeline in 6.
-- `--wait` may only shorten the pool's wait. `--local` forces `local`. `--provider P`: P must be a
+- `--wait` may only shorten the pool's wait. `--timeout` may only shorten the pool's `timeout`,
+  or sets one where the pool has none; a longer value is not an error, the pool's wins (zero or a
+  malformed value: 64). `--timeout` limits a local run only (6.4): a run that goes to a remote
+  provider ignores it (the limit there is `remote_limits.timeout`, 8.2). `--local` forces `local`. `--provider P`: P must be a
   remote provider in the pool's effective list (else 64); the list becomes `[P]` plus `local` if
   listed; eligibility, cap and breaker still apply. `--artifacts`: a subset of the declared ones.
 - `--detach`: runs pipeline steps 1–4, opens the log and writes `spec.json` (any failure:
@@ -99,7 +102,8 @@ generation at first read.
 | still running | `RUNNING (no exit line yet after <s>s); last lines:` + 5 lines | 124 | 124 |
 | unknown job / no log | `NO LOG <path> ...` | 66 | 66 |
 
-By default 124, 66, 75 and 69 are `wait`'s own outcomes; `--exit job` can collide, as documented. A
+By default 124, 66, 75 and 69 are `wait`'s own outcomes; `--exit job` can collide, as documented (a
+job ended by its time limit shows `RESULT exit 124`, and under `--exit job` is 124 like a running one). A
 command that itself exits 75 shows `RESULT exit 75`. **`--log PATH`** waits on a log with no bitc
 record (a job a legacy launcher started, 12): legacy J8/J9 apply, so the last line starting
 `__EXIT__ ` wins, code 75 prints `RESULT starved`, and every ended job exits 0.
@@ -130,7 +134,7 @@ record (a job a legacy launcher started, 12): legacy J8/J9 apply, so the last li
 | 69 `EX_UNAVAILABLE` | not Linux or macOS; a Linux-only feature in the macOS build; hook could not start, timed out, printed unparsable output or exited with an unlisted code; no provider left and the last was unusable (a remote-only pool's job not eligible for remote, 8.2); a remote job's own setup step failed by itself (15.9); `cancel` cannot read or update the job's `status.json`; a detached supervisor cannot mark its job running; internal error (a bitc bug) | do not retry blindly |
 | 75 `EX_TEMPFAIL` | starved; hook exited 75; remote infrastructure failure after start; no provider left after a transient failure | wait and retry |
 | 78 `EX_CONFIG` | invalid config file; host-only key in a repo file; `min_version` unmet; insecure, NFS (on macOS also smbfs, afpfs, webdav and any non-local mount) or newer-schema state or accounting dirs; a pool's `memory` or a `[providers.*]` table in the macOS build | fix config |
-| 124 | `wait`: job still running | call `wait` again |
+| 124 | `wait`: job still running; or a local run ended by its time limit (`pools.<p>.timeout`, `run --timeout`, 6.4) | `wait`: call it again; a run: the command took too long, raise the limit or fix the command |
 
 A remote problem surfaces only as local fallback, 69 or 75 (8.2). An internal error or panic
 (top-level `recover` in `main` and the supervisor) prints `bitc: internal error: <msg>`, releases
@@ -207,6 +211,7 @@ only (repo: 78). **narrowable**: others may only narrow it (widening: 78 in a fi
 | `host.state_dir` / `host.poll` | host | `BITC_DIR`, `--state-dir` / `BITC_POLL` (≥ 100ms) | replaces |
 | `slots`, `memory`, `groups`, `groups.<g>.units`, `[priority]` | host | — | — |
 | `[defaults] wait`, `pools.<p>.wait` | host, narrow=min | repo `wait`, `--wait` | minimum |
+| `pools.<p>.timeout` (a duration above 0; unset: no limit) | host, narrow=min | `--timeout` (a local run only) | minimum, unset counting as infinite |
 | `pools.<p>.providers` | host, narrow=exclude | repo `providers_exclude`, `BITC_PROVIDER=local`, `--local`, `--provider` | host order; removals only |
 | `pools.<p>.remote_limits.timeout` | host, narrow=min | repo `[pools.<p>.remote] timeout` | minimum |
 | `[remote_limits]`, `pools.<p>.remote_limits.size`, `[providers.*]`, `[compat]`, `[[repos]]`, `[test]` | host | — | — |
@@ -413,6 +418,15 @@ in.
   (leader on a TTY), waits `grace`, SIGKILLs, exits `128+N`. `"forward-and-wait"` (for commands
   with their own cleanup, such as an e2e stack) forwards and keeps the hold until the command
   exits, bounded by `max_signal_wait`; a second signal or `cancel --kill` escalates to `terminate`.
+- **Time limit:** `pools.<p>.timeout`, narrowed by `run --timeout` to the shorter of the two
+  (unset is no limit), is measured from the command's start, so the wait for a slot and `pre_run`
+  do not count (a `--detach` job's supervisor applies it the same way). When it expires and the
+  command is not already terminating, bitc prints `bitc: <pool>: time limit <dur> reached; terminated`
+  (`<dur>` in the duration grammar of 5.2) and terminates as for a signal, whatever `on_signal`
+  says: SIGTERM to the group (leader on a TTY), SIGKILL after `grace`, stragglers as below. The
+  run exits 124 (`timeout(1)`'s code), `origin = bitc`; a signal that arrives first or after wins
+  with its `128+N`. A command's own 124 is not told apart from this one by the code, only by the
+  line. A remote run has no such limit (8.2: `remote_limits.timeout`).
 - **End of hold:** `post_run`; group stragglers SIGTERM then SIGKILL after `grace`; unlock all,
   unlink ticket, drop reservation, history `end`, return the command's code (`128+N` if it died of
   signal N).

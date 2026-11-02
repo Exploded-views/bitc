@@ -125,7 +125,7 @@ func Prepare(inv Invocation, red *redact.Set) (*Prepared, error) {
 	for _, s := range eff.Secrets {
 		red.Add(s)
 	}
-	if err := eff.ApplyRunFlags(config.RunFlags{Wait: ra.Wait, Local: ra.Local, Provider: ra.Provider, Artifacts: ra.Artifacts}); err != nil {
+	if err := eff.ApplyRunFlags(config.RunFlags{Wait: ra.Wait, Timeout: ra.Timeout, Local: ra.Local, Provider: ra.Provider, Artifacts: ra.Artifacts}); err != nil {
 		return nil, err
 	}
 	pool, err := eff.Resolve(ra.Pool)
@@ -342,7 +342,7 @@ func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Wri
 	t0 := time.Now()
 	res, err := Exec(parent, ExecSpec{
 		Argv: argv, Env: env, Dir: inv.Cwd, Stdin: inv.Stdin, Stdout: inv.Stdout, Stderr: inv.Stderr,
-		OnSignal: pool.OnSignal, Grace: eff.Scale(eff.Host.Grace), MaxSignalWait: eff.Scale(eff.Host.MaxSignalWait),
+		OnSignal: pool.OnSignal, Grace: eff.Scale(eff.Host.Grace), Timeout: eff.Scale(pool.Timeout), MaxSignalWait: eff.Scale(eff.Host.MaxSignalWait),
 		Started:  func(pid, pgid int, start uint64) { _ = hold.SetProcess(pid, pgid, start) },
 		Pending:  gap,          // Exec stops it once its own handler is registered
 		NoHangup: inv.Detached, // spec 7: a hangup neither escalates nor reaches the command
@@ -352,6 +352,9 @@ func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Wri
 	}
 	if res.StartErr != nil {
 		fmt.Fprintf(stderr, "bitc: %s: %v\n", argv[0], res.StartErr)
+	}
+	if res.TimedOut {
+		fmt.Fprintf(stderr, "bitc: %s: time limit %s reached; terminated\n", pool.Name, config.FormatDuration(pool.Timeout))
 	}
 	runMS := time.Since(t0).Milliseconds()
 	code := res.Code
@@ -379,7 +382,7 @@ func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Wri
 		}
 	}
 	origin := "command"
-	if outcome == "interrupted" {
+	if outcome == "interrupted" || res.TimedOut {
 		origin = "bitc"
 	}
 	return Outcome{Code: code, Result: Result{Origin: origin, Outcome: outcome, ExitCode: code, Pool: pool.Name,

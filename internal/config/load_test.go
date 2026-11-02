@@ -427,7 +427,8 @@ func TestPoolTimeoutRejectsBadValues(t *testing.T) {
 }
 
 func TestRunTimeoutOnlyNarrows(t *testing.T) {
-	e := mustLoad(t, newFixture(t, "version = 1\n[pools.lint]\ntimeout = \"10m\"\n[pools.db]\n", ""))
+	f := newFixture(t, "version = 1\n[pools.lint]\ntimeout = \"10m\"\n[pools.db]\n", "")
+	e := mustLoad(t, f)
 	for _, c := range []struct {
 		flag, pool string
 		want       time.Duration
@@ -438,6 +439,7 @@ func TestRunTimeoutOnlyNarrows(t *testing.T) {
 		{"1h", "db", time.Hour}, // the pool has no limit: the flag sets one
 		{"", "db", 0},
 	} {
+		e = mustLoad(t, f) // a fresh Effective per call, as in a real run
 		if err := e.ApplyRunFlags(RunFlags{Timeout: c.flag}); err != nil {
 			t.Fatal(err)
 		}

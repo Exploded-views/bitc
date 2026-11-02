@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- A per-run time limit for local runs. The host key `pools.<p>.timeout` (a duration such as `30m`
+  or `1h30m`; unset means no limit; `0s` is a config error, 78) and `bitc run --timeout DUR`. The
+  flag can only narrow: the effective limit is the shorter of the two, and a `--timeout` longer
+  than the pool's is accepted with the pool's value still in force. The clock starts when the
+  command starts, so the wait for a slot does not count, and `--detach` jobs are limited the same
+  way. At the limit bitc prints `bitc: <pool>: time limit <dur> reached; terminated`, terminates
+  the command's process group as for a signal (SIGTERM, SIGKILL after `grace`) and exits 124, the
+  code `timeout(1)` uses. A remote run ignores `--timeout`; `remote_limits.timeout` limits it.
+
 ## [0.1.3] - 2026-11-02
 
 ### Changed
