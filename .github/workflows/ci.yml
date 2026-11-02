@@ -71,6 +71,9 @@ jobs:
   # empty or failed, so a leg that did not upload cannot pass for a package that dropped out.
   coverage:
     needs: [unit]
+    # runs after a failed leg too (a skipped job would pass as a required check) and then fails on
+    # the leg's missing or failed output
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -97,9 +100,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # the whole history for the shard that runs TIM1 (its cap ratchet compares with main,
-          # TestTIM1_CapOnlyGoesDown); the others need only the tip
-          fetch-depth: ${{ matrix.shard == 'rest' && 0 || 1 }}
+          # the whole history: the rest shard's TIM1 cap ratchet compares with main
+          # (TestTIM1_CapOnlyGoesDown). A literal: in an expression 0 is falsy.
+          fetch-depth: 0
       # The same toolchain as scripts/dev.sh pins; go.mod only states the minimum.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -120,7 +123,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: ${{ matrix.shard == 'rest' && 0 || 1 }}
+          fetch-depth: 0
       # The same toolchain as scripts/dev.sh pins; go.mod only states the minimum.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:

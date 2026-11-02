@@ -25,7 +25,7 @@ test-unit:
 	@mkdir -p dist
 	@case "$(LEG)" in \
 	  providers) pk="./internal/provider/... ./internal/remote/..." ;; \
-	  core) pk=$$($(GO) list ./internal/... ./cmd/... | grep -Ev '$(LEG_RE)') ;; \
+	  core) all=$$($(GO) list ./internal/... ./cmd/...) || exit 2; pk=$$(printf '%s\n' "$$all" | grep -Ev '$(LEG_RE)'); [ -n "$$pk" ] || exit 2 ;; \
 	  *) echo "make test-unit: LEG must be providers or core, not '$(LEG)'" >&2; exit 2 ;; \
 	esac; \
 	out=dist/test-cover-$(LEG).txt; \
