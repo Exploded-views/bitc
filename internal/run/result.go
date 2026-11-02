@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/Exploded-views/bitc/internal/state"
@@ -38,12 +39,18 @@ var gitProgram = "git"
 // no optional lock (--no-optional-locks), which would race a concurrent git add or commit for
 // .git/index.lock. Outside a git work tree, or when git cannot say, head is "" and clean is nil;
 // when only status fails or times out, head is kept and clean is nil.
-func treeState(dir string, env []string, limit time.Duration) (head string, clean *bool) {
+func treeState(ctx context.Context, dir string, env []string, limit time.Duration) (head string, clean *bool) {
 	git := func(args ...string) (string, bool) {
-		ctx, cancel := context.WithTimeout(context.Background(), limit)
+		ctx, cancel := context.WithTimeout(ctx, limit)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, gitProgram, append([]string{"--no-optional-locks", "-C", dir}, args...)...)
 		cmd.Env = env
+		// A descendant of git (a hook, fsmonitor) holding its output must not stall the call past
+		// the bound: git runs in its own group, which the deadline kills whole, and Wait gives
+		// up on the pipes shortly after.
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+		cmd.WaitDelay = hookWaitDelay
 		out, err := cmd.Output()
 		return strings.TrimSpace(string(out)), err == nil
 	}

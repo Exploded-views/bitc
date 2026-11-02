@@ -76,9 +76,10 @@ bitc run [--detach] [--name N] [--log PATH] [--wait DUR] [--timeout DUR] [--loca
 - `--wait` may only shorten the pool's wait. `--timeout` may only shorten the pool's `timeout`,
   or sets one where the pool has none; a longer value is not an error, the pool's wins (zero or a
   malformed value: 64). `--timeout` limits a local run only (6.4): a run that goes to a remote
-  provider ignores it (the limit there is `remote_limits.timeout`, 8.2). `--local` forces `local`. `--provider P`: P must be a
-  remote provider in the pool's effective list (else 64); the list becomes `[P]` plus `local` if
-  listed; eligibility, cap and breaker still apply. `--artifacts`: a subset of the declared ones.
+  provider ignores it (the limit there is `remote_limits.timeout`, 8.2). `--local` forces `local`.
+  `--provider P`: P must be a remote provider in the pool's effective list (else 64); the list
+  becomes `[P]` plus `local` if listed; eligibility, cap and breaker still apply. `--artifacts`: a
+  subset of the declared ones.
 - `--detach`: runs pipeline steps 1–4, opens the log and writes `spec.json` (any failure:
   64/69/75/78, empty stdout; an uncreatable log is 64); starts a supervisor in a new session; prints
   exactly `started <name> pid <pid> log <path>` (absolute). Everything from step 6 on, `pre_run`
@@ -103,8 +104,8 @@ generation at first read.
 | unknown job / no log | `NO LOG <path> ...` | 66 | 66 |
 
 By default 124, 66, 75 and 69 are `wait`'s own outcomes; `--exit job` can collide, as documented (a
-job ended by its time limit shows `RESULT exit 124`, and under `--exit job` is 124 like a running one). A
-command that itself exits 75 shows `RESULT exit 75`. **`--log PATH`** waits on a log with no bitc
+job ended by its time limit shows `RESULT exit 124`, and under `--exit job` is 124 like a running
+one). A command that itself exits 75 shows `RESULT exit 75`. **`--log PATH`** waits on a log with no bitc
 record (a job a legacy launcher started, 12): legacy J8/J9 apply, so the last line starting
 `__EXIT__ ` wins, code 75 prints `RESULT starved`, and every ended job exits 0.
 
@@ -427,14 +428,16 @@ in.
 - **Time limit:** `pools.<p>.timeout`, narrowed by `run --timeout` to the shorter of the two
   (unset is no limit), is measured from the command's start, so the wait for a slot and `pre_run`
   do not count (a `--detach` job's supervisor applies it the same way). When it expires and the
-  command is not already terminating, bitc prints `bitc: <pool>: time limit <dur> reached; terminated`
+  command is not already terminating, bitc prints
+  `bitc: <pool>: time limit <dur> reached; terminated`
   (`<dur>` in the duration grammar of 5.2) and terminates as for a signal, whatever `on_signal`
   says: SIGTERM to the group (leader on a TTY), SIGKILL after `grace`, stragglers as below. On a
   TTY only the leader is signalled, so its children can outlive the limit (Ctrl-C reaches the
   whole foreground group, a time limit does not). The run exits 124 (`timeout(1)`'s code) with
   `origin = bitc`, `outcome = "timed-out"` in `result.json` and in the history `end` line; a
   signal that arrives first (including under `forward-and-wait`) or after wins with its `128+N`.
-  A command's own 124 has `outcome = "command-failed"` and no such line. A remote run has no such limit (8.2: `remote_limits.timeout`).
+  A command's own 124 has `outcome = "command-failed"` and no such line. A remote run has no such
+  limit (8.2: `remote_limits.timeout`).
 - **End of hold:** `post_run`; group stragglers SIGTERM then SIGKILL after `grace`; unlock all,
   unlink ticket, drop reservation, history `end`, return the command's code (`128+N` if it died of
   signal N).
@@ -1375,8 +1378,9 @@ ACCOUNT/ install-secret (32 bytes; install16 = 16 hex of its sha256),
 
 **History:** `O_APPEND` lines under 4 KiB: `{ts (UTC, ms), event: "start"|"end"|"starved"|
 "fallback"|"reaped", pool, slot, job, pid, nested?, argv: [...], cwd, provider, resource?, sha?,
-wait_ms?, run_ms?, exit?, outcome? (`ok`, `command-failed`, `timed-out`, `interrupted`, ...), reason?, head?, tree_clean?}` (the last two on a local run's
-`start` and `end`, as in `result.json`, 4); refusals write nothing; a `reason` over 512 bytes is
+wait_ms?, run_ms?, exit?, outcome? (`ok`, `command-failed`, `timed-out`, `interrupted`, ...),
+reason?, head?, tree_clean?}` (the last two on a local run's `start` and `end`, as in
+`result.json`, 4); refusals write nothing; a `reason` over 512 bytes is
 cut there and ends ` [truncated]`; the 4 KiB bound is on the encoded line (JSON escaping
 included): the reason is halved first, then argv, then the cwd and the resource, and as a last
 resort the pool, job, provider and sha (names are not length-checked where they are written),

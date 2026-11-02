@@ -248,7 +248,8 @@ func signalCtxPeek(parent context.Context, sigs []os.Signal, pending chan os.Sig
 	}, peek
 }
 
-// gitLimit bounds each git call that captures the work tree's state at hold start.
+// gitLimit bounds each git call that captures the work tree's state at hold start. Scaled for
+// tests, but never below 2s: a bound that must not fire cannot shrink with time_scale.
 const gitLimit = 10 * time.Second
 
 func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Writer) Outcome {
@@ -323,7 +324,7 @@ func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Wri
 		return failed(err)
 	}
 	defer hold.Release()
-	head, treeClean = treeState(inv.Cwd, inv.Env, eff.Scale(gitLimit))
+	head, treeClean = treeState(ctx, inv.Cwd, inv.Env, max(eff.Scale(gitLimit), 2*time.Second))
 	vars = TemplateVars(eff, pool, hold, p.Job)
 	in := EnvInput{Caller: inv.Env, Eff: eff, Pool: pool, Hold: hold, Job: p.Job, Vars: vars}
 	env, err := BaseEnv(in)
