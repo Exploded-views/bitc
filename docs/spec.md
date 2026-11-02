@@ -78,13 +78,15 @@ bitc run [--detach] [--name N] [--log PATH] [--wait DUR] [--units G=K]... [--loc
   listed; eligibility, cap and breaker still apply. `--artifacts`: a subset of the declared ones.
 - `--units G=K` (repeatable, one per group): replaces the pool's unit count of group `G` for this run
   only. `G` must be a group in the pool's `groups`; `K` is an integer `1..N`, `N` = `groups.<G>.units`,
-  and at most the pool's `groups_max.<G>` if set (5.3). A malformed or repeated value, `K` of 0 or
-  above `N` or `groups_max`, or a group the pool does not list is 64 with a one-line message (no usage
-  text) naming the form or the group and the limit (`k must be 1..N`). On a pool with `local` and
-  a remote provider it is accepted and has no effect when the run goes remote. A pool whose effective providers lack `local` refuses it (64): units are
-  local group admission. Admission is unchanged (6.2): the ticket asks for `K` units all or none, in
-  ticket-time order, and nothing running is preempted. `status`, `result.json` and the history
-  `start` and `end` lines show the units held per group; a detached run keeps the flag.
+  and at most the pool's `groups_max.<G>` if set (5.3). A `--units` value that is malformed or
+  repeated, a `K` of 0 or above `N` or `groups_max`, or a group the pool does not list is 64 with a
+  one-line message (no usage text) naming the form or the group and the limit (`k must be 1..N`); a
+  missing or empty value gets the usage error every flag gets. A pool whose effective providers
+  lack `local` refuses it (64): units are local group admission. On a pool with `local` and a
+  remote provider it is accepted and has no effect when the run goes remote. Admission is unchanged
+  (6.2): the ticket asks for `K` units all or none, in ticket-time order, and nothing running is
+  preempted. `status`, `result.json` and the history `start` and `end` lines show the units held
+  per group; a detached run keeps the flag.
 - `--detach`: runs pipeline steps 1–4, opens the log and writes `spec.json` (any failure:
   64/69/75/78, empty stdout; an uncreatable log is 64); starts a supervisor in a new session; prints
   exactly `started <name> pid <pid> log <path>` (absolute). Everything from step 6 on, `pre_run`

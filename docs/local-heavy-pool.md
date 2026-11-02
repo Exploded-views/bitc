@@ -45,8 +45,9 @@ groups = { cpu = 8 }                  # N
 
 A run takes all of its units or none, so it never holds some while it waits for the rest.
 Runs waiting on the group are served first in first out by the time they queued. (A run that
-waits only for its own pool's slots does not hold group runs back, which is why every pool above
-has slots to spare.)
+waits only for its own pool's slots records no group wait and holds nothing behind it back. In
+the example `gate` and `bench` have one slot each, so a second `gate` or `bench` run waits on its
+pool's slot; `heavy` and `light` have slots to spare, so for them the group is the limit.)
 
 ## What waits for what
 
@@ -56,7 +57,7 @@ With N = 8:
 - A third `heavy` run waits: 3 more would be 9.
 - A `gate` run (7) fits beside one `light` run and nothing else. If two `heavy` runs are going
   (6 units), the `gate` run waits until both end; the `heavy` runs are never stopped for it.
-- Once the `gate` run is waiting, a `heavy` or `light` run that arrives after it queues behind it,
+- Once a `gate` run is waiting on the group, a `heavy` or `light` run that arrives after it queues behind it,
   even when the free units would fit the newcomer. That keeps a gate from being starved by a
   stream of small runs. A run that arrived before the `gate` run is ahead of it.
 - A `light` run fits in the free unit beside a `gate` run only until a `heavy` run queues behind
