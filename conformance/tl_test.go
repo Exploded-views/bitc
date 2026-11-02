@@ -1,6 +1,7 @@
 package conformance
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,17 +15,28 @@ import (
 func TestTL1_ForegroundRunIsKilledAtTheLimit(t *testing.T) {
 	h := harness.New(t)
 	scaledHost(h, "[host]\ngrace = \"20s\"\n[pools.lint]\ntimeout = \"10s\"\n")
-	r := h.Run("run", "lint", "--", "sleep", "60")
+	res := filepath.Join(h.Root, "r.json")
+	r := h.Run("run", "--result", res, "lint", "--", "sleep", "60")
 	if r.Code != 124 || !strings.Contains(r.Stderr, "bitc: lint: time limit 10s reached; terminated\n") {
 		t.Fatalf("%+v", r)
+	}
+	var got struct{ Origin, Outcome string }
+	if err := json.Unmarshal(must(os.ReadFile(res)), &got); err != nil || got.Origin != "bitc" || got.Outcome != "timed-out" {
+		t.Fatalf("result.json: %s %v", must(os.ReadFile(res)), err)
+	}
+	if end := lastEnd(t, h); end["outcome"] != "timed-out" || end["exit"] != float64(124) {
+		t.Fatalf("history end: %v", end)
 	}
 	// a command that ends within the limit is untouched
 	if r := h.Run("run", "lint", "--", "sh", "-c", "exit 3"); r.Code != 3 || strings.Contains(r.Stderr, "time limit") {
 		t.Fatalf("%+v", r)
 	}
-	// 124 from the command itself is not a timeout: no line
+	// 124 from the command itself is not a timeout: no line, and its own outcome
 	if r := h.Run("run", "lint", "--", "sh", "-c", "exit 124"); r.Code != 124 || strings.Contains(r.Stderr, "time limit") {
 		t.Fatalf("%+v", r)
+	}
+	if end := lastEnd(t, h); end["outcome"] != "command-failed" {
+		t.Fatalf("history end: %v", end)
 	}
 }
 
@@ -81,4 +93,31 @@ func TestTL4_DetachedJobHitsTheLimit(t *testing.T) {
 	if r.Code != 124 || !strings.HasPrefix(r.Stdout, "RESULT exit 124\n") || !strings.Contains(r.Stdout, "time limit 10s reached; terminated") {
 		t.Fatalf("%+v", r)
 	}
+	files, _ := filepath.Glob(filepath.Join(h.State, "jobs", "*", name, "result.json"))
+	if len(files) != 1 {
+		t.Fatalf("result.json: %v", files)
+	}
+	var got struct{ Origin, Outcome string }
+	if err := json.Unmarshal(must(os.ReadFile(files[0])), &got); err != nil || got.Origin != "bitc" || got.Outcome != "timed-out" {
+		t.Fatalf("result.json: %s %v", must(os.ReadFile(files[0])), err)
+	}
+}
+
+// lastEnd is the history's last `end` line.
+func lastEnd(t *testing.T, h *harness.H) map[string]any {
+	t.Helper()
+	var end map[string]any
+	for _, l := range strings.Split(strings.TrimSpace(string(must(os.ReadFile(filepath.Join(h.State, "history.jsonl"))))), "\n") {
+		var e map[string]any
+		if err := json.Unmarshal([]byte(l), &e); err != nil {
+			t.Fatal(err)
+		}
+		if e["event"] == "end" {
+			end = e
+		}
+	}
+	if end == nil {
+		t.Fatal("no end line in the history")
+	}
+	return end
 }

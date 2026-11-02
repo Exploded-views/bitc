@@ -167,3 +167,14 @@ func TestNoTimeoutAndASlowFinishAreNotTimedOut(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 }
+
+// A signal that came first keeps its 128+N under forward-and-wait: the limit does not turn it
+// into 124 nor cut its max_signal_wait short.
+func TestSignalBeforeTheLimitKeepsItsCodeUnderForwardAndWait(t *testing.T) {
+	s := spec(t, "sh", "-c", `trap 'sleep 3; exit 130' INT; kill -INT $PPID; while :; do sleep 0.05; done`)
+	s.OnSignal, s.MaxSignalWait, s.Timeout = "forward-and-wait", 30*time.Second, 2*time.Second
+	r, err := Exec(context.Background(), s)
+	if err != nil || r.Code != 130 || r.TimedOut || r.Interrupted != syscall.SIGINT {
+		t.Fatalf("%+v %v", r, err)
+	}
+}

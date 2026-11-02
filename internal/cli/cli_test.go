@@ -62,3 +62,11 @@ func TestGlobalFlags(t *testing.T) {
 		t.Fatalf("missing value: %d", code)
 	}
 }
+
+func TestWithoutDetachKnowsEveryValueFlag(t *testing.T) {
+	got := withoutDetach([]string{"--timeout", "10s", "--detach", "--wait", "1m", "lint", "--", "x", "--detach"})
+	want := []string{"--timeout", "10s", "--wait", "1m", "lint", "--", "x", "--detach"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("%q, want %q", got, want)
+	}
+}

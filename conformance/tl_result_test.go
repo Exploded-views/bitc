@@ -38,18 +38,10 @@ func resultOf(t *testing.T, h *harness.H) (res map[string]any, hist []map[string
 	return res, hist
 }
 
-func sameDir(t *testing.T, a, b string) bool {
-	t.Helper()
-	ra, err1 := filepath.EvalSymlinks(a)
-	rb, err2 := filepath.EvalSymlinks(b)
-	return err1 == nil && err2 == nil && ra == rb
-}
-
 func TestTL6_ResultNamesTheCommitTreeStateAndCwd(t *testing.T) {
 	h := harness.New(t)
 	h.HostConfig("[pools.lint]\n")
 	wt := h.Repo("app", map[string]string{"a.txt": "a\n"})
-	head := strings.TrimSpace(string(must(exec.Command("git", "-C", wt, "rev-parse", "HEAD").Output())))
 	sub := filepath.Join(wt, "sub")
 	h.Write(filepath.Join(sub, "keep"), "", 0o644)
 	if out, err := exec.Command("git", "-C", wt, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "add", "-A").CombinedOutput(); err != nil {
@@ -58,12 +50,13 @@ func TestTL6_ResultNamesTheCommitTreeStateAndCwd(t *testing.T) {
 	if out, err := exec.Command("git", "-C", wt, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "sub").CombinedOutput(); err != nil {
 		t.Fatalf("%v %s", err, out)
 	}
-	head = strings.TrimSpace(string(must(exec.Command("git", "-C", wt, "rev-parse", "HEAD").Output())))
+	head := strings.TrimSpace(string(must(exec.Command("git", "-C", wt, "rev-parse", "HEAD").Output())))
 	h.Cwd = sub
 
 	// clean: head is the full sha, tree_clean true, cwd is where bitc ran; the history says the same
 	res, hist := resultOf(t, h)
-	if res["head"] != head || res["tree_clean"] != true || !sameDir(t, str(res["cwd"]), sub) {
+	canon, _ := filepath.EvalSymlinks(sub)
+	if res["head"] != head || res["tree_clean"] != true || res["cwd"] != canon || hist[0]["cwd"] != canon {
 		t.Fatalf("clean: %v", res)
 	}
 	for _, e := range hist {
@@ -103,7 +96,8 @@ func TestTL7_ResultOutsideAGitTreeHasCwdOnly(t *testing.T) {
 	if _, ok := res["tree_clean"]; ok {
 		t.Fatalf("tree_clean outside git: %v", res)
 	}
-	if v, _ := res["head"].(string); v != "" || !sameDir(t, str(res["cwd"]), dir) {
+	canon, _ := filepath.EvalSymlinks(dir)
+	if v, _ := res["head"].(string); v != "" || res["cwd"] != canon || hist[0]["cwd"] != canon {
 		t.Fatalf("%v", res)
 	}
 	for _, e := range hist {
