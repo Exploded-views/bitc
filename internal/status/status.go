@@ -28,6 +28,9 @@ type Holder struct {
 	Nested   bool     `json:"nested"`
 	Since    string   `json:"since"`
 	Legacy   bool     `json:"legacy,omitempty"` // a legacy shell-pool caller holds <legacy_dir>/locks/<pool>.<slot>.lock
+	// Unknown: the slot is in use as far as its ticket or lock file shows, but this host cannot
+	// read lock holders (no /proc/locks, #24), so it is not known whether anyone holds it.
+	Unknown bool `json:"unknown,omitempty"`
 }
 
 type Waiter struct {
@@ -36,6 +39,7 @@ type Waiter struct {
 	Pid      int    `json:"pid"`
 	Since    string `json:"since"`
 	Blocking string `json:"group_wait,omitempty"`
+	Unknown  bool   `json:"unknown,omitempty"` // as Holder.Unknown: whether its owner is alive is not known
 }
 
 type Pool struct {
@@ -50,6 +54,8 @@ type Group struct {
 	Name  string `json:"name"`
 	Units int    `json:"units"`
 	Held  []int  `json:"held"`
+	// Unknown lists the units whose holder cannot be read (no /proc/locks, #24).
+	Unknown []int `json:"unknown,omitempty"`
 }
 
 type Memory struct {
@@ -93,9 +99,10 @@ func redactAll(red *redact.Set, in []string) []string {
 func iso(ns int64) string { return time.Unix(0, ns).UTC().Format(time.RFC3339) }
 
 // Snapshot reads tickets, locks and memory without taking any lock: holders come from
-// /proc/locks on Linux and fcntl(F_GETLK) on darwin (lock.HeldRO; neither takes a lock), so a
+// /proc/locks on Linux and fcntl(F_GETLK) on darwin (lock.Inspect; neither takes a lock), so a
 // concurrent `--wait 0s` caller or a legacy `flock -n` never sees a lock made busy by status
-// (read-only, best effort; except on a Linux without /proc/locks, see lock.HeldRO).
+// (read-only, best effort). On a Linux without a readable /proc/locks nothing is locked either:
+// the slot or unit shows as unknown (lock.Inspect, #24).
 func Snapshot(e *config.Effective, l state.Layout, only []string) Report {
 	r := Report{Version: "1", Time: time.Now().UTC().Format(time.RFC3339), Pools: []Pool{}, Groups: []Group{}}
 	names := only
@@ -114,19 +121,21 @@ func Snapshot(e *config.Effective, l state.Layout, only []string) Report {
 			p.Slots = cfg.Slots
 		}
 		for _, t := range admit.ReadTickets(l, n) {
-			if !lock.HeldRO(l.Tickets(n) + "/" + t.Name) {
+			st := lock.Inspect(l.Tickets(n) + "/" + t.Name)
+			if st == lock.StateFree {
 				continue // dead owner: sweep prunes it
 			}
+			unknown := st == lock.StateUnknown
 			if t.T.State == "running" {
 				p.Holders = append(p.Holders, Holder{Job: red.String(t.T.Job), Slot: t.T.Slot, Pid: t.T.Pid, Cwd: red.String(t.T.Cwd),
-					Argv: redactAll(red, t.T.Argv), Provider: "local", Nested: t.T.Nested, Since: iso(t.T.HoldStarted)})
+					Argv: redactAll(red, t.T.Argv), Provider: "local", Nested: t.T.Nested, Since: iso(t.T.HoldStarted), Unknown: unknown})
 			} else {
 				class := "normal"
 				if t.T.Class == 0 {
 					class = "high"
 				}
 				p.Waiters = append(p.Waiters, Waiter{Job: red.String(t.T.Job), Class: class, Pid: t.T.Pid, Since: iso(t.T.WaitStarted),
-					Blocking: red.String(strings.Join(t.T.GroupWait, ","))})
+					Blocking: red.String(strings.Join(t.T.GroupWait, ",")), Unknown: unknown})
 			}
 		}
 		p.Holders = append(p.Holders, legacyHolders(e.Compat, n, p)...)
@@ -135,8 +144,11 @@ func Snapshot(e *config.Effective, l state.Layout, only []string) Report {
 	for _, g := range sortedGroups(e) {
 		grp := Group{Name: g.Name, Units: g.Units, Held: []int{}}
 		for j := 1; j <= g.Units; j++ {
-			if lock.HeldRO(l.GroupUnitLock(g.Name, j)) {
+			switch lock.Inspect(l.GroupUnitLock(g.Name, j)) {
+			case lock.StateHeld:
 				grp.Held = append(grp.Held, j)
+			case lock.StateUnknown:
+				grp.Unknown = append(grp.Unknown, j)
 			}
 		}
 		r.Groups = append(r.Groups, grp)
@@ -156,7 +168,7 @@ func Snapshot(e *config.Effective, l state.Layout, only []string) Report {
 
 // legacyHolders attributes each held <legacy_dir>/locks/<pool>.<n>.lock (the lock admission
 // takes with bitc slot n) to the pool's slot n, unless a bitc ticket already holds that slot.
-// Observe only (HeldRO); the pid is the one the legacy caller wrote into the file, if any.
+// Observe only (lock.Inspect); the pid is the one the legacy caller wrote into the file, if any.
 func legacyHolders(c *config.Compat, pool string, p Pool) []Holder {
 	if c == nil {
 		return nil
@@ -168,10 +180,16 @@ func legacyHolders(c *config.Compat, pool string, p Pool) []Holder {
 	var out []Holder
 	for n := 1; n <= p.Slots; n++ {
 		path := admit.LegacySlotLock(c, pool, n)
-		if taken[n] || !lock.HeldRO(path) {
+		st := lock.Inspect(path)
+		if taken[n] || st == lock.StateFree {
 			continue
 		}
 		pid := 0
+		if st == lock.StateUnknown {
+			// the file's pid may be stale and nothing says the lock is held: name no pid
+			out = append(out, Holder{Job: "legacy", Slot: n, Argv: []string{}, Provider: "local", Legacy: true, Unknown: true})
+			continue
+		}
 		if b, err := os.ReadFile(path); err == nil {
 			pid, _ = strconv.Atoi(strings.TrimSpace(string(b)))
 		}
@@ -212,8 +230,28 @@ func lastStarved(l state.Layout) map[string]string {
 // Text prints the report for people.
 func (r Report) Text(w io.Writer) {
 	for _, p := range r.Pools {
-		fmt.Fprintf(w, "%s: %d/%d slots held, %d waiting\n", p.Name, len(p.Holders), p.Slots, len(p.Waiters))
+		held, unk := 0, 0
 		for _, h := range p.Holders {
+			if h.Unknown {
+				unk++
+			} else {
+				held++
+			}
+		}
+		unkNote := ""
+		if unk > 0 {
+			unkNote = fmt.Sprintf(", %d unknown", unk)
+		}
+		fmt.Fprintf(w, "%s: %d/%d slots held%s, %d waiting\n", p.Name, held, p.Slots, unkNote, len(p.Waiters))
+		for _, h := range p.Holders {
+			if h.Legacy && h.Unknown {
+				fmt.Fprintf(w, "  slot %d  legacy holder unknown\n", h.Slot)
+				continue
+			}
+			if h.Unknown {
+				fmt.Fprintf(w, "  slot %d  unknown  %s  pid %d  since %s  %s\n", h.Slot, h.Job, h.Pid, h.Since, strings.Join(h.Argv, " "))
+				continue
+			}
 			if h.Legacy {
 				pid := ""
 				if h.Pid > 0 {
@@ -229,14 +267,22 @@ func (r Report) Text(w io.Writer) {
 			fmt.Fprintf(w, "  slot %d  %s  pid %d%s  since %s  %s\n", h.Slot, h.Job, h.Pid, nested, h.Since, strings.Join(h.Argv, " "))
 		}
 		for _, q := range p.Waiters {
-			fmt.Fprintf(w, "  waiting  %s  %s  pid %d  since %s\n", q.Job, q.Class, q.Pid, q.Since)
+			unk := ""
+			if q.Unknown {
+				unk = "  unknown"
+			}
+			fmt.Fprintf(w, "  waiting  %s  %s  pid %d  since %s%s\n", q.Job, q.Class, q.Pid, q.Since, unk)
 		}
 		if p.LastStarved != "" {
 			fmt.Fprintf(w, "  last STARVED: %s\n", p.LastStarved)
 		}
 	}
 	for _, g := range r.Groups {
-		fmt.Fprintf(w, "group %s: %d/%d units held\n", g.Name, len(g.Held), g.Units)
+		unk := ""
+		if len(g.Unknown) > 0 {
+			unk = fmt.Sprintf(", %d unknown", len(g.Unknown))
+		}
+		fmt.Fprintf(w, "group %s: %d/%d units held%s\n", g.Name, len(g.Held), g.Units, unk)
 	}
 	if r.Memory.Readable {
 		fmt.Fprintf(w, "memory: %d MiB available (%s), floor %d MiB\n", r.Memory.AvailableMiB, r.Memory.Source, r.Memory.FloorMiB)

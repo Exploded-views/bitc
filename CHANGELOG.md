@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- On Linux without a readable `/proc/locks` (no procfs, an LSM or seccomp denial, or gVisor),
+  `bitc status`, `bitc doctor` and `bitc sweep --dry-run` no longer take a brief try-lock to
+  read pool slot holders, which could make a free slot look busy to a concurrent admission.
+  They take no lock and show such a slot as `unknown` (`"unknown": true` in `status --json`,
+  documented in `docs/status.schema.json`); `doctor` prints one `warn locks:` line naming
+  `/proc/locks`, and `sweep --dry-run` never counts an unknown slot as reclaimable
+  ([#24](https://github.com/Exploded-views/bitc/issues/24)).
+
 ## [0.1.3] - 2026-11-02
 
 ### Changed
