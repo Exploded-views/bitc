@@ -251,11 +251,16 @@ func signalCtxPeek(parent context.Context, sigs []os.Signal, pending chan os.Sig
 func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Writer) Outcome {
 	eff, pool := p.Eff, p.Pool
 	histWarned := false // one warning per call, however many events fail
+	var head string     // the work tree's HEAD and cleanliness, taken once the hold starts
+	var treeClean *bool
 	hist := func(e state.Event) {
 		if e.Event != "reaped" {
 			e.Pool, e.Job, e.Pid, e.Argv, e.Cwd = pool.Name, p.Job, os.Getpid(), p.Args.Argv, eff.Cwd
 		}
 		e.Provider = "local"
+		if e.Event == "start" || e.Event == "end" {
+			e.Head, e.TreeClean = head, treeClean
+		}
 		if err := state.AppendHistory(p.Layout.History(), e, p.Redact); err != nil && !histWarned {
 			histWarned = true
 			fmt.Fprintf(stderr, "bitc: cannot write %s: %v\n", p.Layout.History(), err)
@@ -315,6 +320,7 @@ func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Wri
 		return failed(err)
 	}
 	defer hold.Release()
+	head, treeClean = treeState(inv.Cwd, inv.Env)
 	vars = TemplateVars(eff, pool, hold, p.Job)
 	in := EnvInput{Caller: inv.Env, Eff: eff, Pool: pool, Hold: hold, Job: p.Job, Vars: vars}
 	env, err := BaseEnv(in)
@@ -387,7 +393,7 @@ func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Wri
 	}
 	return Outcome{Code: code, Result: Result{Origin: origin, Outcome: outcome, ExitCode: code, Pool: pool.Name,
 		Slot: hold.Slot, Provider: "local", Job: p.Job, HoldStarted: hold.Started.UTC().Format(time.RFC3339Nano),
-		WaitMS: hold.WaitMS, RunMS: runMS}}
+		WaitMS: hold.WaitMS, RunMS: runMS, Head: head, TreeClean: treeClean, Cwd: inv.Cwd}}
 }
 
 func scaled(eff *config.Effective, hooks []config.Hook) []config.Hook {

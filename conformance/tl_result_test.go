@@ -31,9 +31,10 @@ func resultOf(t *testing.T, h *harness.H) (res map[string]any, hist []map[string
 			hist = append(hist, e)
 		}
 	}
-	if len(hist) != 2 {
+	if len(hist) < 2 { // the history accumulates over the test's runs: this run's are the last two
 		t.Fatalf("history: %v", hist)
 	}
+	hist = hist[len(hist)-2:]
 	return res, hist
 }
 
@@ -62,7 +63,7 @@ func TestTL6_ResultNamesTheCommitTreeStateAndCwd(t *testing.T) {
 
 	// clean: head is the full sha, tree_clean true, cwd is where bitc ran; the history says the same
 	res, hist := resultOf(t, h)
-	if res["head"] != head || res["tree_clean"] != true || !sameDir(t, res["cwd"].(string), sub) {
+	if res["head"] != head || res["tree_clean"] != true || !sameDir(t, str(res["cwd"]), sub) {
 		t.Fatalf("clean: %v", res)
 	}
 	for _, e := range hist {
@@ -80,11 +81,11 @@ func TestTL6_ResultNamesTheCommitTreeStateAndCwd(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.Write(filepath.Join(wt, ".gitignore"), "ign\n", 0o644)
-	if out, err := exec.Command("git", "-C", wt, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", "commit", "-q", "-am", "x").CombinedOutput(); err != nil {
-		_ = out // .gitignore is untracked: commit it explicitly below
+	for _, args := range [][]string{{"add", ".gitignore"}, {"-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "ignore"}} {
+		if out, err := exec.Command("git", append([]string{"-C", wt}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("%v %s", err, out)
+		}
 	}
-	_ = exec.Command("git", "-C", wt, "add", ".gitignore").Run()
-	_ = exec.Command("git", "-C", wt, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "ignore").Run()
 	head = strings.TrimSpace(string(must(exec.Command("git", "-C", wt, "rev-parse", "HEAD").Output())))
 	h.Write(filepath.Join(wt, "ign"), "x", 0o644)
 	if res, _ = resultOf(t, h); res["head"] != head || res["tree_clean"] != true {
@@ -102,7 +103,7 @@ func TestTL7_ResultOutsideAGitTreeHasCwdOnly(t *testing.T) {
 	if _, ok := res["tree_clean"]; ok {
 		t.Fatalf("tree_clean outside git: %v", res)
 	}
-	if v, _ := res["head"].(string); v != "" || !sameDir(t, res["cwd"].(string), dir) {
+	if v, _ := res["head"].(string); v != "" || !sameDir(t, str(res["cwd"]), dir) {
 		t.Fatalf("%v", res)
 	}
 	for _, e := range hist {
@@ -111,3 +112,5 @@ func TestTL7_ResultOutsideAGitTreeHasCwdOnly(t *testing.T) {
 		}
 	}
 }
+
+func str(v any) string { s, _ := v.(string); return s }

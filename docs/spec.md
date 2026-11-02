@@ -142,7 +142,12 @@ everything and exits 69, never Go's 2 and never 75: a bug that fails every time 
 retrying agent forever. 75 means only a genuine wait-and-retry (starved, lost, provider transient).
 `result.json`: `{origin: "bitc"|"command", outcome:
 "ok"|"command-failed"|"starved"|"refused"|"config"|"unavailable"|"interrupted"|"lost"|"internal",
-exit_code, reason, pool, slot, provider, job, generation, hold_started, wait_ms, run_ms}`; every
+exit_code, reason, pool, slot, provider, job, generation, hold_started, wait_ms, run_ms, head,
+tree_clean, cwd}`; for a local run that held a slot, `head` is `git rev-parse HEAD` of the work
+tree containing the run's directory and `tree_clean` is true when `git status --porcelain` was empty
+(ignored files excluded), both taken when the hold started, and `cwd` is the run's working
+directory; outside a git work tree `head` is empty and `tree_clean` is omitted. The history `start`
+and `end` lines carry the same `head` and `tree_clean` (9). Every
 detached job writes it in its record, a foreground run only with `--result PATH`.
 
 stderr lines (stdout belongs to the command):
@@ -1367,7 +1372,8 @@ ACCOUNT/ install-secret (32 bytes; install16 = 16 hex of its sha256),
 
 **History:** `O_APPEND` lines under 4 KiB: `{ts (UTC, ms), event: "start"|"end"|"starved"|
 "fallback"|"reaped", pool, slot, job, pid, nested?, argv: [...], cwd, provider, resource?, sha?,
-wait_ms?, run_ms?, exit?, outcome?, reason?}`; refusals write nothing; a `reason` over 512 bytes is
+wait_ms?, run_ms?, exit?, outcome?, reason?, head?, tree_clean?}` (the last two on a local run's
+`start` and `end`, as in `result.json`, 4); refusals write nothing; a `reason` over 512 bytes is
 cut there and ends ` [truncated]`; the 4 KiB bound is on the encoded line (JSON escaping
 included): the reason is halved first, then argv, then the cwd and the resource, and as a last
 resort the pool, job, provider and sha (names are not length-checked where they are written),
