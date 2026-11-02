@@ -3,8 +3,10 @@ package conformance
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -272,4 +274,226 @@ func secretsJobFindings(ci, mk string) []string {
 		f = append(f, fmt.Sprintf("the secrets job's permissions are %q, not exactly contents: read", perms))
 	}
 	return f
+}
+
+// WF7: the merge queue and the sharded CI. Both workflows run on merge_group; ci.yml is split into
+// the jobs below so the required checks run in parallel (every job one make command, locally too).
+
+var wfCIJobs = []string{"lint", "unit", "coverage", "conformance", "conformance-race", "docs", "build", "secrets", "macos-smoke"}
+
+// wfJob returns the comment-stripped text of one job of a workflow file.
+func wfJob(t *testing.T, file, name string) string {
+	t.Helper()
+	lines := relLines(string(must(os.ReadFile("../.github/workflows/" + file))))
+	ji, _ := relSection(lines, 0, len(lines), 0, "jobs")
+	if ji < 0 {
+		t.Fatalf("%s has no jobs", file)
+	}
+	i, body := relSection(lines, ji+1, len(lines), 2, name)
+	if i < 0 || len(body) == 0 {
+		t.Fatalf("%s has no %s job", file, name)
+	}
+	return strings.Join(lines[i:body[len(body)-1].n+1], "\n")
+}
+
+// wfList reads a flow-list matrix axis (`key: [a, b]`) of a job, sorted.
+func wfList(t *testing.T, job, key string) []string {
+	t.Helper()
+	m := regexp.MustCompile(`(?m)^\s+` + key + `: \[([^\]]*)\]$`).FindStringSubmatch(job)
+	if m == nil {
+		t.Fatalf("no `%s: [..]` matrix axis in:\n%s", key, job)
+	}
+	var out []string
+	for _, x := range strings.Split(m[1], ",") {
+		out = append(out, strings.Trim(strings.TrimSpace(x), `"'`))
+	}
+	sort.Strings(out)
+	return out
+}
+
+func wfScript(t *testing.T, args ...string) string {
+	t.Helper()
+	out, err := exec.Command("sh", args...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("sh %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+	return string(out)
+}
+
+// WF7a: the merge queue runs the same workflows.
+func TestWF7_BothWorkflowsRunOnMergeGroup(t *testing.T) {
+	for _, f := range []string{"ci.yml", "release.yml"} {
+		text := string(must(os.ReadFile("../.github/workflows/" + f)))
+		on := text[:strings.Index(text, "\njobs:")]
+		if !regexp.MustCompile(`(?m)^  merge_group:`).MatchString(on) {
+			t.Errorf("%s does not list merge_group under on:", f)
+		}
+	}
+}
+
+// WF7b: the job names are the required checks of the branch ruleset, so they are fixed.
+func TestWF7_CIJobsAndLegs(t *testing.T) {
+	text := string(must(os.ReadFile("../.github/workflows/ci.yml")))
+	var got []string
+	for _, m := range regexp.MustCompile(`(?m)^  ([a-z][a-z-]*):$`).FindAllStringSubmatch(text[strings.Index(text, "\njobs:"):], -1) {
+		got = append(got, m[1])
+	}
+	want := append([]string(nil), wfCIJobs...)
+	sort.Strings(got)
+	sort.Strings(want)
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("ci.yml jobs are %v, want exactly %v", got, want)
+	}
+	unit := wfJob(t, "ci.yml", "unit")
+	if l := wfList(t, unit, "leg"); strings.Join(l, " ") != "core providers" {
+		t.Errorf("unit legs are %v, want core and providers", l)
+	}
+	shards := strings.Fields(wfScript(t, "../scripts/conformance-shards.sh", "shards"))
+	sort.Strings(shards)
+	for _, j := range []string{"conformance", "conformance-race"} {
+		if l := wfList(t, wfJob(t, "ci.yml", j), "shard"); strings.Join(l, " ") != strings.Join(shards, " ") {
+			t.Errorf("%s shards are %v, scripts/conformance-shards.sh says %v", j, l, shards)
+		}
+	}
+	for _, j := range wfCIJobs {
+		b := wfJob(t, "ci.yml", j)
+		if !strings.Contains(b, "persist-credentials: false") || !regexp.MustCompile(`(?m)^    timeout-minutes: [0-9]+$`).MatchString(b) {
+			t.Errorf("%s: needs persist-credentials: false and a timeout", j)
+		}
+	}
+	// the Makefile gives each job one command
+	mk := string(must(os.ReadFile("../Makefile")))
+	for _, tgt := range []string{"\ntest-unit:", "\ncoverage-merge:", "\nconformance-shard:", "\nconformance-race-shard:", "\ndocs:"} {
+		if !strings.Contains(mk, tgt) {
+			t.Errorf("Makefile lacks %q", strings.TrimSpace(tgt))
+		}
+	}
+	if !regexp.MustCompile(`(?m)^ci: lint test coverage conformance conformance-race examples linkcheck$`).MatchString(mk) {
+		t.Error("make ci changed meaning")
+	}
+}
+
+// WF7c: coverage is checked on the merged output of every unit leg, and a missing leg fails it
+// (the workflow names the expected legs; download-artifact alone would not notice a missing one).
+func TestWF7_CoverageNeedsEveryUnitLeg(t *testing.T) {
+	cov := wfJob(t, "ci.yml", "coverage")
+	if !regexp.MustCompile(`(?m)^    needs: \[unit\]$`).MatchString(cov) {
+		t.Error("coverage does not have needs: [unit]")
+	}
+	for _, j := range []string{"unit", "coverage"} {
+		b := wfJob(t, "ci.yml", j)
+		a := map[string]string{"unit": "upload-artifact", "coverage": "download-artifact"}[j]
+		if !regexp.MustCompile(`uses: actions/` + a + `@[0-9a-f]{40}`).MatchString(b) {
+			t.Errorf("%s does not use a sha-pinned actions/%s", j, a)
+		}
+	}
+	m := regexp.MustCompile(`(?m)^\s*run: make coverage-merge UNIT_LEGS="([a-z ]+)"$`).FindStringSubmatch(cov)
+	if m == nil {
+		t.Fatal(`coverage does not run: make coverage-merge UNIT_LEGS="<legs>"`)
+	}
+	legs := strings.Fields(m[1])
+	sort.Strings(legs)
+	if want := wfList(t, wfJob(t, "ci.yml", "unit"), "leg"); strings.Join(legs, " ") != strings.Join(want, " ") {
+		t.Errorf("coverage expects legs %v, the unit matrix has %v", legs, want)
+	}
+	if strings.Contains(cov, "continue-on-error") || strings.Contains(cov, "if:") {
+		t.Error("coverage can be skipped or cannot fail")
+	}
+	wfScript(t, "../scripts/coverage-merge_test.sh")
+}
+
+// WF7d: every conformance test belongs to exactly one shard; the check runs in make lint.
+func TestWF7_ShardCompletenessRunsInLint(t *testing.T) {
+	mk := string(must(os.ReadFile("../Makefile")))
+	i := strings.Index(mk, "\nlint:")
+	if i < 0 {
+		t.Fatal("no lint target")
+	}
+	lint := mk[i+1:]
+	lint = lint[:strings.Index(lint, "\n\n")]
+	for _, s := range []string{"scripts/conformance-shards_test.sh", "scripts/coverage-merge_test.sh", "scripts/retry_test.sh"} {
+		if !strings.Contains(lint, s) {
+			t.Errorf("make lint does not run %s", s)
+		}
+	}
+	// the shard table: every conformance package is covered, every shard has a package and a regex
+	for _, sh := range strings.Fields(wfScript(t, "../scripts/conformance-shards.sh", "shards")) {
+		if strings.TrimSpace(wfScript(t, "../scripts/conformance-shards.sh", "pkg", sh)) == "" {
+			t.Errorf("shard %s has no package", sh)
+		}
+	}
+	// a name that matches two shards, or none, is reported (run against a made-up table)
+	tbl := filepath.Join(t.TempDir(), "table")
+	if err := os.WriteFile(tbl, []byte("a ./conformance ^TestX\nb ./conformance ^TestXY\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run := func(in string) (string, error) {
+		c := exec.Command("sh", "../scripts/conformance-shards.sh", "verify")
+		c.Env = append(os.Environ(), "CONFORMANCE_SHARDS_TABLE="+tbl)
+		c.Stdin = strings.NewReader(in)
+		out, err := c.CombinedOutput()
+		return string(out), err
+	}
+	if out, err := run("./conformance TestXA\n"); err != nil {
+		t.Errorf("one owner: %v\n%s", err, out)
+	}
+	if out, err := run("./conformance TestXYZ\n"); err == nil || !strings.Contains(out, "TestXYZ") {
+		t.Errorf("two owners passed or are unnamed: %v\n%s", err, out)
+	}
+	if out, err := run("./conformance TestQ\n"); err == nil || !strings.Contains(out, "TestQ") {
+		t.Errorf("no owner passed or is unnamed: %v\n%s", err, out)
+	}
+	if out, err := run("./other TestXA\n"); err == nil || !strings.Contains(out, "./other") {
+		t.Errorf("an unknown package passed or is unnamed: %v\n%s", err, out)
+	}
+}
+
+// WF7e: the tool install is retried, boundedly, in both workflows (a release failed on one flaky
+// download); nothing else is retried.
+func TestWF7_ToolInstallRetriesBoundedly(t *testing.T) {
+	re := regexp.MustCompile(`^\s*(run: )?sh scripts/retry\.sh ([0-9]+) ([0-9]+) make tools-ci$`)
+	for f, jobs := range map[string][]string{"ci.yml": {"lint", "build"}, "release.yml": {"dry-run", "release"}} {
+		for _, j := range jobs {
+			n := 0
+			for _, l := range strings.Split(wfJob(t, f, j), "\n") {
+				if !strings.Contains(l, "make tools-ci") {
+					continue
+				}
+				m := re.FindStringSubmatch(l)
+				if m == nil {
+					t.Errorf("%s %s: the tool install is not retried: %q", f, j, l)
+					continue
+				}
+				tries, delay := atoiOr(m[2]), atoiOr(m[3])
+				if tries < 2 || tries > 5 || delay < 10 || delay > 60 {
+					t.Errorf("%s %s: retry of %d tries, %d s apart is not bounded sensibly", f, j, tries, delay)
+				}
+				n++
+			}
+			if n != 1 {
+				t.Errorf("%s %s: %d tool installs, want 1", f, j, n)
+			}
+		}
+	}
+	wfScript(t, "../scripts/retry_test.sh")
+}
+
+func atoiOr(s string) int {
+	n := 0
+	for _, c := range s {
+		n = n*10 + int(c-'0')
+	}
+	return n
+}
+
+func TestWF7_ReleasingDocNamesTheJobs(t *testing.T) {
+	doc := string(must(os.ReadFile("../docs/RELEASING.md")))
+	for _, j := range wfCIJobs {
+		if !strings.Contains(doc, "`"+j+"`") {
+			t.Errorf("docs/RELEASING.md does not name the `%s` job", j)
+		}
+	}
+	if !strings.Contains(doc, "merge queue") || !strings.Contains(doc, "merge_group") {
+		t.Error("docs/RELEASING.md does not say the merge queue runs the same jobs (merge_group)")
+	}
 }
