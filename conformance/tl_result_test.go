@@ -106,5 +106,3 @@ func TestTL7_ResultOutsideAGitTreeHasCwdOnly(t *testing.T) {
 		}
 	}
 }
-
-func str(v any) string { s, _ := v.(string); return s }
