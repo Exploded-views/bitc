@@ -27,11 +27,29 @@ version from the Go build info instead (`release` stays `false`).
 
 ## CI and badges
 
-`.github/workflows/ci.yml` runs on pushes to `main` and on pull requests: `make ci` (vet,
-golangci-lint, unit and conformance tests with `-race`, examples, link check) and
-`goreleaser check`, with `setup-go` given the same Go version as the image pinned in `scripts/dev.sh`
-(`scripts/dev.sh` itself is not used in CI) and the tool versions pinned by `make tools-ci`. It does not build or upload a release.
-`.github/workflows/release.yml` does: on pull requests a dry run (`goreleaser check`, then
+`.github/workflows/ci.yml` runs on pushes to `main`, on pull requests and in the merge queue
+(`merge_group`: the queue builds the merge commit and runs these same jobs). It does not build or
+upload a release. Most of its jobs are one `make` command that also runs locally (`build`, `secrets` and
+`macos-smoke` are not); `make ci` still runs everything, unsharded:
+
+- `lint`: `make lint` (vet for linux and darwin, golangci-lint, the script self-checks, and the
+  check that every conformance test is in exactly one shard).
+- `unit`: `make test-unit LEG=<leg>` under `-race`, legs `providers` and `core`; each leg uploads
+  its output.
+- `coverage`: needs `unit`; `make coverage-merge UNIT_LEGS="providers core"` merges the legs and
+  checks the coverage floors on the merged run. It runs even when a leg failed (that leg's own `unit` check is red), and then fails by name on a
+  missing, empty or failed leg output.
+- `conformance` and `conformance-race`: one leg per shard of `scripts/conformance-shards.sh`
+  (`sh`, `fb-sp`, `dj-rr-re`, `rest`, `plugin`, `provider`), against a plain and a `-race` bitc;
+  `rest` is every test no other shard claims, so a new test is never skipped.
+- `docs`: `make docs` (the example configs and the link check).
+- `build`: `goreleaser check` and the darwin cross-builds.
+- `secrets`: the gitleaks scan. `macos-smoke`: the client on a macOS runner.
+
+`setup-go` is given the same Go version as the image pinned in `scripts/dev.sh` (`scripts/dev.sh`
+itself is not used in CI), and the tool install (`make tools-ci`, versions pinned) is retried up to
+three times, 20 seconds apart, in both workflows.
+`.github/workflows/release.yml` does: on pull requests a dry run (the dry run runs in the merge queue too, as the `dry-run` job: `goreleaser check`, then
 `goreleaser release --snapshot --clean --skip=publish`, which uploads nothing), and on a pushed
 `v*` tag the release itself (steps 5 and 6). Its token is read-only except in the release job,
 which alone has `contents: write`. The README badges point at the ci workflow,
