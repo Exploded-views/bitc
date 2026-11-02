@@ -43,6 +43,9 @@ func Explain(e *Effective, key string) []string {
 		k := "pools." + n
 		add(k+".slots", p.Slots)
 		add(k+".wait", p.Wait)
+		if p.Timeout > 0 {
+			add(k+".timeout", p.Timeout)
+		}
 		add(k+".memory", p.Memory)
 		add(k+".providers", fmt.Sprintf("%q", p.Providers))
 		add(k+".on_signal", p.OnSignal)

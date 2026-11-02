@@ -27,6 +27,7 @@ type ExecSpec struct {
 	Stderr        *os.File
 	OnSignal      string // "terminate" | "forward-and-wait"
 	Grace         time.Duration
+	Timeout       time.Duration // > 0: terminate the command this long after it started (spec 6.4)
 	MaxSignalWait time.Duration
 	Started       func(pid, pgid int, leaderStart uint64)
 	Pending       chan os.Signal // optional: a channel the caller registered; Exec takes it over
@@ -35,7 +36,8 @@ type ExecSpec struct {
 
 // ExecResult is how the command ended.
 type ExecResult struct {
-	Code        int            // the command's code, 128+N if it died of signal N, or 128+N after terminate
+	Code        int            // the command's code, 128+N if it died of signal N, or 128+N after terminate; 124 after the time limit
+	TimedOut    bool           // the time limit ended the command (Code is exit.TimedOut)
 	Interrupted syscall.Signal // the signal bitc received, 0 if none
 	StartErr    error          // the command could not start (Code 126 or 127)
 }
@@ -139,8 +141,13 @@ func Exec(ctx context.Context, s ExecSpec) (ExecResult, error) {
 		}
 	}
 	var received syscall.Signal
-	terminating := false
-	var killAt, giveUpAt <-chan time.Time
+	terminating, timedOut := false, false
+	var killAt, giveUpAt, limitAt <-chan time.Time
+	if s.Timeout > 0 { // the clock starts with the command, after admission
+		limit := time.NewTimer(s.Timeout)
+		defer limit.Stop()
+		limitAt = limit.C
+	}
 	ctxDone := ctx.Done() // set to nil once handled: a closed channel would spin the loop
 	for {
 		select {
@@ -152,6 +159,9 @@ func Exec(ctx context.Context, s ExecSpec) (ExecResult, error) {
 			if terminating {
 				res.Code = 128 + int(received)
 			}
+			if timedOut {
+				res.Code, res.TimedOut, res.Interrupted = exit.TimedOut, true, 0
+			}
 			return res, nil
 		case sig := <-sigs:
 			n := sig.(syscall.Signal)
@@ -161,7 +171,7 @@ func Exec(ctx context.Context, s ExecSpec) (ExecResult, error) {
 				giveUpAt = time.After(s.MaxSignalWait)
 				continue
 			}
-			received, terminating = n, true // terminate, or a second signal escalates
+			received, terminating, timedOut = n, true, false // terminate, or a second signal escalates; a signal outranks the limit
 			forward(n)
 			if killAt == nil { // the SIGKILL is due grace after the first escalation, whatever follows
 				killAt = time.After(s.Grace)
@@ -171,6 +181,19 @@ func Exec(ctx context.Context, s ExecSpec) (ExecResult, error) {
 			forward(syscall.SIGKILL)
 		case <-killAt:
 			forward(syscall.SIGKILL)
+		case <-limitAt:
+			limitAt = nil
+			select { // a command that ended as the limit fired is not a timeout
+			case err := <-done:
+				done <- err
+				continue
+			default:
+			}
+			if !terminating && received == 0 { // a signal that came first keeps its 128+N
+				received, terminating, timedOut = syscall.SIGTERM, true, true
+				forward(syscall.SIGTERM)
+				killAt = time.After(s.Grace)
+			}
 		case <-ctxDone:
 			ctxDone = nil
 			if !terminating {
