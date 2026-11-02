@@ -125,7 +125,7 @@ func Prepare(inv Invocation, red *redact.Set) (*Prepared, error) {
 	for _, s := range eff.Secrets {
 		red.Add(s)
 	}
-	if err := eff.ApplyRunFlags(config.RunFlags{Wait: ra.Wait, Local: ra.Local, Provider: ra.Provider, Artifacts: ra.Artifacts, Units: ra.Units}); err != nil {
+	if err := eff.ApplyRunFlags(config.RunFlags{Wait: ra.Wait, Timeout: ra.Timeout, Local: ra.Local, Provider: ra.Provider, Artifacts: ra.Artifacts, Units: ra.Units}); err != nil {
 		return nil, err
 	}
 	pool, err := eff.Resolve(ra.Pool)
@@ -248,14 +248,23 @@ func signalCtxPeek(parent context.Context, sigs []os.Signal, pending chan os.Sig
 	}, peek
 }
 
+// gitLimit bounds each git call that captures the work tree's state at hold start. Scaled for
+// tests, but never below 2s: a bound that must not fire cannot shrink with time_scale.
+const gitLimit = 10 * time.Second
+
 func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Writer) Outcome {
 	eff, pool := p.Eff, p.Pool
 	histWarned := false // one warning per call, however many events fail
+	var head string     // the work tree's HEAD and cleanliness, taken once the hold starts
+	var treeClean *bool
 	hist := func(e state.Event) {
 		if e.Event != "reaped" {
 			e.Pool, e.Job, e.Pid, e.Argv, e.Cwd = pool.Name, p.Job, os.Getpid(), p.Args.Argv, eff.Cwd
 		}
 		e.Provider = "local"
+		if e.Event == "start" || e.Event == "end" {
+			e.Head, e.TreeClean = head, treeClean
+		}
 		if err := state.AppendHistory(p.Layout.History(), e, p.Redact); err != nil && !histWarned {
 			histWarned = true
 			fmt.Fprintf(stderr, "bitc: cannot write %s: %v\n", p.Layout.History(), err)
@@ -315,6 +324,7 @@ func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Wri
 		return failed(err)
 	}
 	defer hold.Release()
+	head, treeClean = treeState(ctx, inv.Cwd, inv.Env, max(eff.Scale(gitLimit), 2*time.Second))
 	vars = TemplateVars(eff, pool, hold, p.Job)
 	in := EnvInput{Caller: inv.Env, Eff: eff, Pool: pool, Hold: hold, Job: p.Job, Vars: vars}
 	env, err := BaseEnv(in)
@@ -342,7 +352,7 @@ func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Wri
 	t0 := time.Now()
 	res, err := Exec(parent, ExecSpec{
 		Argv: argv, Env: env, Dir: inv.Cwd, Stdin: inv.Stdin, Stdout: inv.Stdout, Stderr: inv.Stderr,
-		OnSignal: pool.OnSignal, Grace: eff.Scale(eff.Host.Grace), MaxSignalWait: eff.Scale(eff.Host.MaxSignalWait),
+		OnSignal: pool.OnSignal, Grace: eff.Scale(eff.Host.Grace), Timeout: eff.Scale(pool.Timeout), MaxSignalWait: eff.Scale(eff.Host.MaxSignalWait),
 		Started:  func(pid, pgid int, start uint64) { _ = hold.SetProcess(pid, pgid, start) },
 		Pending:  gap,          // Exec stops it once its own handler is registered
 		NoHangup: inv.Detached, // spec 7: a hangup neither escalates nor reaches the command
@@ -353,12 +363,17 @@ func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Wri
 	if res.StartErr != nil {
 		fmt.Fprintf(stderr, "bitc: %s: %v\n", argv[0], res.StartErr)
 	}
+	if res.TimedOut { // the scale applies to the timer only: the line names the configured limit
+		fmt.Fprintf(stderr, "bitc: %s: time limit %s reached; terminated\n", pool.Name, config.FormatDuration(pool.Timeout))
+	}
 	runMS := time.Since(t0).Milliseconds()
 	code := res.Code
 	outcome := "ok"
 	switch {
 	case res.Interrupted != 0 && code == 128+int(res.Interrupted):
 		outcome = "interrupted"
+	case res.TimedOut:
+		outcome = "timed-out"
 	case code != 0:
 		outcome = "command-failed"
 	}
@@ -379,12 +394,12 @@ func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Wri
 		}
 	}
 	origin := "command"
-	if outcome == "interrupted" {
+	if outcome == "interrupted" || res.TimedOut {
 		origin = "bitc"
 	}
 	return Outcome{Code: code, Result: Result{Origin: origin, Outcome: outcome, ExitCode: code, Pool: pool.Name,
 		Slot: hold.Slot, Units: hold.Counts, Provider: "local", Job: p.Job, HoldStarted: hold.Started.UTC().Format(time.RFC3339Nano),
-		WaitMS: hold.WaitMS, RunMS: runMS}}
+		WaitMS: hold.WaitMS, RunMS: runMS, Head: head, TreeClean: treeClean, Cwd: eff.Cwd}}
 }
 
 func scaled(eff *config.Effective, hooks []config.Hook) []config.Hook {

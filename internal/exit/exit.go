@@ -16,6 +16,9 @@ const (
 	TempFail     = 75  // EX_TEMPFAIL: starved; wait and retry
 	Config       = 78  // EX_CONFIG: fix config
 	StillRunning = 124 // wait: job still running
+	// TimedOut is the same 124, as timeout(1) exits: a local run ended by its time limit
+	// (pools.<p>.timeout, run --timeout). Told apart from StillRunning by the verb.
+	TimedOut = StillRunning
 )
 
 // Error is a bitc outcome. Line is printed verbatim to stderr (no trailing newline);

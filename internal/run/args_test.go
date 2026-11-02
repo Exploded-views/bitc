@@ -21,6 +21,10 @@ func TestParseRunArgs(t *testing.T) {
 	if err != nil || ra.Pool != "db" || !reflect.DeepEqual(ra.Argv, []string{"psql", "-c", "select 1"}) {
 		t.Fatalf("%+v %v", ra, err)
 	}
+	ra, err = ParseRunArgs([]string{"--timeout", "90s", "--wait", "1m", "lint", "true"})
+	if err != nil || ra.Timeout != "90s" || ra.Wait != "1m" || ra.Pool != "lint" {
+		t.Fatalf("%+v %v", ra, err)
+	}
 	ra, err = ParseRunArgs([]string{"--artifacts", "a,b/", "--provider", "runpod", "heavy", "--", "x"})
 	if err != nil || ra.Provider != "runpod" || !reflect.DeepEqual(*ra.Artifacts, []string{"a", "b"}) {
 		t.Fatalf("%+v %v", ra, err)
@@ -29,7 +33,7 @@ func TestParseRunArgs(t *testing.T) {
 
 func TestParseRunArgsUsage(t *testing.T) {
 	for _, args := range [][]string{
-		{}, {"lint"}, {"lint", "--"}, {"--wait"}, {"--bogus", "lint", "true"},
+		{}, {"lint"}, {"lint", "--"}, {"--wait"}, {"--timeout"}, {"--timeout", "", "lint", "true"}, {"--bogus", "lint", "true"},
 		{"--local", "--provider", "runpod", "heavy", "true"},
 	} {
 		if _, err := ParseRunArgs(args); exit.Code(err) != exit.Usage {

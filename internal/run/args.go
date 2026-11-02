@@ -9,7 +9,7 @@ import (
 	"github.com/Exploded-views/bitc/internal/exit"
 )
 
-const runUsage = "usage: bitc run [--detach] [--name N] [--log PATH] [--wait DUR] [--units G=K]... [--local | --provider P] [--artifacts a,b] [--result PATH] <pool> [--] <cmd> [args...]"
+const runUsage = "usage: bitc run [--detach] [--name N] [--log PATH] [--wait DUR] [--timeout DUR] [--units G=K]... [--local | --provider P] [--artifacts a,b] [--result PATH] <pool> [--] <cmd> [args...]"
 
 // RunArgs are the parsed `bitc run` arguments (spec 3.1). Values stay raw; the config layer
 // validates them (5.2).
@@ -19,6 +19,7 @@ type RunArgs struct {
 	Log       string
 	Wait      string
 	Units     map[string]int // --units G=K (repeatable), group canonical; nil if absent
+	Timeout   string
 	Local     bool
 	Provider  string
 	Artifacts *[]string
@@ -59,6 +60,8 @@ func ParseRunArgs(args []string) (RunArgs, error) {
 			if v, err = value(f); err == nil {
 				err = ra.addUnits(v)
 			}
+		case "--timeout":
+			ra.Timeout, err = value(f)
 		case "--provider":
 			ra.Provider, err = value(f)
 		case "--result":

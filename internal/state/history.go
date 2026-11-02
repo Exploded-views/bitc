@@ -28,6 +28,8 @@ type Event struct {
 	Provider      string         `json:"provider"`
 	Resource      string         `json:"resource,omitempty"`
 	Sha           string         `json:"sha,omitempty"`
+	Head          string         `json:"head,omitempty"`       // git HEAD of the run's work tree at hold start
+	TreeClean     *bool          `json:"tree_clean,omitempty"` // git status --porcelain was empty at hold start
 	WaitMS        *int64         `json:"wait_ms,omitempty"`
 	RunMS         *int64         `json:"run_ms,omitempty"`
 	Exit          *int           `json:"exit,omitempty"`

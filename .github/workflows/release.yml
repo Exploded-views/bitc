@@ -1,4 +1,4 @@
-# Releases (docs/RELEASING.md). On a pull request: a GoReleaser dry run that builds the snapshot
+# Releases (docs/RELEASING.md). On a pull request and in the merge queue: a GoReleaser dry run that builds the snapshot
 # and uploads nothing. On a pushed v* tag: GoReleaser builds the release and uploads it as a DRAFT
 # (.goreleaser.yaml draft: true) with this job's own GITHUB_TOKEN; a maintainer reviews the draft
 # and publishes it. No personal token is involved.
@@ -6,6 +6,7 @@ name: release
 
 on:
   pull_request:
+  merge_group:
   push:
     tags: ['v*']
 
@@ -22,7 +23,7 @@ env:
 
 jobs:
   dry-run:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -36,7 +37,7 @@ jobs:
           cache: true
       - name: Install pinned tools
         run: |
-          make tools-ci
+          sh scripts/retry.sh 3 20 make tools-ci
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: goreleaser check
         run: goreleaser check
@@ -63,7 +64,7 @@ jobs:
           cache: false
       - name: Install pinned tools
         run: |
-          make tools-ci
+          sh scripts/retry.sh 3 20 make tools-ci
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: goreleaser release (draft)
         run: goreleaser release --clean

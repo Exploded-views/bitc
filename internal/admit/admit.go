@@ -447,7 +447,7 @@ func contains(list []string, s string) bool {
 
 // starvedReason is the reason of the STARVED line, result.json and the history line. A wait for
 // slots ("" or "queue") or for a group's units says what expired: "slots busy; waited 3h",
-// "queue; waited 3h", "group cpu busy: wanted 2 of 8 units; waited 24h" (the pool's wait as
+// "queue; waited 3h", "group cpu busy: wanted 2 of 8 units; waited 1d" (the pool's wait as
 // configured, after --wait). Other reasons (priority lane, memory, legacy locks, nested child)
 // are unchanged.
 func (a *admission) starvedReason(reason string) string {

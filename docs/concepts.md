@@ -36,7 +36,7 @@ command ends. There is no daemon: the kernel's `flock(2)` locks do the work, so 
 killed releases everything it held, and the next caller reaps what it left.
 
 If the caller cannot start within the pool's `wait`, it exits **75** and prints `STARVED <pool>`
-with a reason, for example `STARVED heavy (group cpu busy: wanted 2 of 8 units; waited 24h)`.
+with a reason, for example `STARVED heavy (group cpu busy: wanted 2 of 8 units; waited 1d)`.
 Exit 75 always means "wait and retry", never "your command failed".
 
 ## Nested holds

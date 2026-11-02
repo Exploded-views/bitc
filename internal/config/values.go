@@ -51,24 +51,22 @@ func ParseDuration(s string) (time.Duration, error) {
 	return total, nil
 }
 
-// FormatDuration prints d in the config grammar (units h m s ms, combined, hours not days): 24h,
-// 1h30m, 200ms. It is the inverse of ParseDuration for whole milliseconds; 0 is "0s".
+// FormatDuration is d in the spec's duration grammar (5.2), largest units first: 90m is "1h30m".
+// A duration that is not whole milliseconds is rounded up to the next one.
 func FormatDuration(d time.Duration) string {
-	if d <= 0 {
+	ms := int64((d + time.Millisecond - 1) / time.Millisecond)
+	if ms <= 0 {
 		return "0s"
 	}
 	var b strings.Builder
 	for _, u := range []struct {
-		s string
-		d time.Duration
-	}{{"h", time.Hour}, {"m", time.Minute}, {"s", time.Second}, {"ms", time.Millisecond}} {
-		if n := d / u.d; n > 0 {
-			b.WriteString(strconv.FormatInt(int64(n), 10) + u.s)
-			d -= n * u.d
+		name string
+		ms   int64
+	}{{"d", 86400000}, {"h", 3600000}, {"m", 60000}, {"s", 1000}, {"ms", 1}} {
+		if n := ms / u.ms; n > 0 {
+			fmt.Fprintf(&b, "%d%s", n, u.name)
+			ms -= n * u.ms
 		}
-	}
-	if b.Len() == 0 {
-		return "0s"
 	}
 	return b.String()
 }
