@@ -312,6 +312,9 @@ func TestLegacyLaunchLockUnopenableRefusesTheLaunch(t *testing.T) {
 	j, dir := legacyCheckJob(t, legacy, "runpod")
 	_, err := Check(context.Background(), j)
 	assertRefusedBeforeLaunch(t, j, dir, legacy, err)
+	if want := "legacy launch lock " + filepath.Join(locks, "runpod-launch.lock") + ": permission denied"; err.Error() != want {
+		t.Fatalf("got %q, want %q", err, want)
+	}
 }
 
 // The legacy launch lock and the runpod-reservations file are RunPod's (spec 12): under [compat]

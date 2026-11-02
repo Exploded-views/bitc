@@ -2,6 +2,7 @@ package rails
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,18 +15,26 @@ import (
 	"github.com/Exploded-views/bitc/internal/state"
 )
 
+// legacyApplies: the legacy launch lock and reservation file are RunPod's (spec 12), so only a
+// runpod job takes part. "fake" is the conformance stand-in for RunPod.
+func legacyApplies(j *remote.Job) bool { return j.Type == "runpod" || j.Type == "fake" }
+
 // legacyLaunchLock takes <legacy_dir>/locks/runpod-launch.lock after our own (spec 12). Without
 // [compat] it is a no-op. If the lock cannot be opened or is not taken within launch_wait it
 // returns an *provider.ErrTransient: the launch is refused (75), because a launch the legacy
 // launcher cannot see would bypass the shared spend cap.
 func legacyLaunchLock(ctx context.Context, j *remote.Job) (func(), error) {
 	c := j.P.Eff.Compat
-	if c == nil {
+	if c == nil || !legacyApplies(j) {
 		return func() {}, nil
 	}
 	path := filepath.Join(c.LegacyDir, "locks", "runpod-launch.lock")
 	l, err := lock.Open(path)
 	if err != nil {
+		var pe *os.PathError
+		if errors.As(err, &pe) && pe.Path == path {
+			err = pe.Err // the path is already named once
+		}
 		return nil, &provider.ErrTransient{Why: "legacy launch lock " + path + ": " + err.Error()}
 	}
 	if l.LockWait(ctx, j.P.Eff.Scale(j.Core.LaunchWait)) != nil {
@@ -39,7 +48,7 @@ func legacyLaunchLock(ctx context.Context, j *remote.Job) (func(), error) {
 // so legacy launches count this job; the returned func removes the line at the job's end.
 func legacyReservation(j *remote.Job, est config.Micros) func() {
 	c := j.P.Eff.Compat
-	if c == nil {
+	if c == nil || !legacyApplies(j) {
 		return func() {}
 	}
 	path := filepath.Join(c.LegacyDir, "runpod-reservations")
