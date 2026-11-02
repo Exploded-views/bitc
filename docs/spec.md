@@ -157,8 +157,8 @@ stderr lines (stdout belongs to the command):
 
 | Line | When |
 | --- | --- |
-| `STARVED <pool>` | 75 from admission: every slot busy, no one ahead |
-| `STARVED <pool> (<reason>)` | 75 from admission otherwise: `queue`, `group <g> busy`, `memory: <n> MiB available, floor <f> MiB`, `priority lane`, `nested child busy`, `legacy pool: <what> busy`, `pre_run: <why>`, `env hook: <why>` |
+| `STARVED <pool> (slots busy; waited <wait>)` | 75 from admission: every slot busy, no one ahead; `<wait>` is the pool's wait as configured, after `--wait` (config duration form: `24h`, `1h30m`, `200ms`) |
+| `STARVED <pool> (<reason>)` | 75 from admission otherwise: `queue; waited <wait>`, `group <g> busy: wanted <k> of <N> units; waited <wait>` (`k` the units this run asked for, `--units` applied; `N` the group's size), `memory: <n> MiB available, floor <f> MiB`, `priority lane`, `nested child busy`, `legacy pool: <what> busy`, `pre_run: <why>`, `env hook: <why>` |
 | `STARVED <pool> (<provider>: <why>)` | 75 from a remote job after it started; `<why>` names the resource, e.g. `pod <id> timed out after 61 min` |
 | `bitc: <provider>: running <pool> locally: <why>` | remote preflight or launch fell back (only when `local` is the next provider in the walk, 8.2) |
 | `bitc: <provider>: <pool>: trying <next>: <why>` | the same, when the next provider in the walk is remote (8.2); after a resource was discarded before attach `<why>` ends `; <id> torn down before attach`, or `; <id> left for sweep` when its teardown failed |
@@ -404,7 +404,8 @@ group, not a pool`.
    releases everything taken in the attempt.
 3. **Wait:** sleep `poll` and retry; inotify on the same `tickets/` dirs wakes it early (a hold
    ends by unlocking, then unlinking its ticket).
-4. **Deadline:** `start + wait` passed → `STARVED <pool>` with the last reason, 75. `wait = "0s"`
+4. **Deadline:** `start + wait` passed → `STARVED <pool> (<reason>)` with the last reason as the
+   stderr table words it, which `result.json` `reason` and the history `starved` line repeat, 75. `wait = "0s"`
    makes one attempt. Fairness: FIFO per class for slots, FIFO by ticket time for group units. With
    `--units` the count `k` of step 2 is the flag's; a waiting heavy ticket therefore blocks every
    later ticket of the group (a light run that arrives after it waits too), and a running hold is

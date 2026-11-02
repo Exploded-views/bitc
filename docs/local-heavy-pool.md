@@ -66,8 +66,11 @@ With N = 8:
   starved by a stream of small runs.
 - A `bench` run (8) waits for every run ahead of it and holds back every run behind it.
 
-If a run waits longer than its pool's `wait`, it exits 75 and prints `STARVED <pool> (group cpu
-busy)`; run it again.
+If a run waits longer than its pool's `wait`, it exits 75 and prints one line that
+says what it wanted and what expired, for example `STARVED heavy (group cpu busy: wanted 3 of 8
+units; waited 1h)`; run it again. The same text is `reason` in `result.json` and in the history
+line. A run that only waited for its pool's slots reads `STARVED gate (slots busy; waited 2h)`.
+The wait is printed the way the config writes it.
 
 ## One-off sizes
 

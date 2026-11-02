@@ -17,6 +17,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   all or none, first in first out by ticket time, and a running hold is never preempted.
 - `status` (text and `--json`), `result.json` and the history `start` and `end` lines now show the
   units held per group (`"units": {"cpu": 7}`); a waiting ticket shows the units it asks for.
+- The 75 line (and `reason` in `result.json` and the history `starved` line) now says what the run
+  wanted and what expired: `STARVED heavy (group cpu busy: wanted 2 of 8 units; waited 24h)`,
+  `STARVED gate (slots busy; waited 3h)`, `STARVED lint (queue; waited 10m)`. The wait is the
+  pool's, after `--wait`, in the config's duration form. Before, a slot wait printed a bare
+  `STARVED <pool>` and a group wait named no units or wait. Other reasons are unchanged.
 - `docs/local-heavy-pool.md`: a recipe for one machine with a `cpu` group and gate, heavy, light
   and bench pools.
 
