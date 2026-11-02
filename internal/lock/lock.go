@@ -103,20 +103,52 @@ var inProbe func()
 // the fallback. The same rules as inProbe apply: only tests write it, never in parallel.
 var procLocksPath = "/proc/locks"
 
-// HeldRO reports whether any process holds a flock on path without making a free lock look busy
-// to a concurrent non-blocking caller (#55). Linux reads /proc/locks, matching the device and
-// inode it prints; darwin asks fcntl(F_GETLK), which sees flock locks there. Neither takes the
-// lock. A missing file is not held. Without /proc/locks, Linux falls back to a brief try-lock,
-// which can make a free lock look busy for that moment; darwin uses it only if F_GETLK fails.
-// Locks of processes outside this pid namespace are not listed in /proc/locks.
-func HeldRO(path string) bool {
+// State is what a read-only look at a lock found.
+type State int
+
+const (
+	StateFree    State = iota // nobody holds it (or the file is not there)
+	StateHeld                 // some process holds it
+	StateUnknown              // this host cannot tell without taking the lock (#24)
+)
+
+func (s State) String() string {
+	switch s {
+	case StateFree:
+		return "free"
+	case StateHeld:
+		return "held"
+	}
+	return "unknown"
+}
+
+// SetProcLocksPath points the lock view at another file and returns the undo. It is for tests,
+// in this package and others (Linux without a readable /proc/locks); it must not run in parallel.
+func SetProcLocksPath(p string) (restore func()) {
+	old := procLocksPath
+	procLocksPath = p
+	return func() { procLocksPath = old }
+}
+
+// HeldRO is Inspect as a bool: true only for StateHeld, so an unknown lock reads as not held.
+// Callers that show or act on the answer use Inspect and handle StateUnknown.
+func HeldRO(path string) bool { return Inspect(path) == StateHeld }
+
+// Inspect reports whether any process holds a flock on path without making a free lock look
+// busy to a concurrent non-blocking caller (#55). Linux reads /proc/locks, matching the device
+// and inode it prints; darwin asks fcntl(F_GETLK), which sees flock locks there. Neither takes
+// the lock. A missing file is free. On Linux without a readable /proc/locks (no procfs, an LSM or
+// seccomp denial, gVisor) a flock cannot be seen without taking it, so the answer is
+// StateUnknown and no lock is taken (#24). Locks of processes outside this pid namespace are not
+// listed in /proc/locks.
+func Inspect(path string) State {
 	var st unix.Stat_t
 	if unix.Lstat(path, &st) != nil {
-		return false
+		return StateFree
 	}
 	b, err := os.ReadFile(procLocksPath)
 	if err != nil {
-		return heldNoProcLocks(path)
+		return inspectNoProcLocks(path)
 	}
 	if inProbe != nil {
 		inProbe()
@@ -136,8 +168,8 @@ func HeldRO(path string) bool {
 		mi, e2 := strconv.ParseUint(id[1], 16, 32)
 		ino, e3 := strconv.ParseUint(id[2], 10, 64)
 		if e1 == nil && e2 == nil && e3 == nil && uint32(ma) == maj && uint32(mi) == mnr && ino == st.Ino {
-			return true
+			return StateHeld
 		}
 	}
-	return false
+	return StateFree
 }

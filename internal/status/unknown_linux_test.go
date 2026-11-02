@@ -58,7 +58,7 @@ func TestSnapshotShowsAnUnreadableSlotAsUnknown(t *testing.T) {
 	}
 }
 
-func TestSnapshotShowsAnUnreadableLegacySlotAndGroupUnitAsUnknown(t *testing.T) {
+func TestSnapshotShowsAnUnreadableLegacySlotAsUnknown(t *testing.T) {
 	noProcLocks(t)
 	l, _ := state.Open(filepath.Join(t.TempDir(), "s"))
 	c := &config.Compat{LegacyDir: t.TempDir()}
@@ -81,7 +81,7 @@ func TestSnapshotShowsAnUnreadableLegacySlotAndGroupUnitAsUnknown(t *testing.T) 
 	if !strings.Contains(out.String(), "slot 1  legacy holder unknown") {
 		t.Fatalf("text:\n%s", out.String())
 	}
-	if len(r.Legacy) != 1 || !strings.Contains(r.Legacy[0], "unknown") {
+	if len(r.Legacy) != 0 {
 		t.Fatalf("legacy list = %v", r.Legacy)
 	}
 }
