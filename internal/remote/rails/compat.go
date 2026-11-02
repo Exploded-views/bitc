@@ -16,7 +16,8 @@ import (
 )
 
 // legacyApplies: the legacy launch lock and reservation file are RunPod's (spec 12), so only a
-// runpod job takes part. "fake" is the conformance stand-in for RunPod.
+// runpod job takes part. "fake" is the conformance stand-in for RunPod; it is TestOnly, so a
+// config can name it only with a [test] table (config/providers.go).
 func legacyApplies(j *remote.Job) bool { return j.Type == "runpod" || j.Type == "fake" }
 
 // legacyLaunchLock takes <legacy_dir>/locks/runpod-launch.lock after our own (spec 12). Without
