@@ -27,7 +27,7 @@ wait = "2h"
 groups = { cpu = 7 }                  # N - 1
 
 [pools.heavy]
-slots = 2                             # a pool's own slots; the group is the real limit
+slots = 8                             # slots to spare: the group is the limit
 wait = "1h"
 groups = { cpu = 3 }
 groups_max = { cpu = 6 }              # a run may ask for at most 6 with --units
