@@ -292,8 +292,6 @@ Open issues that make up the roadmap:
 - [#6](https://github.com/Exploded-views/bitc/issues/6): Sprites catch-all egress deny
 - [#7](https://github.com/Exploded-views/bitc/issues/7), [#8](https://github.com/Exploded-views/bitc/issues/8):
   RunPod ordered data-centre walk with a per-pool US-only option; fallback CPU types per size
-- [#9](https://github.com/Exploded-views/bitc/issues/9): the launch lock must exclude across
-  implementations during a mixed rollout (spend-cap safety)
 - [#10](https://github.com/Exploded-views/bitc/issues/10): IO-pressure admission (`io_pressure_max`)
 
 Later: signed checksums after 1.0, packages under the name `bitc`, and volume caches for remote

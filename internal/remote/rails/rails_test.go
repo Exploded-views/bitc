@@ -219,7 +219,10 @@ func TestLegacyReservationLineAndLaunchLock(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(legacy, "locks"), 0o700)
 	j := &remote.Job{P: &run.Prepared{Eff: &config.Effective{Compat: &config.Compat{LegacyDir: legacy}}},
 		Core: &config.Provider{LaunchWait: time.Second}, Spec: &provider.JobSpec{Name: "bitc-x", Expiry: time.Unix(1_900_000_000, 0)}}
-	unlock := legacyLaunchLock(context.Background(), j)
+	unlock, err := legacyLaunchLock(context.Background(), j)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !lock.Held(filepath.Join(legacy, "locks", "runpod-launch.lock")) {
 		t.Fatal("the legacy launch lock was not taken")
 	}

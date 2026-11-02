@@ -9,25 +9,30 @@ import (
 
 	"github.com/Exploded-views/bitc/internal/config"
 	"github.com/Exploded-views/bitc/internal/lock"
+	"github.com/Exploded-views/bitc/internal/provider"
 	"github.com/Exploded-views/bitc/internal/remote"
 	"github.com/Exploded-views/bitc/internal/state"
 )
 
-// legacyLaunchLock takes <legacy_dir>/locks/runpod-launch.lock after our own (spec 12).
-func legacyLaunchLock(ctx context.Context, j *remote.Job) func() {
+// legacyLaunchLock takes <legacy_dir>/locks/runpod-launch.lock after our own (spec 12). Without
+// [compat] it is a no-op. If the lock cannot be opened or is not taken within launch_wait it
+// returns an *provider.ErrTransient: the launch is refused (75), because a launch the legacy
+// launcher cannot see would bypass the shared spend cap.
+func legacyLaunchLock(ctx context.Context, j *remote.Job) (func(), error) {
 	c := j.P.Eff.Compat
 	if c == nil {
-		return func() {}
+		return func() {}, nil
 	}
-	l, err := lock.Open(filepath.Join(c.LegacyDir, "locks", "runpod-launch.lock"))
+	path := filepath.Join(c.LegacyDir, "locks", "runpod-launch.lock")
+	l, err := lock.Open(path)
 	if err != nil {
-		return func() {}
+		return nil, &provider.ErrTransient{Why: "legacy launch lock " + path + ": " + err.Error()}
 	}
 	if l.LockWait(ctx, j.P.Eff.Scale(j.Core.LaunchWait)) != nil {
 		l.Close()
-		return func() {}
+		return nil, &provider.ErrTransient{Why: "legacy launch lock " + path + ": busy"}
 	}
-	return func() { _ = l.Unlock(); l.Close() }
+	return func() { _ = l.Unlock(); l.Close() }, nil
 }
 
 // legacyReservation appends "<pid> <name> <usd> <expiry>" to <legacy_dir>/runpod-reservations

@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- With `[compat]` set, a remote launch is now refused when the legacy launch lock
+  (`<legacy_dir>/locks/runpod-launch.lock`) cannot be opened or is not taken within
+  `launch_wait`. It exits 75 with `legacy launch lock <path>: busy` (or `: <error>`), creates
+  nothing, writes no reservation and releases the slot. Before, such a launch went ahead without
+  the lock and could slip past the spend cap a legacy launcher was checking
+  ([#9](https://github.com/Exploded-views/bitc/issues/9)).
+
 ## [0.1.3] - 2026-11-02
 
 ### Changed
