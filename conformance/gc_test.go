@@ -88,7 +88,8 @@ func readUnits(t *testing.T, path string) map[string]int {
 }
 
 // A gate that took three of four units leaves one for a light run; a heavy run that needs three
-// waits until the gate is done.
+// waits until the gate is done. The light run arrives before the heavy one queues: once a heavy
+// run is waiting, a later light run waits behind it (GC6).
 func TestGC1_GateLeavesOneUnitForALightRun(t *testing.T) {
 	h := harness.New(t)
 	h.HostConfig(gcHost)
@@ -125,7 +126,7 @@ func TestGC2_ALaterHeavyQueuesBehindAWaitingGate(t *testing.T) {
 		t.Fatal("the gate ran with two units free")
 	}
 	// the later heavy run would fit, but the gate is older: it must starve rather than overtake
-	r := h.Run("run", "--units", "cpu=2", "--wait", "2s", "work", "--", "true")
+	r := h.Run("run", "--units", "cpu=2", "--wait", "0s", "work", "--", "true")
 	if r.Code != 75 || !strings.Contains(r.Stderr, "group cpu busy") {
 		t.Fatalf("a later heavy run overtook the waiting gate: %+v", r)
 	}
