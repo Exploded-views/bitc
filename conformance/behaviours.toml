@@ -428,6 +428,7 @@ rows = [
   { id = "RA5", task = "2.4", ported = "TestRA5_UnavailablePausesTheProvider", desc = "a provider-side ErrUnavailable (auth, no balance) writes one pause record; the next call falls back with '<type> is paused' without calling the provider" },
   { id = "RA6", task = "2.4", ported = "TestRA6_LedgerCountsCreatedJobsOnlyAndOnce", desc = "without a spend API, capacity fallbacks cost nothing and a running job is counted once (listed, not again from the ledger)" },
   { id = "RA7", task = "2.4", ported = "TestRA7_FailureAfterCreateBeforeBeginIs75NoBreaker", desc = "a failure after the create and before BEGIN ledgers end 75 (never fallback), tears down and records no breaker failure" },
+  { id = "RA8", task = "issue-9", ported = "TestRA8_CompatLegacyLaunchLockBusyRefusesTheLaunch", desc = "with [compat], a legacy launch lock held past launch_wait refuses the RunPod launch: 75 with STARVED naming the legacy lock when it is the only provider, nothing created, no reservation line written" },
 
   # TR: transport (bitc-only)
   { id = "TR1", task = "2.5", ported = "TestTR1_CredentialsInTheOriginAreNeverSent", desc = "credentials in the origin URL are never sent, printed or recorded" },
