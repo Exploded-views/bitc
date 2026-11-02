@@ -371,8 +371,8 @@ func (e *Effective) applyUnits(pool *Pool, units map[string]int) error {
 			return exit.Usagef("--units %s=%d: pool %s does not list group %s in groups", g, k, pool.Name, g)
 		}
 		n := e.Groups[g].Units
-		if k > n {
-			return exit.Usagef("--units %s=%d: group %s has %d units", g, k, g, n)
+		if k < 1 || k > n {
+			return exit.Usagef("--units %s=%d: k must be 1..%d (group %s has %d units)", g, k, n, g, n)
 		}
 		if max, capped := pool.GroupsMax[g]; capped && k > max {
 			return exit.Usagef("--units %s=%d: pool %s allows at most %d units of %s (groups_max)", g, k, pool.Name, max, g)

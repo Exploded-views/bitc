@@ -99,14 +99,15 @@ func ParseRunArgs(args []string) (RunArgs, error) {
 	return ra, nil
 }
 
-var unitsRE = regexp.MustCompile(`^([A-Za-z0-9_-]+)=([1-9][0-9]*)$`)
+var unitsRE = regexp.MustCompile(`^([A-Za-z0-9_-]+)=(0|[1-9][0-9]*)$`)
 
-// addUnits records one --units G=K. The group name is canonical; K is a positive integer with no
-// leading zero. Whether the pool lists the group and K fits the limits is for the config layer.
+// addUnits records one --units G=K. The group name is canonical; K is an integer with no
+// leading zero. K = 0 parses: the config layer rejects it with the group's limit (1..N), as it
+// does a group the pool does not list and a K above the limits.
 func (ra *RunArgs) addUnits(v string) error {
 	m := unitsRE.FindStringSubmatch(v)
 	if m == nil {
-		return exit.Usagef("--units %q must be <group>=<k>, k a positive integer\n%s", v, runUsage)
+		return exit.Usagef("--units %q: want <group>=<k>, k an integer from 1 to the group's units", v)
 	}
 	g := config.CanonName(m[1])
 	k, err := strconv.Atoi(m[2])
