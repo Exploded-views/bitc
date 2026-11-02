@@ -404,3 +404,111 @@ func TestExplicitHostFileMustExist(t *testing.T) {
 		t.Fatalf("missing default host file: %v", err)
 	}
 }
+
+const unitsHost = `version = 1
+groups = { cpu = { units = 4 }, mem = { units = 2 } }
+[pools]
+work = { slots = 4, groups = { cpu = 1 } }
+capped = { slots = 4, groups = { cpu = 1 }, groups_max = { cpu = 2 } }
+plain = {}
+`
+
+func unitsEff(t *testing.T, units map[string]int) (*Effective, error) {
+	t.Helper()
+	e := mustLoad(t, newFixture(t, unitsHost, ""))
+	return e, e.ApplyRunFlags(RunFlags{Units: units})
+}
+
+func TestUnitsFlagReplacesTheCountForOneRun(t *testing.T) {
+	e, err := unitsEff(t, map[string]int{"cpu": 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := e.Resolve("work")
+	if err != nil || p.Groups["cpu"] != 3 {
+		t.Fatalf("Groups = %v, %v; want cpu 3", p.Groups, err)
+	}
+	if e.Pools["work"].Groups["cpu"] != 1 {
+		t.Fatalf("the configured pool was changed: %v", e.Pools["work"].Groups)
+	}
+	if _, err = e.Resolve("capped"); exit.Code(err) != exit.Usage { // 3 is above its groups_max of 2
+		t.Fatalf("capped: got %v, want 64", err)
+	}
+}
+
+func TestUnitsFlagLimits(t *testing.T) {
+	for _, c := range []struct {
+		pool  string
+		units map[string]int
+		want  []string
+	}{
+		{"work", map[string]int{"cpu": 5}, []string{"cpu", "4"}},
+		{"work", map[string]int{"mem": 1}, []string{"mem", "work"}},     // declared, but the pool does not list it
+		{"work", map[string]int{"other": 1}, []string{"other", "work"}}, // not declared at all
+		{"capped", map[string]int{"cpu": 3}, []string{"cpu", "2", "groups_max"}},
+		{"plain", map[string]int{"cpu": 1}, []string{"cpu", "plain"}},
+	} {
+		e, err := unitsEff(t, c.units)
+		if err == nil {
+			_, err = e.Resolve(c.pool)
+		}
+		if exit.Code(err) != exit.Usage {
+			t.Errorf("%s %v: got %v, want 64", c.pool, c.units, err)
+			continue
+		}
+		for _, w := range c.want {
+			if !strings.Contains(err.Error(), w) {
+				t.Errorf("%s %v: %q lacks %q", c.pool, c.units, err, w)
+			}
+		}
+		if strings.Contains(err.Error(), "\n") {
+			t.Errorf("%s %v: the message is not one line: %q", c.pool, c.units, err)
+		}
+	}
+	for _, c := range []struct {
+		pool  string
+		units map[string]int
+	}{{"work", map[string]int{"cpu": 4}}, {"capped", map[string]int{"cpu": 2}}, {"capped", map[string]int{"cpu": 1}}} {
+		e, err := unitsEff(t, c.units)
+		if err == nil {
+			_, err = e.Resolve(c.pool)
+		}
+		if err != nil {
+			t.Errorf("%s %v: %v", c.pool, c.units, err)
+		}
+	}
+}
+
+func TestUnitsFlagNeedsALocalProvider(t *testing.T) {
+	e, err := unitsEff(t, map[string]int{"cpu": 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.Pools["work"].Providers = []string{"runpod"} // remote-only: there is no local admission to resize
+	if _, err := e.Resolve("work"); exit.Code(err) != exit.Usage || !strings.Contains(err.Error(), "--units") {
+		t.Fatalf("got %v, want 64 naming --units", err)
+	}
+	e.Pools["work"].Providers = []string{"runpod", "local"}
+	if p, err := e.Resolve("work"); err != nil || p.Groups["cpu"] != 2 {
+		t.Fatalf("a pool that may run locally: %v %v", p, err)
+	}
+}
+
+func TestGroupsMaxIsValidatedAt78(t *testing.T) {
+	good := mustLoad(t, newFixture(t, unitsHost, ""))
+	if got := good.Pools["capped"].GroupsMax; got["cpu"] != 2 || len(good.Pools["work"].GroupsMax) != 0 {
+		t.Fatalf("GroupsMax = %v", got)
+	}
+	for body, frags := range map[string][]string{
+		"work = { groups = { cpu = 1 }, groups_max = { mem = 1 } }":   {"pools.work.groups_max", "mem"}, // the pool does not list mem
+		"work = { groups = { cpu = 1 }, groups_max = { other = 1 } }": {"pools.work.groups_max", "other"},
+		"work = { groups = { cpu = 1 }, groups_max = { cpu = 0 } }":   {"pools.work.groups_max.cpu", "1..4"},
+		"work = { groups = { cpu = 1 }, groups_max = { cpu = 5 } }":   {"pools.work.groups_max.cpu", "1..4"},
+		"work = { groups_max = { cpu = 2 } }":                         {"pools.work.groups_max", "cpu"},
+	} {
+		_, err := newFixture(t, "version = 1\ngroups = { cpu = { units = 4 }, mem = { units = 2 } }\n[pools]\n"+body+"\n", "").load()
+		expect78(t, err, frags...)
+	}
+	_, err := newFixture(t, unitsHost, "version = 1\n[pools.capped]\ngroups_max = { cpu = 3 }\n").load()
+	expect78(t, err, "pools.capped.groups_max", "host-only key")
+}
