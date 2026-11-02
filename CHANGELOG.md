@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- On Linux a state or accounting dir on CIFS, SMB2, SMB, 9p, AFS or any FUSE mount (sshfs, rclone,
+  s3fs) is now refused (78) like NFS, naming the filesystem (`is on cifs; ...`), because flock
+  there is not bitc's exclusion. A local FUSE filesystem is refused too; point `BITC_DIR` at a
+  local directory instead. `BITC_DIR` moves the state dir only, not the accounting dir. The
+  state-dir 78 message, on macOS too, now ends with
+  `set BITC_DIR (or --state-dir) to a local path (in a container, a tmpfs or a named volume)`; the
+  accounting-dir message has no hint
+  ([#25](https://github.com/Exploded-views/bitc/issues/25)).
+
 ## [0.1.3] - 2026-11-02
 
 ### Changed

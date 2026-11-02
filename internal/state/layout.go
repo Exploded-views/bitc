@@ -134,7 +134,11 @@ func checkFSAt(what, root, at string) error {
 	var sfs unix.Statfs_t
 	if err := statfs(at, &sfs); err == nil {
 		if fs := networkFS(&sfs); fs != "" {
-			return exit.Configf("%s %s is on %s; bitc needs a local filesystem for flock", what, root, fs)
+			hint := ""
+			if what == "state dir" { // BITC_DIR moves the state dir only, not the accounting dir
+				hint = "; set BITC_DIR (or --state-dir) to a local path (in a container, a tmpfs or a named volume)"
+			}
+			return exit.Configf("%s %s is on %s; bitc needs a local filesystem for flock%s", what, root, fs, hint)
 		}
 	}
 	return nil

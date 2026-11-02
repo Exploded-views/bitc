@@ -129,7 +129,7 @@ record (a job a legacy launcher started, 12): legacy J8/J9 apply, so the last li
 | 66 `EX_NOINPUT` | `wait`/`logs`/`cancel`: no such job | check the name |
 | 69 `EX_UNAVAILABLE` | not Linux or macOS; a Linux-only feature in the macOS build; hook could not start, timed out, printed unparsable output or exited with an unlisted code; no provider left and the last was unusable (a remote-only pool's job not eligible for remote, 8.2); a remote job's own setup step failed by itself (15.9); `cancel` cannot read or update the job's `status.json`; a detached supervisor cannot mark its job running; internal error (a bitc bug) | do not retry blindly |
 | 75 `EX_TEMPFAIL` | starved; hook exited 75; remote infrastructure failure after start; no provider left after a transient failure | wait and retry |
-| 78 `EX_CONFIG` | invalid config file; host-only key in a repo file; `min_version` unmet; insecure, NFS (on macOS also smbfs, afpfs, webdav and any non-local mount) or newer-schema state or accounting dirs; a pool's `memory` or a `[providers.*]` table in the macOS build | fix config |
+| 78 `EX_CONFIG` | invalid config file; host-only key in a repo file; `min_version` unmet; insecure, NFS (on Linux also CIFS, SMB2, SMB, 9p, AFS and any FUSE mount, local FUSE included; on macOS also smbfs, afpfs, webdav and any non-local mount) or newer-schema state or accounting dirs; a pool's `memory` or a `[providers.*]` table in the macOS build | fix config |
 | 124 | `wait`: job still running | call `wait` again |
 
 A remote problem surfaces only as local fallback, 69 or 75 (8.2). An internal error or panic
@@ -674,7 +674,7 @@ a later signal is absorbed and the exit code stays 128+the first signal.
   installs' `name_prefix` resources past `E` (a lost install secret, another host). Without
   it they stay counted and `status` and `doctor --remote` name them. A stopped resource (self-delete
   fell back to stop) still bills for disk until swept, so run the sweep timer (3.3).
-  **On a network-filesystem accounting dir** (NFS; macOS: no `MNT_LOCAL`) flock, and so every
+  **On a network-filesystem accounting dir** (NFS; on Linux also CIFS, SMB2, SMB, 9p, AFS and any FUSE mount; macOS: no `MNT_LOCAL`) flock, and so every
   reservation, cannot be trusted: the sweep tears down only own resources past their own `E` with a
   verified tag (or a ledger `launch` line; with `--foreign`, other installs' past `E` too), prints every other own resource as
   `listed <type> <id> (<name>) age <d> cost <$>/h` and an expired one without a verified tag or whose
@@ -1336,9 +1336,10 @@ volume (caches: 16.1).
 
 State dir default `$XDG_STATE_HOME/bitc` (`~/.local/state/bitc`); never under `XDG_RUNTIME_DIR`
 or a cache dir. Dirs 0700, files 0600; refused (78) if group/world-accessible, not owned by the
-user, or on NFS. The accounting dir (ACCOUNT below) is held to the same rule, since its launch
-lock and ledger carry the spend cap: refused (78) on NFS, and on macOS on any filesystem statfs
-does not report `MNT_LOCAL` (FUSE included).
+user, or on NFS (on Linux also CIFS, SMB2, SMB, 9p, AFS and any FUSE mount). The accounting dir
+(ACCOUNT below) is held to the same rule, since its launch lock and ledger carry the spend cap:
+refused (78) on those, and on macOS on any filesystem statfs does not report `MNT_LOCAL` (FUSE
+included).
 
 ```
 STATE/   SCHEMA (newer → 78, older → migrated), admit.lock, admit/reservations.json,
