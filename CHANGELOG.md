@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.3] - 2026-11-02
 
 ### Changed
 
@@ -42,7 +42,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - On Linux without a readable `/proc/locks` (no procfs, an LSM or seccomp denial, or gVisor),
   `bitc status`, `bitc doctor` and `bitc sweep --dry-run` read pool slot holders with a brief
   try-lock, so for that moment a concurrent admission can find a free slot busy. Linux cannot see
-  a flock without taking it; tracked for 0.1.4 in #24.
+  a flock without taking it; tracked for 0.1.4 in
+  [#24](https://github.com/Exploded-views/bitc/issues/24).
+- macOS builds still refuse every remote provider: any `[providers.*]` table is a config error
+  (78). macOS as a client to remote providers
+  ([#4](https://github.com/Exploded-views/bitc/issues/4)) needs the exec-plugin work in
+  [#26](https://github.com/Exploded-views/bitc/issues/26), and both are planned for 0.1.4.
 
 ## [0.1.2] - 2026-10-30
 
