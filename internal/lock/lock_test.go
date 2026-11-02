@@ -175,6 +175,9 @@ func TestHeldRONeverMakesAFreeLockBusy(t *testing.T) {
 // lock also stays takeable during the probe; Linux's fallback is a brief try-lock, so there a
 // concurrent TryLock can find it busy for that moment, as before #55.
 func TestHeldROWithoutProcLocks(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("Linux has no way to see a flock without taking it: Inspect reports unknown (#24), see inspect_linux_test.go")
+	}
 	defer func(p string) { procLocksPath = p }(procLocksPath)
 	procLocksPath = filepath.Join(t.TempDir(), "no-proc-locks")
 	p := filepath.Join(t.TempDir(), "unit.1.lock")
