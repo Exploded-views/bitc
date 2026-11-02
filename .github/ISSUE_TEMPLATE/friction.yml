@@ -1,0 +1,32 @@
+name: Friction report
+description: It works, but it slowed you down
+labels: [friction]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this when bitc did what it should but the way there was slow, confusing or awkward. If
+        something is broken, use the bug form. For a security problem, see SECURITY.md.
+  - type: textarea
+    id: goal
+    attributes:
+      label: What you were trying to do
+      description: The situation first, before any fix you have in mind.
+    validations: { required: true }
+  - type: textarea
+    id: slowed
+    attributes:
+      label: What slowed you down
+      description: The step, message or missing doc that cost you time. Redact host names, tokens and paths first.
+    validations: { required: true }
+  - type: textarea
+    id: wanted
+    attributes:
+      label: What you expected or would have liked
+    validations: { required: false }
+  - type: input
+    id: version
+    attributes:
+      label: bitc version
+      description: The output of `bitc version`, if you have it to hand.
+    validations: { required: false }

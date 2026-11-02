@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Read the docs and FAQ first
+    url: https://github.com/Exploded-views/bitc/blob/main/docs/faq.md
+    about: The FAQ and the README answer the common questions.
   - name: Report a security vulnerability
     url: https://github.com/Exploded-views/bitc/security/advisories/new
     about: Report vulnerabilities privately. Please do not open a public issue for them.

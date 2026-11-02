@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Issue forms: a bug form (version, OS and architecture, command, what happened against what the
+  docs say) and a friction form for "works, but slowed you down", each with its own label, and a
+  docs link on the issue chooser. The feature request form is gone; describe the need in a
+  friction report.
+
 ## [0.1.3] - 2026-11-02
 
 ### Changed

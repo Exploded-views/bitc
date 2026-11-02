@@ -11,11 +11,11 @@ import (
 
 func TestPUB1_ContributorFilesExist(t *testing.T) {
 	want := map[string][]string{
-		"../CONTRIBUTING.md":                    {"make tools-ci", "scripts/dev.sh make ci", "behaviours.toml", "Test<ID>_", "make secrets", "provider-author-guide.md", "Releases are cut by the maintainers"},
-		"../SECURITY.md":                        {"security advisor", "secret", "cap bypass", "sandbox", "forgery"},
-		"../.github/ISSUE_TEMPLATE/bug.yml":     {"bitc version --json", "Exit code", "bitc doctor", "credentials"},
-		"../.github/ISSUE_TEMPLATE/feature.yml": {"bitc version --json", "name:", "body:"},
-		"../.github/pull_request_template.md":   {"make ci", "behaviours.toml"},
+		"../CONTRIBUTING.md":                     {"make tools-ci", "scripts/dev.sh make ci", "behaviours.toml", "Test<ID>_", "make secrets", "provider-author-guide.md", "Releases are cut by the maintainers"},
+		"../SECURITY.md":                         {"security advisor", "secret", "cap bypass", "sandbox", "forgery"},
+		"../.github/ISSUE_TEMPLATE/bug.yml":      {"bitc version", "Exit code", "Redact", "label"},
+		"../.github/ISSUE_TEMPLATE/friction.yml": {"What slowed you down", "labels: [friction]", "body:"},
+		"../.github/pull_request_template.md":    {"make ci", "behaviours.toml"},
 	}
 	for f, subs := range want {
 		b, err := os.ReadFile(f)

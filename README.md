@@ -336,9 +336,9 @@ jobs ([spec.md](docs/spec.md) section 16.1, not scheduled).
 
 ## Contributing
 
-Bug reports and feature requests go to
-[GitHub issues](https://github.com/Exploded-views/bitc/issues/new/choose) (use the issue
-templates). Pull requests are welcome; [CONTRIBUTING.md](CONTRIBUTING.md) covers building,
+Bug reports (something does not work as documented) and friction reports (it works, but it slowed
+you down) go to [GitHub issues](https://github.com/Exploded-views/bitc/issues/new/choose) (use the
+issue templates). Pull requests are welcome; [CONTRIBUTING.md](CONTRIBUTING.md) covers building,
 `make ci` and the conformance register. Please follow the [Code of Conduct](CODE_OF_CONDUCT.md),
 and report security problems privately as [SECURITY.md](SECURITY.md) describes, never in a public
 issue.
