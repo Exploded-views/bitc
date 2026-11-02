@@ -108,7 +108,7 @@ func detach(inv run.Invocation) int {
 // withoutDetach drops --detach from the flags before <pool> (ParseRunArgs's loop); the command's
 // argv after them stays verbatim (spec 3.1), even a literal --detach.
 func withoutDetach(args []string) []string {
-	takesValue := map[string]bool{"--name": true, "--log": true, "--wait": true, "--provider": true, "--result": true, "--artifacts": true}
+	takesValue := map[string]bool{"--name": true, "--log": true, "--wait": true, "--provider": true, "--result": true, "--artifacts": true, "--units": true}
 	out := make([]string, 0, len(args))
 	i := 0
 	for ; i < len(args) && strings.HasPrefix(args[i], "-") && args[i] != "--"; i++ {

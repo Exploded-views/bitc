@@ -44,6 +44,9 @@ func Explain(e *Effective, key string) []string {
 		add(k+".slots", p.Slots)
 		add(k+".wait", p.Wait)
 		add(k+".memory", p.Memory)
+		for _, g := range sortedKeys(p.GroupsMax) {
+			add(k+".groups_max."+g, p.GroupsMax[g])
+		}
 		add(k+".providers", fmt.Sprintf("%q", p.Providers))
 		add(k+".on_signal", p.OnSignal)
 		for _, ek := range sortedKeys(p.Env) {

@@ -83,8 +83,17 @@ func Acquire(ctx context.Context, r Request) (*Hold, error) {
 		class = 0
 	}
 	token := randHex(16)
+	var units map[string]int
+	for g, k := range r.Pool.Groups {
+		if !contains(a.inherited, g) {
+			if units == nil {
+				units = map[string]int{}
+			}
+			units[g] = k
+		}
+	}
 	me, err := newTicket(r.Layout, r.Pool.Name, Ticket{Pid: os.Getpid(), Start: self.Start, Argv: r.Argv,
-		Cwd: r.Eff.Cwd, Job: r.Job, Class: class, Nested: a.samePool, Depth: a.depth, Inherited: a.inherited, State: "waiting", Token: token})
+		Cwd: r.Eff.Cwd, Job: r.Job, Class: class, Nested: a.samePool, Depth: a.depth, Inherited: a.inherited, Units: units, State: "waiting", Token: token})
 	if err != nil {
 		return nil, exit.Unavailablef("cannot create a ticket: %v", err)
 	}
@@ -386,7 +395,7 @@ func (a *admission) abandon(removeMirror func()) {
 
 func (a *admission) hold(start, now time.Time, removeMirror func()) *Hold {
 	h := &Hold{Pool: a.pool.Name, Slot: a.slot, Ticket: a.me.name, Token: a.me.t.Token, Nested: a.parent != nil,
-		Depth: a.depth, Units: a.units, WaitMS: now.Sub(start).Milliseconds(), Started: now}
+		Depth: a.depth, Units: a.units, Counts: a.me.t.Units, WaitMS: now.Sub(start).Milliseconds(), Started: now}
 	if a.compat != nil {
 		if kv := a.compat.HoldEnv(a.units); kv != "" {
 			h.ExtraEnv = []string{kv}

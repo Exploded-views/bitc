@@ -1,12 +1,15 @@
 package run
 
 import (
+	"regexp"
+	"strconv"
 	"strings"
 
+	"github.com/Exploded-views/bitc/internal/config"
 	"github.com/Exploded-views/bitc/internal/exit"
 )
 
-const runUsage = "usage: bitc run [--detach] [--name N] [--log PATH] [--wait DUR] [--local | --provider P] [--artifacts a,b] [--result PATH] <pool> [--] <cmd> [args...]"
+const runUsage = "usage: bitc run [--detach] [--name N] [--log PATH] [--wait DUR] [--units G=K]... [--local | --provider P] [--artifacts a,b] [--result PATH] <pool> [--] <cmd> [args...]"
 
 // RunArgs are the parsed `bitc run` arguments (spec 3.1). Values stay raw; the config layer
 // validates them (5.2).
@@ -15,6 +18,7 @@ type RunArgs struct {
 	Name      string
 	Log       string
 	Wait      string
+	Units     map[string]int // --units G=K (repeatable), group canonical; nil if absent
 	Local     bool
 	Provider  string
 	Artifacts *[]string
@@ -50,6 +54,11 @@ func ParseRunArgs(args []string) (RunArgs, error) {
 			ra.Log, err = value(f)
 		case "--wait":
 			ra.Wait, err = value(f)
+		case "--units":
+			var v string
+			if v, err = value(f); err == nil {
+				err = ra.addUnits(v)
+			}
 		case "--provider":
 			ra.Provider, err = value(f)
 		case "--result":
@@ -88,4 +97,28 @@ func ParseRunArgs(args []string) (RunArgs, error) {
 	}
 	ra.Argv = args[i:]
 	return ra, nil
+}
+
+var unitsRE = regexp.MustCompile(`^([A-Za-z0-9_-]+)=([1-9][0-9]*)$`)
+
+// addUnits records one --units G=K. The group name is canonical; K is a positive integer with no
+// leading zero. Whether the pool lists the group and K fits the limits is for the config layer.
+func (ra *RunArgs) addUnits(v string) error {
+	m := unitsRE.FindStringSubmatch(v)
+	if m == nil {
+		return exit.Usagef("--units %q must be <group>=<k>, k a positive integer\n%s", v, runUsage)
+	}
+	g := config.CanonName(m[1])
+	k, err := strconv.Atoi(m[2])
+	if err != nil {
+		return exit.Usagef("--units %s: k %s is too large", g, m[2])
+	}
+	if _, dup := ra.Units[g]; dup {
+		return exit.Usagef("--units %s given twice", g)
+	}
+	if ra.Units == nil {
+		ra.Units = map[string]int{}
+	}
+	ra.Units[g] = k
+	return nil
 }

@@ -14,24 +14,25 @@ import (
 
 // Event is one history.jsonl line (spec 9). Refusals write nothing.
 type Event struct {
-	TS            string   `json:"ts"`
-	Event         string   `json:"event"` // start | end | starved | fallback | reaped
-	Pool          string   `json:"pool"`
-	Slot          int      `json:"slot,omitempty"`
-	Job           string   `json:"job"`
-	Pid           int      `json:"pid"`
-	Nested        bool     `json:"nested,omitempty"`
-	Argv          []string `json:"argv"`
-	ArgvTruncated bool     `json:"argv_truncated,omitempty"`
-	Cwd           string   `json:"cwd"`
-	Provider      string   `json:"provider"`
-	Resource      string   `json:"resource,omitempty"`
-	Sha           string   `json:"sha,omitempty"`
-	WaitMS        *int64   `json:"wait_ms,omitempty"`
-	RunMS         *int64   `json:"run_ms,omitempty"`
-	Exit          *int     `json:"exit,omitempty"`
-	Outcome       string   `json:"outcome,omitempty"`
-	Reason        string   `json:"reason,omitempty"`
+	TS            string         `json:"ts"`
+	Event         string         `json:"event"` // start | end | starved | fallback | reaped
+	Pool          string         `json:"pool"`
+	Slot          int            `json:"slot,omitempty"`
+	Units         map[string]int `json:"units,omitempty"` // units held per group (start and end)
+	Job           string         `json:"job"`
+	Pid           int            `json:"pid"`
+	Nested        bool           `json:"nested,omitempty"`
+	Argv          []string       `json:"argv"`
+	ArgvTruncated bool           `json:"argv_truncated,omitempty"`
+	Cwd           string         `json:"cwd"`
+	Provider      string         `json:"provider"`
+	Resource      string         `json:"resource,omitempty"`
+	Sha           string         `json:"sha,omitempty"`
+	WaitMS        *int64         `json:"wait_ms,omitempty"`
+	RunMS         *int64         `json:"run_ms,omitempty"`
+	Exit          *int           `json:"exit,omitempty"`
+	Outcome       string         `json:"outcome,omitempty"`
+	Reason        string         `json:"reason,omitempty"`
 }
 
 const maxLine = 4095

@@ -19,23 +19,25 @@ import (
 )
 
 type Holder struct {
-	Job      string   `json:"job"`
-	Slot     int      `json:"slot"`
-	Pid      int      `json:"pid"`
-	Cwd      string   `json:"cwd"`
-	Argv     []string `json:"argv"`
-	Provider string   `json:"provider"`
-	Nested   bool     `json:"nested"`
-	Since    string   `json:"since"`
-	Legacy   bool     `json:"legacy,omitempty"` // a legacy shell-pool caller holds <legacy_dir>/locks/<pool>.<slot>.lock
+	Job      string         `json:"job"`
+	Slot     int            `json:"slot"`
+	Pid      int            `json:"pid"`
+	Cwd      string         `json:"cwd"`
+	Argv     []string       `json:"argv"`
+	Provider string         `json:"provider"`
+	Nested   bool           `json:"nested"`
+	Since    string         `json:"since"`
+	Units    map[string]int `json:"units,omitempty"`  // units held per group
+	Legacy   bool           `json:"legacy,omitempty"` // a legacy shell-pool caller holds <legacy_dir>/locks/<pool>.<slot>.lock
 }
 
 type Waiter struct {
-	Job      string `json:"job"`
-	Class    string `json:"class"` // high | normal
-	Pid      int    `json:"pid"`
-	Since    string `json:"since"`
-	Blocking string `json:"group_wait,omitempty"`
+	Job      string         `json:"job"`
+	Class    string         `json:"class"` // high | normal
+	Pid      int            `json:"pid"`
+	Since    string         `json:"since"`
+	Units    map[string]int `json:"units,omitempty"` // units asked for per group
+	Blocking string         `json:"group_wait,omitempty"`
 }
 
 type Pool struct {
@@ -119,13 +121,13 @@ func Snapshot(e *config.Effective, l state.Layout, only []string) Report {
 			}
 			if t.T.State == "running" {
 				p.Holders = append(p.Holders, Holder{Job: red.String(t.T.Job), Slot: t.T.Slot, Pid: t.T.Pid, Cwd: red.String(t.T.Cwd),
-					Argv: redactAll(red, t.T.Argv), Provider: "local", Nested: t.T.Nested, Since: iso(t.T.HoldStarted)})
+					Argv: redactAll(red, t.T.Argv), Provider: "local", Nested: t.T.Nested, Since: iso(t.T.HoldStarted), Units: t.T.Units})
 			} else {
 				class := "normal"
 				if t.T.Class == 0 {
 					class = "high"
 				}
-				p.Waiters = append(p.Waiters, Waiter{Job: red.String(t.T.Job), Class: class, Pid: t.T.Pid, Since: iso(t.T.WaitStarted),
+				p.Waiters = append(p.Waiters, Waiter{Job: red.String(t.T.Job), Class: class, Pid: t.T.Pid, Since: iso(t.T.WaitStarted), Units: t.T.Units,
 					Blocking: red.String(strings.Join(t.T.GroupWait, ","))})
 			}
 		}
@@ -226,10 +228,10 @@ func (r Report) Text(w io.Writer) {
 			if h.Nested {
 				nested = " nested"
 			}
-			fmt.Fprintf(w, "  slot %d  %s  pid %d%s  since %s  %s\n", h.Slot, h.Job, h.Pid, nested, h.Since, strings.Join(h.Argv, " "))
+			fmt.Fprintf(w, "  slot %d  %s  pid %d%s%s  since %s  %s\n", h.Slot, h.Job, h.Pid, nested, unitsText(h.Units), h.Since, strings.Join(h.Argv, " "))
 		}
 		for _, q := range p.Waiters {
-			fmt.Fprintf(w, "  waiting  %s  %s  pid %d  since %s\n", q.Job, q.Class, q.Pid, q.Since)
+			fmt.Fprintf(w, "  waiting  %s  %s  pid %d%s  since %s\n", q.Job, q.Class, q.Pid, unitsText(q.Units), q.Since)
 		}
 		if p.LastStarved != "" {
 			fmt.Fprintf(w, "  last STARVED: %s\n", p.LastStarved)
@@ -246,4 +248,21 @@ func (r Report) Text(w io.Writer) {
 	for _, x := range r.Legacy {
 		fmt.Fprintf(w, "legacy: %s\n", x)
 	}
+}
+
+// unitsText is "  units cpu=3 mem=1" (groups sorted), or "" when none.
+func unitsText(u map[string]int) string {
+	if len(u) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(u))
+	for g := range u {
+		names = append(names, g)
+	}
+	sort.Strings(names)
+	parts := make([]string, len(names))
+	for i, g := range names {
+		parts[i] = g + "=" + strconv.Itoa(u[g])
+	}
+	return "  units " + strings.Join(parts, " ")
 }
