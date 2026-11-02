@@ -51,6 +51,28 @@ func ParseDuration(s string) (time.Duration, error) {
 	return total, nil
 }
 
+// FormatDuration prints d in the config grammar (units h m s ms, combined, hours not days): 24h,
+// 1h30m, 200ms. It is the inverse of ParseDuration for whole milliseconds; 0 is "0s".
+func FormatDuration(d time.Duration) string {
+	if d <= 0 {
+		return "0s"
+	}
+	var b strings.Builder
+	for _, u := range []struct {
+		s string
+		d time.Duration
+	}{{"h", time.Hour}, {"m", time.Minute}, {"s", time.Second}, {"ms", time.Millisecond}} {
+		if n := d / u.d; n > 0 {
+			b.WriteString(strconv.FormatInt(int64(n), 10) + u.s)
+			d -= n * u.d
+		}
+	}
+	if b.Len() == 0 {
+		return "0s"
+	}
+	return b.String()
+}
+
 var sizeUnits = map[string]int64{"KiB": 1 << 10, "MiB": 1 << 20, "GiB": 1 << 30, "TiB": 1 << 40}
 
 // ParseSize accepts <int><KiB|MiB|GiB|TiB> (spec 5.2).

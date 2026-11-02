@@ -7,6 +7,7 @@ import (
 	"os"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/Exploded-views/bitc/internal/config"
@@ -118,7 +119,7 @@ func Acquire(ctx context.Context, r Request) (*Hold, error) {
 		}
 		if !now().Before(deadline) {
 			a.abandon(removeMirror)
-			return nil, exit.Starved(r.Pool.Name, reason)
+			return nil, exit.Starved(r.Pool.Name, a.starvedReason(reason))
 		}
 		if ctx.Err() != nil {
 			a.abandon(removeMirror)
@@ -442,4 +443,23 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// starvedReason is the reason of the STARVED line, result.json and the history line. A wait for
+// slots ("" or "queue") or for a group's units says what expired: "slots busy; waited 3h",
+// "queue; waited 3h", "group cpu busy: wanted 2 of 8 units; waited 24h" (the pool's wait as
+// configured, after --wait). Other reasons (priority lane, memory, legacy locks, nested child)
+// are unchanged.
+func (a *admission) starvedReason(reason string) string {
+	waited := "; waited " + config.FormatDuration(a.r.Pool.Wait)
+	switch {
+	case reason == "":
+		return "slots busy" + waited
+	case reason == "queue":
+		return reason + waited
+	case strings.HasPrefix(reason, "group ") && strings.HasSuffix(reason, " busy"):
+		g := strings.TrimSuffix(strings.TrimPrefix(reason, "group "), " busy")
+		return fmt.Sprintf("%s: wanted %d of %d units%s", reason, a.pool.Groups[g], a.r.Eff.Groups[g].Units, waited)
+	}
+	return reason
 }
