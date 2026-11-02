@@ -1,52 +1,53 @@
 name: Bug report
-description: Something bitc did that it should not have, or did not do
+description: Something does not work as documented
 labels: [bug]
 body:
   - type: markdown
     attributes:
       value: |
         Thanks for the report. Please search existing issues first. For a security problem, do not
-        use this form: see SECURITY.md.
-  - type: textarea
+        use this form: see SECURITY.md. If bitc works but slowed you down, use the friction form.
+  - type: input
     id: version
     attributes:
-      label: Output of `bitc version --json`
-      render: json
+      label: bitc version
+      description: The output of `bitc version`.
+    validations: { required: true }
+  - type: input
+    id: os
+    attributes:
+      label: OS and architecture
+      placeholder: Ubuntu 24.04 amd64, or macOS 15 arm64
     validations: { required: true }
   - type: textarea
     id: command
     attributes:
       label: The command you ran
       description: The full `bitc` command line.
-      render: sh
+      render: shell
+    validations: { required: true }
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened, and what the docs say
+      description: What bitc did, and what the documentation says it should do. Link the page if you can.
     validations: { required: true }
   - type: input
     id: exit
     attributes:
       label: Exit code
-    validations: { required: true }
+    validations: { required: false }
   - type: textarea
-    id: doctor
+    id: output
     attributes:
-      label: Output of `bitc doctor`
+      label: Relevant output
+      description: The stderr and stdout lines that matter. Redact host names, tokens and paths first.
       render: text
-    validations: { required: true }
+    validations: { required: false }
   - type: textarea
     id: config
     attributes:
-      label: Relevant config
-      description: The parts of the host and repository config that matter. Remove credentials first.
+      label: Pool and host config
+      description: The part of the pool or host config that matters. Redact host names, tokens and paths first.
       render: toml
-    validations: { required: false }
-  - type: textarea
-    id: expected
-    attributes:
-      label: What you expected and what happened
-      description: Include the stderr lines bitc printed.
-    validations: { required: true }
-  - type: input
-    id: platform
-    attributes:
-      label: OS, kernel and architecture
-      placeholder: Ubuntu 24.04, 6.8.0, amd64
     validations: { required: false }

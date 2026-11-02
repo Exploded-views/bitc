@@ -606,6 +606,13 @@ rows = [
   { id = "PUB7", task = "3.3", ported = "TestPUB7_SecretsExtraPassUsesTheExtraConfig", desc = "with GITLEAKS_EXTRA set make secrets runs a second pass with that config; an unreadable file is a scanner error" },
   { id = "PUB8", task = "3.3", ported = "TestPUB8_GitleaksWiring", desc = "make tools pins gitleaks, .gitleaks.toml extends the defaults, dev.sh mounts GITLEAKS_EXTRA, make ci does not run secrets" },
 
+  # TPL: issue forms (bitc-only)
+  { id = "TPL1", task = "3.3", ported = "TestTPL1_EveryTemplateParsesAsAnIssueForm", desc = "every file in .github/ISSUE_TEMPLATE except config.yml has name, description and body; each body item has a known type, each input has a label and a unique id" },
+  { id = "TPL2", task = "3.3", ported = "TestTPL2_LabelsAreOnlyTheFiveThatExist", desc = "a template auto-labels only with bug, friction, docs, dogfood or pool" },
+  { id = "TPL3", task = "3.3", ported = "TestTPL3_BugAndFrictionFormsRequireTheirFields", desc = "bug.yml (label bug) requires version, os, command (rendered as shell) and happened; friction.yml (label friction) requires goal and slowed" },
+  { id = "TPL4", task = "3.3", ported = "TestTPL4_ConfigKeepsBlankIssuesOffAndTheSecurityAndDocsLinks", desc = "config.yml has blank_issues_enabled: false, the private security advisory link and a link to the docs on github.com/Exploded-views/bitc/blob/main" },
+  { id = "TPL5", task = "3.3", ported = "TestTPL5_OutputAndConfigFieldsCarryARedactNote", desc = "every text or toml textarea (output and config) tells the reporter to redact hosts, tokens and paths" },
+
   # EX: experimental remote opt-in (bitc-only)
   { id = "EX1", task = "3.4", ported = "TestEX1_RemoteProvidersNeedTheHostFlag", desc = "without [host] experimental_remote = true any [providers.<type>] table or a pool naming a non-local provider is 78 at load with the known-issues line, listed with the other problems, before anything is created or contacted; a repo file may not set the flag and no BITC_* variable does; a host with remote leftovers, sweep and doctor --remote also get the line to set the flag and run bitc sweep; with the flag remote runs as before and doctor warns; local-only configs are unaffected; no state or accounting dir is created by a refusal" },
   { id = "EX2", task = "3.4", ported = "TestEX2_LeftoversOfAnUnconfiguredProviderAreReported", desc = "an accounting dir whose remote/<type>/reservations.json lists a job (an unfinished run) for a type the host does not configure makes doctor warn and sweep print a hint to set the flag, configure the provider and run bitc sweep, while local runs go on; finished runs (empty reservations, launch and end in the ledger) give no hint and no cleanup line; a FIFO there never blocks a command" },
