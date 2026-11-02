@@ -297,3 +297,57 @@ func TestGC5_ARunningHeavyIsNeverPreempted(t *testing.T) {
 		t.Errorf("history events %v, want %v (the gate starts only after the heavy run ended)", order, want)
 	}
 }
+
+// With a gate running and a heavy run already waiting, a later light run waits behind the heavy
+// one although a unit is free: group units are strictly first in first out (spec 6.2).
+func TestGC6_ALightRunQueuesBehindAWaitingHeavy(t *testing.T) {
+	h := harness.New(t)
+	h.HostConfig(gcHost)
+	gate := h.Hold(nil, "--units", "cpu=3", "work")
+	heavy := h.Start("run", "--units", "cpu=3", "work", "--", "true")
+	h.Until(func() bool { return waitsOnGroup(h, "work", "cpu") }, 20*time.Second)
+	r := h.Run("run", "--wait", "0s", "work", "--", "echo", "ran")
+	if r.Code != 75 || !strings.Contains(r.Stderr, "group cpu busy") || r.Stdout != "" {
+		t.Fatalf("a light run overtook the waiting heavy run: %+v", r)
+	}
+	if r := gate.Release(); r.Code != 0 {
+		t.Fatalf("gate: %+v", r)
+	}
+	if r := heavy.Wait(); r.Code != 0 {
+		t.Fatalf("heavy: %+v", r)
+	}
+}
+
+// A bad --units is one stderr line (no usage text), 64; it names the form, or the limit 1..N.
+func TestGC7_BadUnitsIsOneLine(t *testing.T) {
+	h := harness.New(t)
+	h.HostConfig(gcHost)
+	for v, want := range map[string]string{"cpu=0": "1..4", "cpu=x": "<group>=<k>", "cpu": "<group>=<k>"} {
+		r := h.Run("run", "--units", v, "work", "--", "true")
+		if r.Code != 64 || r.Stdout != "" || strings.Count(strings.TrimSuffix(r.Stderr, "\n"), "\n") != 0 ||
+			!strings.HasSuffix(r.Stderr, "\n") || !strings.Contains(r.Stderr, want) || strings.Contains(r.Stderr, "usage:") {
+			t.Errorf("--units %s: got %+v, want one line, 64, naming %s", v, r, want)
+		}
+	}
+}
+
+// --units survives --detach whatever the flag order: the supervisor's job holds the units.
+func TestGC8_DetachedRunCarriesUnits(t *testing.T) {
+	h := harness.New(t)
+	h.HostConfig(gcHost)
+	r := h.Run("run", "--units", "cpu=3", "--detach", "--name", "dj", "work", "--", "true")
+	m := startedRE.FindStringSubmatch(r.Stdout)
+	if r.Code != 0 || m == nil {
+		t.Fatalf("%+v", r)
+	}
+	if r := h.Run("wait", "dj"); r.Code != 0 {
+		t.Fatalf("%+v", r)
+	}
+	files, _ := filepath.Glob(filepath.Join(h.State, "jobs", "*", "dj", "result.json"))
+	if len(files) != 1 {
+		t.Fatalf("result.json files: %v", files)
+	}
+	if got := readUnits(t, files[0]); !reflect.DeepEqual(got, map[string]int{"cpu": 3}) {
+		t.Errorf("detached result.json: units %v, want cpu 3", got)
+	}
+}

@@ -443,6 +443,7 @@ func TestUnitsFlagLimits(t *testing.T) {
 		want  []string
 	}{
 		{"work", map[string]int{"cpu": 5}, []string{"cpu", "4"}},
+		{"work", map[string]int{"cpu": 0}, []string{"cpu", "1..4"}},
 		{"work", map[string]int{"mem": 1}, []string{"mem", "work"}},     // declared, but the pool does not list it
 		{"work", map[string]int{"other": 1}, []string{"other", "work"}}, // not declared at all
 		{"capped", map[string]int{"cpu": 3}, []string{"cpu", "2", "groups_max"}},
