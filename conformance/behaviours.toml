@@ -620,4 +620,6 @@ rows = [
   { id = "TL3", task = "3.5", ported = "TestTL3_TheCommandsBackgroundChildIsGoneAfterTheLimit", desc = "after a time limit the command's whole process group is gone and the slot is free" },
   { id = "TL4", task = "3.5", ported = "TestTL4_DetachedJobHitsTheLimit", desc = "a --detach job's supervisor applies the limit: wait --exit job reports 124 and the log has the time-limit line" },
   { id = "TL5", task = "3.5", ported = "TestTL5_ARemoteRunIgnoresTheTimeoutFlag", desc = "--timeout does not apply to a remote run (remote_limits.timeout does); the run is neither refused nor limited" },
+  { id = "TL6", task = "3.5", ported = "TestTL6_ResultNamesTheCommitTreeStateAndCwd", desc = "result.json and the history start and end lines of a local run carry head (git rev-parse HEAD at hold start), tree_clean (git status --porcelain empty, ignored files excluded) and cwd" },
+  { id = "TL7", task = "3.5", ported = "TestTL7_ResultOutsideAGitTreeHasCwdOnly", desc = "outside a git work tree head is empty, tree_clean is omitted and cwd is still named" },
 ]
