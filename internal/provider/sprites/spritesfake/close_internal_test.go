@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -151,6 +152,11 @@ func TestAgentStartingAsCloseWaitsDoesNotJoinTheWaitGroup(t *testing.T) {
 	}
 	f := New(t, Options{Bin: bin})
 	reached, release := make(chan struct{}), make(chan struct{})
+	// On a failure the launch goroutine is still parked in beforeAgentJoin and the agent process
+	// is not reaped until it goes on: release it from Cleanup, registered before the wg hold.
+	var releaseOnce sync.Once
+	releaseLaunch := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(releaseLaunch)
 	f.mu.Lock()
 	f.beforeAgentJoin = func() { close(reached); <-release }
 	f.mu.Unlock()
@@ -173,7 +179,12 @@ func TestAgentStartingAsCloseWaitsDoesNotJoinTheWaitGroup(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = conn.Abort() }()
-	<-reached
+	// a fail-only deadline, as in spinUntil: a launch that never reaches the join ends the test
+	select {
+	case <-reached:
+	case <-time.After(time.Minute):
+		t.Fatal("the agent launch never reached its WaitGroup join")
+	}
 	f.mu.Lock()
 	pr := f.sprites["a"].procs[0]
 	f.mu.Unlock()
@@ -185,6 +196,6 @@ func TestAgentStartingAsCloseWaitsDoesNotJoinTheWaitGroup(t *testing.T) {
 	spinUntil(t, "close done waiting", closeWaitGone)
 
 	// Only now may the launch goroutine go on to its join.
-	close(release)
+	releaseLaunch()
 	<-pr.done // the process was ended and reaped on the spot
 }
