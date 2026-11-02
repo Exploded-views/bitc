@@ -44,7 +44,9 @@ groups = { cpu = 8 }                  # N
 ```
 
 A run takes all of its units or none, so it never holds some while it waits for the rest.
-Waiting runs are served first in first out by the time they queued.
+Runs waiting on the group are served first in first out by the time they queued. (A run that
+waits only for its own pool's slots does not hold group runs back, which is why every pool above
+has slots to spare.)
 
 ## What waits for what
 
@@ -57,6 +59,10 @@ With N = 8:
 - Once the `gate` run is waiting, a `heavy` or `light` run that arrives after it queues behind it,
   even when the free units would fit the newcomer. That keeps a gate from being starved by a
   stream of small runs. A run that arrived before the `gate` run is ahead of it.
+- A `light` run fits in the free unit beside a `gate` run only until a `heavy` run queues behind
+  the gate. Once a `heavy` run is waiting, a later `light` run waits behind it, even with a unit
+  free. Strict first in first out is deliberate: it keeps a waiting `heavy` or `gate` run from being
+  starved by a stream of small runs.
 - A `bench` run (8) waits for every run ahead of it and holds back every run behind it.
 
 If a run waits longer than its pool's `wait`, it exits 75 and prints `STARVED <pool> (group cpu
@@ -74,7 +80,8 @@ bitc run --units cpu=2 light -- ./slow-lint      # 2 units instead of 1
 The group must be one the pool lists. The count is 1 to the group's units, and at most the pool's
 `groups_max` for that group when it sets one: above either is exit 64 with a line naming the
 group and the limit. A bad `groups_max` in the host file is exit 78 naming the key. `--units` also
-works with `--detach`, and is refused (64) for a pool that has no local provider.
+works with `--detach`, and is refused (64) for a pool that has no local provider. On a pool with
+both local and remote providers it is accepted but has no effect when the run goes remote.
 
 `bitc status` shows the units each running and waiting run holds or asks for, and `result.json`
 and the history `start` and `end` lines record them:

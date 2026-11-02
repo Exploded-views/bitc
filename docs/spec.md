@@ -79,8 +79,9 @@ bitc run [--detach] [--name N] [--log PATH] [--wait DUR] [--units G=K]... [--loc
 - `--units G=K` (repeatable, one per group): replaces the pool's unit count of group `G` for this run
   only. `G` must be a group in the pool's `groups`; `K` is an integer `1..N`, `N` = `groups.<G>.units`,
   and at most the pool's `groups_max.<G>` if set (5.3). A malformed or repeated value, `K` of 0 or
-  above `N` or `groups_max`, or a group the pool does not list is 64 with a one-line message naming
-  the group and the limit. A pool whose effective providers lack `local` refuses it (64): units are
+  above `N` or `groups_max`, or a group the pool does not list is 64 with a one-line message (no usage
+  text) naming the form or the group and the limit (`k must be 1..N`). On a pool with `local` and
+  a remote provider it is accepted and has no effect when the run goes remote. A pool whose effective providers lack `local` refuses it (64): units are
   local group admission. Admission is unchanged (6.2): the ticket asks for `K` units all or none, in
   ticket-time order, and nothing running is preempted. `status`, `result.json` and the history
   `start` and `end` lines show the units held per group; a detached run keeps the flag.
