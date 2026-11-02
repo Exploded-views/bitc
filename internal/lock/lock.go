@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -94,13 +95,13 @@ func Held(path string) bool {
 
 func fcntlGetfd(fd int) (int, error) { return unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0) }
 
-// inProbe is a test seam: HeldRO calls it while it inspects the lock, at the latest point
+// inProbe is a test seam: Inspect calls it while it inspects the lock, at the latest point
 // where a lock taken by the probe itself would still be in force. It is a plain variable: a test
-// that sets it must not run in parallel, and no HeldRO caller may outlive the test that started it.
+// that sets it must not run in parallel, and no Inspect caller may outlive the test that started it.
 var inProbe func()
 
-// procLocksPath is where HeldRO reads the kernel's lock table; a test points it elsewhere to reach
-// the fallback. The same rules as inProbe apply: only tests write it, never in parallel.
+// procLocksPath is where Inspect reads the kernel's lock table; a test points it elsewhere to reach
+// the no-procfs path. The same rules as inProbe apply: only tests write it, never in parallel.
 var procLocksPath = "/proc/locks"
 
 // State is what a read-only look at a lock found.
@@ -122,17 +123,20 @@ func (s State) String() string {
 	return "unknown"
 }
 
+// underTest is testing.Testing, replaceable so a test can prove the guard in SetProcLocksPath.
+var underTest = testing.Testing
+
 // SetProcLocksPath points the lock view at another file and returns the undo. It is for tests,
-// in this package and others (Linux without a readable /proc/locks); it must not run in parallel.
+// in this package and others (Linux without a readable /proc/locks); it must not run in parallel,
+// and it panics outside a test binary, like state.StubNetworkFS.
 func SetProcLocksPath(p string) (restore func()) {
+	if !underTest() {
+		panic("lock.SetProcLocksPath is test-only")
+	}
 	old := procLocksPath
 	procLocksPath = p
 	return func() { procLocksPath = old }
 }
-
-// HeldRO is Inspect as a bool: true only for StateHeld, so an unknown lock reads as not held.
-// Callers that show or act on the answer use Inspect and handle StateUnknown.
-func HeldRO(path string) bool { return Inspect(path) == StateHeld }
 
 // Inspect reports whether any process holds a flock on path without making a free lock look
 // busy to a concurrent non-blocking caller (#55). Linux reads /proc/locks, matching the device

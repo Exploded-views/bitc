@@ -84,9 +84,9 @@ func TestRewrite(t *testing.T) {
 	}
 }
 
-func TestHeldROSeesLocksWithoutTakingThem(t *testing.T) {
+func TestInspectSeesLocksWithoutTakingThem(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "x.lock")
-	if HeldRO(p) {
+	if Inspect(p) == StateHeld {
 		t.Fatal("a missing file is held")
 	}
 	a, err := Open(p)
@@ -94,13 +94,13 @@ func TestHeldROSeesLocksWithoutTakingThem(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer a.Close()
-	if HeldRO(p) {
+	if Inspect(p) == StateHeld {
 		t.Fatal("a free lock is held")
 	}
 	if ok, _ := a.TryLock(); !ok {
 		t.Fatal("cannot lock")
 	}
-	if !HeldRO(p) {
+	if Inspect(p) != StateHeld {
 		t.Fatal("a held lock is not seen")
 	}
 	_ = a.Unlock()
@@ -121,21 +121,21 @@ func TestHeldROSeesLocksWithoutTakingThem(t *testing.T) {
 			case <-stop:
 				return
 			default:
-				HeldRO(p)
+				Inspect(p)
 			}
 		}
 	}()
 	for i := 0; i < 2000; i++ {
 		if ok, _ := b.TryLock(); !ok {
-			t.Fatal("HeldRO made a free lock busy")
+			t.Fatal("Inspect made a free lock busy")
 		}
 		_ = b.Unlock()
 	}
 }
 
-// #55: a non-blocking TryLock that runs while HeldRO inspects a free lock still gets it. The
-// seam runs the competing TryLock inside HeldRO's probe, so the collision is forced, not hoped for.
-func TestHeldRONeverMakesAFreeLockBusy(t *testing.T) {
+// #55: a non-blocking TryLock that runs while Inspect inspects a free lock still gets it. The
+// seam runs the competing TryLock inside Inspect's probe, so the collision is forced, not hoped for.
+func TestInspectNeverMakesAFreeLockBusy(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "unit.1.lock")
 	b, err := Open(p) // the admission's open file description; creates the file
 	if err != nil {
@@ -151,30 +151,29 @@ func TestHeldRONeverMakesAFreeLockBusy(t *testing.T) {
 		}
 	}
 	t.Cleanup(func() { inProbe = nil })
-	if HeldRO(p) {
+	if Inspect(p) == StateHeld {
 		t.Fatal("a free lock reads as held")
 	}
 	if !ran {
-		t.Fatal("HeldRO never reached its probe seam")
+		t.Fatal("Inspect never reached its probe seam")
 	}
 	if !got {
-		t.Fatal("a TryLock during HeldRO's probe found a free lock busy (#55)")
+		t.Fatal("a TryLock during Inspect's probe found a free lock busy (#55)")
 	}
 	// safe direction through the same path: a held lock still reads as held
 	if ok, _ := b.TryLock(); !ok {
 		t.Fatal("cannot lock")
 	}
 	inProbe = nil
-	if !HeldRO(p) {
+	if Inspect(p) != StateHeld {
 		t.Fatal("a held lock reads as free")
 	}
 }
 
-// Where /proc/locks cannot be read (darwin, or a Linux without procfs), HeldRO falls back to
-// heldNoProcLocks. A free lock reads as free and a held lock as held. On darwin (F_GETLK) the free
-// lock also stays takeable during the probe; Linux's fallback is a brief try-lock, so there a
-// concurrent TryLock can find it busy for that moment, as before #55.
-func TestHeldROWithoutProcLocks(t *testing.T) {
+// On darwin /proc/locks does not exist, so Inspect uses F_GETLK (inspectNoProcLocks): a free lock
+// reads as free, a held lock as held, and the free lock stays takeable during the probe. Linux
+// without /proc/locks reports unknown instead (#24, inspect_linux_test.go).
+func TestInspectWithoutProcLocks(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("Linux has no way to see a flock without taking it: Inspect reports unknown (#24), see inspect_linux_test.go")
 	}
@@ -186,7 +185,7 @@ func TestHeldROWithoutProcLocks(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer b.Close()
-	if HeldRO(filepath.Join(t.TempDir(), "missing.lock")) {
+	if Inspect(filepath.Join(t.TempDir(), "missing.lock")) == StateHeld {
 		t.Fatal("a missing lock file reads as held")
 	}
 	ran, got := false, false
@@ -198,11 +197,11 @@ func TestHeldROWithoutProcLocks(t *testing.T) {
 		}
 	}
 	t.Cleanup(func() { inProbe = nil })
-	if HeldRO(p) {
+	if Inspect(p) == StateHeld {
 		t.Fatal("a free lock reads as held")
 	}
 	if !ran {
-		t.Fatal("HeldRO never reached its probe seam")
+		t.Fatal("Inspect never reached its probe seam")
 	}
 	if runtime.GOOS == "darwin" && !got {
 		t.Fatal("a TryLock during the F_GETLK probe found a free lock busy (#55)")
@@ -211,7 +210,7 @@ func TestHeldROWithoutProcLocks(t *testing.T) {
 	if ok, _ := b.TryLock(); !ok {
 		t.Fatal("cannot lock")
 	}
-	if !HeldRO(p) {
+	if Inspect(p) != StateHeld {
 		t.Fatal("a held lock reads as free")
 	}
 }
@@ -220,7 +219,7 @@ func TestHeldROWithoutProcLocks(t *testing.T) {
 // lock never reads as free, and a TryLock that loses to a probe gets the normal busy answer, never
 // an error. The holder count proves flock exclusion between the contenders only; a probe's own
 // brief hold is not counted. Goroutines race through a barrier; no sleeps.
-func TestHeldROSafeDirection(t *testing.T) {
+func TestInspectSafeDirection(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "x.lock")
 	a, err := Open(p)
 	if err != nil {
@@ -236,7 +235,7 @@ func TestHeldROSafeDirection(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 200; j++ {
-				if !HeldRO(p) {
+				if Inspect(p) != StateHeld {
 					t.Error("a held lock read as free")
 					return
 				}
@@ -275,7 +274,7 @@ func TestHeldROSafeDirection(t *testing.T) {
 				if n := holders.Add(1); n != 1 {
 					t.Errorf("%d holders at once", n)
 				}
-				if !HeldRO(p) {
+				if Inspect(p) != StateHeld {
 					t.Error("a lock this goroutine holds read as free")
 				}
 				holders.Add(-1)
@@ -289,7 +288,7 @@ func TestHeldROSafeDirection(t *testing.T) {
 			defer wg.Done()
 			<-start
 			for j := 0; j < rounds; j++ {
-				HeldRO(p)
+				Inspect(p)
 			}
 		}()
 	}

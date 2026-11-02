@@ -42,9 +42,6 @@ func TestInspectWithoutProcLocksIsUnknownAndTakesNoLock(t *testing.T) {
 	if s := Inspect(p); s != StateUnknown {
 		t.Fatalf("a held lock without /proc/locks is %v, want unknown (never guessed)", s)
 	}
-	if HeldRO(p) {
-		t.Fatal("HeldRO reports an unknown lock as held")
-	}
 	if s := Inspect(filepath.Join(t.TempDir(), "missing.lock")); s != StateFree {
 		t.Fatalf("a missing lock file is %v, want free", s)
 	}

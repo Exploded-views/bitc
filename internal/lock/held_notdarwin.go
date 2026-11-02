@@ -16,12 +16,8 @@ func inspectNoProcLocks(string) State {
 }
 
 // HoldersVisible reports whether Inspect can tell held from free: on Linux, whether
-// /proc/locks is readable.
+// /proc/locks can be read.
 func HoldersVisible() bool {
-	f, err := os.Open(procLocksPath)
-	if err != nil {
-		return false
-	}
-	_ = f.Close()
-	return true
+	_, err := os.ReadFile(procLocksPath) // the very read Inspect makes, so they cannot disagree
+	return err == nil
 }

@@ -99,7 +99,7 @@ func redactAll(red *redact.Set, in []string) []string {
 func iso(ns int64) string { return time.Unix(0, ns).UTC().Format(time.RFC3339) }
 
 // Snapshot reads tickets, locks and memory without taking any lock: holders come from
-// /proc/locks on Linux and fcntl(F_GETLK) on darwin (lock.HeldRO; neither takes a lock), so a
+// /proc/locks on Linux and fcntl(F_GETLK) on darwin (lock.Inspect; neither takes a lock), so a
 // concurrent `--wait 0s` caller or a legacy `flock -n` never sees a lock made busy by status
 // (read-only, best effort). On a Linux without a readable /proc/locks nothing is locked either:
 // the slot or unit shows as unknown (lock.Inspect, #24).
@@ -168,7 +168,7 @@ func Snapshot(e *config.Effective, l state.Layout, only []string) Report {
 
 // legacyHolders attributes each held <legacy_dir>/locks/<pool>.<n>.lock (the lock admission
 // takes with bitc slot n) to the pool's slot n, unless a bitc ticket already holds that slot.
-// Observe only (HeldRO); the pid is the one the legacy caller wrote into the file, if any.
+// Observe only (lock.Inspect); the pid is the one the legacy caller wrote into the file, if any.
 func legacyHolders(c *config.Compat, pool string, p Pool) []Holder {
 	if c == nil {
 		return nil
@@ -236,11 +236,6 @@ func (r Report) Text(w io.Writer) {
 				unk++
 			} else {
 				held++
-			}
-		}
-		for _, q := range p.Waiters {
-			if q.Unknown {
-				unk++
 			}
 		}
 		unkNote := ""
