@@ -34,7 +34,7 @@ func TestZ4_ClientCrossBuildsForDarwin(t *testing.T) {
 	}
 }
 
-// CI cross-builds the darwin client on Linux and smoke-tests it on a GitHub-hosted macOS runner:
+// CI cross-builds the darwin client on Linux (the build job) and smoke-tests it on a GitHub-hosted macOS runner:
 // build, version, a one-slot local run of true, status --json; read-only, no persisted
 // credentials, bounded, with ci.yml's own pins and toolchain.
 func TestZ5_CISmokesTheDarwinClient(t *testing.T) {
@@ -55,10 +55,10 @@ func TestZ5_CISmokesTheDarwinClient(t *testing.T) {
 		}
 		return strings.Join(lines[i:body[len(body)-1].n+1], "\n")
 	}
-	ci, mac := job("ci"), job("macos-smoke")
+	ci, mac := job("build"), job("macos-smoke")
 	for _, arch := range []string{"arm64", "amd64"} {
 		if !regexp.MustCompile(`(?m)^\s*run: env CGO_ENABLED=0 GOOS=darwin GOARCH=` + arch + ` go build -trimpath -o /dev/null \./cmd/bitc$`).MatchString(ci) {
-			t.Errorf("the ci job does not cross-build darwin/%s", arch)
+			t.Errorf("the build job does not cross-build darwin/%s", arch)
 		}
 	}
 	for _, re := range []string{
@@ -78,11 +78,11 @@ func TestZ5_CISmokesTheDarwinClient(t *testing.T) {
 	}
 	goVer := regexp.MustCompile(`(?m)^\s*go-version: "[^"]+"$`).FindString(ci)
 	if goVer == "" || !strings.Contains(mac, strings.TrimSpace(goVer)) {
-		t.Errorf("macos-smoke: setup-go is not given the ci job's %s", strings.TrimSpace(goVer))
+		t.Errorf("macos-smoke: setup-go is not given the build job's %s", strings.TrimSpace(goVer))
 	}
 	for _, u := range regexp.MustCompile(`uses: (actions/[a-z-]+@[0-9a-f]+)`).FindAllStringSubmatch(mac, -1) {
 		if !strings.Contains(ci, u[1]) {
-			t.Errorf("%s is not the pin the ci job uses", u[1])
+			t.Errorf("%s is not the pin the build job uses", u[1])
 		}
 	}
 	if strings.Contains(mac, "secrets.") {
