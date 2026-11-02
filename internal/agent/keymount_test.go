@@ -52,7 +52,7 @@ func TestDeployKeyLivesOnlyOnTheMountedTmpfsAndIsGoneBeforeTheFetchReturns(t *te
 	// fetch command, so the observation does not depend on scheduling.
 	afterKeyWritten = func() {
 		_, err := os.Stat(filepath.Join(keyDir, "key"))
-		m.saw = err == nil
+		m.saw = err == nil && m.mounted && !m.unmounted // on the tmpfs while it is mounted
 	}
 	t.Cleanup(func() { afterKeyWritten = nil })
 	err := fetchCode(sshSpec(t), filepath.Join(root, "work"), keyDir, "SECRET-KEY-BYTES", m.mount)
