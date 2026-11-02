@@ -141,7 +141,8 @@ A remote problem surfaces only as local fallback, 69 or 75 (8.2). An internal er
 everything and exits 69, never Go's 2 and never 75: a bug that fails every time must not loop a
 retrying agent forever. 75 means only a genuine wait-and-retry (starved, lost, provider transient).
 `result.json`: `{origin: "bitc"|"command", outcome:
-"ok"|"command-failed"|"starved"|"refused"|"config"|"unavailable"|"interrupted"|"lost"|"internal",
+"ok"|"command-failed"|"timed-out"|"starved"|"refused"|"config"|"unavailable"|"interrupted"|"lost"|
+"internal",
 exit_code, reason, pool, slot, provider, job, generation, hold_started, wait_ms, run_ms, head,
 tree_clean, cwd}`; for a local run that held a slot, `head` is `git rev-parse HEAD` of the work
 tree containing the run's directory and `tree_clean` is true when `git status --porcelain` was empty
@@ -428,10 +429,12 @@ in.
   do not count (a `--detach` job's supervisor applies it the same way). When it expires and the
   command is not already terminating, bitc prints `bitc: <pool>: time limit <dur> reached; terminated`
   (`<dur>` in the duration grammar of 5.2) and terminates as for a signal, whatever `on_signal`
-  says: SIGTERM to the group (leader on a TTY), SIGKILL after `grace`, stragglers as below. The
-  run exits 124 (`timeout(1)`'s code), `origin = bitc`; a signal that arrives first or after wins
-  with its `128+N`. A command's own 124 is not told apart from this one by the code, only by the
-  line. A remote run has no such limit (8.2: `remote_limits.timeout`).
+  says: SIGTERM to the group (leader on a TTY), SIGKILL after `grace`, stragglers as below. On a
+  TTY only the leader is signalled, so its children can outlive the limit (Ctrl-C reaches the
+  whole foreground group, a time limit does not). The run exits 124 (`timeout(1)`'s code) with
+  `origin = bitc`, `outcome = "timed-out"` in `result.json` and in the history `end` line; a
+  signal that arrives first (including under `forward-and-wait`) or after wins with its `128+N`.
+  A command's own 124 has `outcome = "command-failed"` and no such line. A remote run has no such limit (8.2: `remote_limits.timeout`).
 - **End of hold:** `post_run`; group stragglers SIGTERM then SIGKILL after `grace`; unlock all,
   unlink ticket, drop reservation, history `end`, return the command's code (`128+N` if it died of
   signal N).
@@ -1372,7 +1375,7 @@ ACCOUNT/ install-secret (32 bytes; install16 = 16 hex of its sha256),
 
 **History:** `O_APPEND` lines under 4 KiB: `{ts (UTC, ms), event: "start"|"end"|"starved"|
 "fallback"|"reaped", pool, slot, job, pid, nested?, argv: [...], cwd, provider, resource?, sha?,
-wait_ms?, run_ms?, exit?, outcome?, reason?, head?, tree_clean?}` (the last two on a local run's
+wait_ms?, run_ms?, exit?, outcome? (`ok`, `command-failed`, `timed-out`, `interrupted`, ...), reason?, head?, tree_clean?}` (the last two on a local run's
 `start` and `end`, as in `result.json`, 4); refusals write nothing; a `reason` over 512 bytes is
 cut there and ends ` [truncated]`; the 4 KiB bound is on the encoded line (JSON escaping
 included): the reason is halved first, then argv, then the cwd and the resource, and as a last

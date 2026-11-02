@@ -50,6 +50,6 @@ A command that itself exits 75 shows `RESULT exit 75`: read the first line, not 
 
 Every detached job writes `result.json` in its record; a foreground run writes one with
 `--result PATH`. Fields: `origin` (`bitc` or `command`), `outcome` (`ok`, `command-failed`,
-`starved`, `refused`, `config`, `unavailable`, `interrupted`, `lost`, `internal`), `exit_code`,
+`timed-out`, `starved`, `refused`, `config`, `unavailable`, `interrupted`, `lost`, `internal`), `exit_code`,
 `reason`, `pool`, `slot`, `provider`, `job`, `generation`, `hold_started`, `wait_ms`, `run_ms`.
 `bitc status --json` follows [`status.schema.json`](status.schema.json).

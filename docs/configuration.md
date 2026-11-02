@@ -30,7 +30,8 @@ timeout = "2h"                 # ends a local run after 2h (exit 124); unset: no
 that long after its command started, with the same SIGTERM, grace and SIGKILL as a signal, and exits
 **124** after printing `bitc: <pool>: time limit <dur> reached; terminated`. `bitc run --timeout DUR`
 can only shorten it (or set one where the pool has none); a longer value is accepted and ignored.
-A remote run has its own `remote_limits.timeout`, and `--timeout` does not apply to it.
+On a terminal only the command's leader process is signalled, so children it started can keep
+running after the limit. A remote run has its own `remote_limits.timeout`, and `--timeout` does not apply to it.
 
 ## The repo file
 

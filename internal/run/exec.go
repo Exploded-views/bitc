@@ -183,7 +183,13 @@ func Exec(ctx context.Context, s ExecSpec) (ExecResult, error) {
 			forward(syscall.SIGKILL)
 		case <-limitAt:
 			limitAt = nil
-			if !terminating {
+			select { // a command that ended as the limit fired is not a timeout
+			case err := <-done:
+				done <- err
+				continue
+			default:
+			}
+			if !terminating && received == 0 { // a signal that came first keeps its 128+N
 				received, terminating, timedOut = syscall.SIGTERM, true, true
 				forward(syscall.SIGTERM)
 				killAt = time.After(s.Grace)

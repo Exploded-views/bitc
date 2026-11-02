@@ -15,8 +15,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   than the pool's is accepted with the pool's value still in force. The clock starts when the
   command starts, so the wait for a slot does not count, and `--detach` jobs are limited the same
   way. At the limit bitc prints `bitc: <pool>: time limit <dur> reached; terminated`, terminates
-  the command's process group as for a signal (SIGTERM, SIGKILL after `grace`) and exits 124, the
-  code `timeout(1)` uses. A remote run ignores `--timeout`; `remote_limits.timeout` limits it.
+  the command's process group as for a signal (the leader alone on a terminal; SIGTERM, SIGKILL
+  after `grace`) and exits 124, the code `timeout(1)` uses; `result.json` and the history `end`
+  line say `outcome = "timed-out"`. A remote run ignores `--timeout`; `remote_limits.timeout`
+  limits it.
 - `result.json` of a local run and its history `start` and `end` lines now carry `head` (the
   work tree's `git rev-parse HEAD`, taken when the hold starts) and `tree_clean` (true when
   `git status --porcelain` is empty, ignored files excluded); `result.json` also carries `cwd`, the

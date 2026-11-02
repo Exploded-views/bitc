@@ -1,9 +1,11 @@
 package run
 
 import (
+	"context"
 	"encoding/json"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/Exploded-views/bitc/internal/state"
 )
@@ -27,12 +29,20 @@ type Result struct {
 	Cwd         string `json:"cwd,omitempty"`        // the run's working directory
 }
 
+// gitProgram is the git treeState runs; a test seam.
+var gitProgram = "git"
+
 // treeState reports the git HEAD of the work tree containing dir and whether its tree is clean
-// (git status --porcelain empty, ignored files excluded). Outside a git work tree, or when git
-// cannot say, head is "" and clean is nil.
-func treeState(dir string, env []string) (head string, clean *bool) {
+// (git status --porcelain empty: untracked files count, ignored files and the repo's or user's
+// status config do not). It runs inside the hold, so each git call is bounded by limit and takes
+// no optional lock (--no-optional-locks), which would race a concurrent git add or commit for
+// .git/index.lock. Outside a git work tree, or when git cannot say, head is "" and clean is nil;
+// when only status fails or times out, head is kept and clean is nil.
+func treeState(dir string, env []string, limit time.Duration) (head string, clean *bool) {
 	git := func(args ...string) (string, bool) {
-		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		ctx, cancel := context.WithTimeout(context.Background(), limit)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, gitProgram, append([]string{"--no-optional-locks", "-C", dir}, args...)...)
 		cmd.Env = env
 		out, err := cmd.Output()
 		return strings.TrimSpace(string(out)), err == nil
@@ -41,7 +51,7 @@ func treeState(dir string, env []string) (head string, clean *bool) {
 	if !ok {
 		return "", nil
 	}
-	st, ok := git("status", "--porcelain")
+	st, ok := git("status", "--porcelain", "--untracked-files=normal", "--ignore-submodules=none")
 	if !ok {
 		return head, nil
 	}
