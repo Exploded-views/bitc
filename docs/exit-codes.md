@@ -20,8 +20,8 @@ It is never 75, so a bug that fails every time cannot keep a retrying caller loo
 
 | Line | When |
 | --- | --- |
-| `STARVED <pool> (slots busy; waited <wait>)` | 75 from admission: every slot is busy and nobody is ahead; `<wait>` is the pool's wait as configured (after `--wait`), such as `3h` or `1h30m` |
-| `STARVED <pool> (<reason>)` | 75 from admission otherwise. Reasons: `queue; waited <wait>`, `group <g> busy: wanted <k> of <N> units; waited <wait>` (`k` the units this run asked for, `N` the group's size), `memory: <n> MiB available, floor <f> MiB`, `priority lane`, `nested child busy`, `pre_run: <why>`, `env hook: <why>` |
+| `STARVED <pool> (slots busy; waited <wait>)` | 75 from admission: every slot is busy and nobody is ahead; `<wait>` is the pool's wait as configured (after `--wait`), such as `3h` or `1h30m`; unscaled under `[test] time_scale` |
+| `STARVED <pool> (<reason>)` | 75 from admission otherwise. Reasons: `queue; waited <wait>`, `group <g> busy: wanted <k> of <N> units; waited <wait>` (`k` the units this run asked for, with `--units` applied; `N` the group's size), `memory: <n> MiB available, floor <f> MiB`, `priority lane`, `nested child busy`, `pre_run: <why>`, `env hook: <why>` |
 | `STARVED <pool> (<provider>: <why>)` | 75 from a remote job after it started, for example `pod <id> timed out after 61 min` |
 | `bitc: <provider>: running <pool> locally: <why>` | a remote provider could not take the job and `local` is next |
 | `bitc: <provider>: <pool>: trying <next>: <why>` | the same, when the next provider is remote |

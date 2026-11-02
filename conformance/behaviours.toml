@@ -6,7 +6,7 @@ rows = [
   { id = "P1", task = "1.1", ported = "TestP1_ExitCodePassThrough", desc = "a command run under a pool returns its own exit code (128+N when killed by signal N)" },
   { id = "P2", task = "1.7", ported = "TestP2_UsageWithoutPoolOrCommand", desc = "a run with no pool or no command prints usage, exits 64 and creates no state" },
   { id = "P3", task = "1.7", ported = "TestP3_InvalidPoolNames", desc = "a pool name outside [A-Za-z0-9_-]+ exits 64 with 'invalid pool name' before anything is created or run" },
-  { id = "P4", task = "1.7", ported = "TestP4_DashAndUnderscoreAreOnePool", desc = "'-' and '_' spell the same pool everywhere: locks, history, settings" },
+  { id = "P4", task = "1.7", changed = "starved-wording", test = "TestP4_DashAndUnderscoreAreOnePool", desc = "'-' and '_' spell the same pool everywhere: locks, history, settings" },
   { id = "P5", task = "1.7", changed = "unknown-pools", test = "TestP5_UnknownPoolsRefusedUnlessDefault", desc = "an unknown pool is refused with 64; unknown_pools = \"default\" gives it one slot and the default wait" },
   { id = "P6", task = "1.3", ported = "TestP6_PoolsAreIndependent", desc = "pools are independent: a held slot in one never blocks another except through a shared group" },
   { id = "P7", task = "1.2b", ported = "TestP7_HostWinsOverRepoKeyByKey", desc = "for project keys the host file wins over the repo file key by key" },
@@ -24,7 +24,7 @@ rows = [
   { id = "S7", task = "1.7", ported = "TestS7_BitcStaysTheParentAndHistoryNamesIt", desc = "bitc stays the command's parent for the whole hold; history and the ticket name bitc's pid" },
 
   # T: waiting, deadline, STARVED
-  { id = "T1", task = "1.3", ported = "TestT1_StarvedAfterWait", desc = "no slot within the pool's wait: STARVED <pool> on stderr, exit 75, the command never runs" },
+  { id = "T1", task = "1.3", changed = "starved-wording", test = "TestT1_StarvedAfterWait", desc = "no slot within the pool's wait: STARVED <pool> (slots busy; waited <wait>) on stderr, exit 75, the command never runs" },
   { id = "T2", task = "1.4", ported = "TestT2_ReasonRecomputedEveryAttempt", desc = "the STARVED reason is recomputed every attempt, so a reason that no longer applies never survives" },
   { id = "T3", task = "1.3", ported = "TestT3_PollDefaultEnvOverrideAndDeadline", desc = "the poll interval defaults to 5s, BITC_POLL overrides it (>= 100ms), and the deadline is start + wait" },
   { id = "T4", task = "1.3", ported = "TestT4_WaitZeroIsOneAttempt", desc = "wait = \"0s\" makes exactly one attempt" },

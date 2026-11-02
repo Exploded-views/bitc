@@ -157,7 +157,7 @@ stderr lines (stdout belongs to the command):
 
 | Line | When |
 | --- | --- |
-| `STARVED <pool> (slots busy; waited <wait>)` | 75 from admission: every slot busy, no one ahead; `<wait>` is the pool's wait as configured, after `--wait` (config duration form: `24h`, `1h30m`, `200ms`) |
+| `STARVED <pool> (slots busy; waited <wait>)` | 75 from admission: every slot busy, no one ahead; `<wait>` is the pool's wait as configured, after `--wait` (config duration form: `24h`, `1h30m`, `200ms`; unscaled under `[test] time_scale`) |
 | `STARVED <pool> (<reason>)` | 75 from admission otherwise: `queue; waited <wait>`, `group <g> busy: wanted <k> of <N> units; waited <wait>` (`k` the units this run asked for, `--units` applied; `N` the group's size), `memory: <n> MiB available, floor <f> MiB`, `priority lane`, `nested child busy`, `legacy pool: <what> busy`, `pre_run: <why>`, `env hook: <why>` |
 | `STARVED <pool> (<provider>: <why>)` | 75 from a remote job after it started; `<why>` names the resource, e.g. `pod <id> timed out after 61 min` |
 | `bitc: <provider>: running <pool> locally: <why>` | remote preflight or launch fell back (only when `local` is the next provider in the walk, 8.2) |
@@ -405,8 +405,8 @@ group, not a pool`.
 3. **Wait:** sleep `poll` and retry; inotify on the same `tickets/` dirs wakes it early (a hold
    ends by unlocking, then unlinking its ticket).
 4. **Deadline:** `start + wait` passed → `STARVED <pool> (<reason>)` with the last reason as the
-   stderr table words it, which `result.json` `reason` and the history `starved` line repeat, 75. `wait = "0s"`
-   makes one attempt. Fairness: FIFO per class for slots, FIFO by ticket time for group units. With
+   stderr table words it, which `result.json` `reason` and the history `starved` line repeat, 75.
+   `wait = "0s"` makes one attempt. Fairness: FIFO per class for slots, FIFO by ticket time for group units. With
    `--units` the count `k` of step 2 is the flag's; a waiting heavy ticket therefore blocks every
    later ticket of the group (a light run that arrives after it waits too), and a running hold is
    never preempted.
@@ -1483,7 +1483,9 @@ Each is a `changed` row in `behaviours.toml`; they are listed in 15.
 - Remote text: notes are `bitc: <provider>: ...` (legacy `runpod: ...`); the launch line names the
   job and size key (legacy: type and vCPU); STARVED is `(<provider>: <why>)`.
 - `BITC_ARTIFACTS` may only select declared paths (legacy replaced the list).
-- STARVED reasons for groups and memory use the 4 wording; admission is FIFO per class.
+- STARVED reasons (slots, queue, groups, memory) use the stderr-table wording (4), and the slot,
+  queue and group lines name the wait (legacy: a bare `STARVED <pool>` for a slot wait); admission
+  is FIFO per class.
 - Processes left in a hold's group are killed at its end (legacy left them running).
 - A create that left a resource (reaped by name after a failed create) is 75 and never falls back
   to local or retries; signals stay absorbed through all cleanup and cut the create-retry wait short.
