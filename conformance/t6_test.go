@@ -134,30 +134,33 @@ func t6Stop(t *testing.T, h *harness.H, w *harness.Proc, nth int) {
 	}, 10*time.Second)
 }
 
-// t6IsStopped reports whether the process is in the stopped state (T): from /proc/<pid>/stat on
-// Linux, from `ps -o stat=` on darwin.
+// t6IsStopped reports whether the process is stopped. On Linux every thread must be in state T
+// (each /proc/<pid>/task/<tid>/stat: the main thread's stat alone can say T while another thread
+// is still finishing a flock); on darwin the whole process stops, and `ps -o stat=` says T.
 func t6IsStopped(pid int) bool {
-	var st string
-	if runtime.GOOS == "linux" {
-		b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
-		if err != nil {
-			return false
-		}
-		// "pid (comm) S ...": comm may hold spaces and parentheses, so cut at the last ')'.
-		i := strings.LastIndex(string(b), ") ")
-		if i < 0 {
-			return false
-		}
-		st = string(b)[i+2:]
-	} else {
+	if runtime.GOOS != "linux" {
 		out, err := exec.Command("ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output()
+		return err == nil && t6StateIsT(strings.TrimSpace(string(out)))
+	}
+	stats, err := filepath.Glob("/proc/" + strconv.Itoa(pid) + "/task/*/stat")
+	if err != nil || len(stats) == 0 {
+		return false
+	}
+	for _, f := range stats {
+		b, err := os.ReadFile(f)
 		if err != nil {
 			return false
 		}
-		st = strings.TrimSpace(string(out))
+		// "tid (comm) S ...": comm may hold spaces and parentheses, so cut at the last ")".
+		i := strings.LastIndex(string(b), ") ")
+		if i < 0 || !t6StateIsT(string(b)[i+2:]) {
+			return false
+		}
 	}
-	return strings.HasPrefix(st, "T") || strings.HasPrefix(st, "t")
+	return true
 }
+
+func t6StateIsT(st string) bool { return strings.HasPrefix(st, "T") || strings.HasPrefix(st, "t") }
 
 // t6AdmitLockHeld reports whether any process holds the host's admit.lock. It is the one place
 // the test reads that lock: PR #41 replaces lock.HeldRO with lock.Inspect(path) == lock.StateHeld,
