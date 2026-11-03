@@ -83,6 +83,10 @@ func TestREL3_ReleaseTargetsThePublicRepoAsADraft(t *testing.T) {
 	if !strings.Contains(mk, "\nrelease-check:") || !strings.Contains(mk, "sha256sum -c") {
 		t.Error("Makefile has no release-check target that verifies checksums.txt")
 	}
+	// the hosted dry-run job runs this target: it must build the snapshot, never a real release
+	if !regexp.MustCompile(`(?m)^release-check:\n(?:\t.*\n)*?\tgoreleaser release --snapshot --clean$`).MatchString(mk) {
+		t.Error("the Makefile release-check recipe does not run goreleaser release --snapshot --clean")
+	}
 	docb, err := os.ReadFile("../docs/RELEASING.md")
 	if err != nil {
 		t.Fatal(err)

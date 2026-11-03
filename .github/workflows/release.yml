@@ -12,10 +12,10 @@ on:
     branches: [main]
     tags: ['v*']
 
-# A tag's release is never cancelled; a newer push to a pull request replaces its dry run. A push
+# A tag's release is never cancelled; a newer push to a pull request replaces its dry run. A branch push
 # gets a group of its own per sha, so every main sha keeps its run (the release sha's run is the gate).
 concurrency:
-  group: release-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || '' }}
+  group: release-${{ github.ref }}-${{ github.event_name == 'push' && github.ref_type == 'branch' && github.sha || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:

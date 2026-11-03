@@ -570,7 +570,7 @@ func TestWF8_ReleaseGatesRunHosted(t *testing.T) {
 	if v := wfJob(t, "release.yml", "vuln"); !strings.Contains(v, "continue-on-error: ${{ github.event_name == 'pull_request' }}") {
 		t.Errorf("release.yml vuln: not advisory on pull_request only:\n%s", v)
 	}
-	if !strings.Contains(text, "group: release-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || '' }}") {
+	if !strings.Contains(text, "group: release-${{ github.ref }}-${{ github.event_name == 'push' && github.ref_type == 'branch' && github.sha || '' }}") {
 		t.Error("release.yml: a push to main shares a concurrency group with other pushes, so a pending run can be cancelled")
 	}
 	// the tool pins: version-pinned, never latest
