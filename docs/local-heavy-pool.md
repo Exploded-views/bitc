@@ -91,8 +91,8 @@ both local and remote providers it is accepted but has no effect when the run go
 and the history `start` and `end` lines record them:
 
 ```
-heavy: 1/2 slots held, 1 waiting
+heavy: 1/2 slots held, 1 waiting (wait 1h, oldest 3m)
   slot 1  a1b2c3d4  pid 4012  units cpu=6  since 2026-11-02T09:14:03Z  make test
-  waiting  e5f6a7b8  normal  pid 4107  units cpu=3  since 2026-11-02T09:14:41Z
+  waiting  e5f6a7b8  normal  pid 4107  units cpu=3  since 2026-11-02T09:14:41Z (3m)
 group cpu: 6/8 units held
 ```

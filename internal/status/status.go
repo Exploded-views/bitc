@@ -36,6 +36,7 @@ type Waiter struct {
 	Class    string         `json:"class"` // high | normal
 	Pid      int            `json:"pid"`
 	Since    string         `json:"since"`
+	WaitedS  int64          `json:"waited_s"`        // whole seconds from Since to the report's time
 	Units    map[string]int `json:"units,omitempty"` // units asked for per group
 	Blocking string         `json:"group_wait,omitempty"`
 }
@@ -43,6 +44,8 @@ type Waiter struct {
 type Pool struct {
 	Name        string   `json:"name"`
 	Slots       int      `json:"slots"`
+	Wait        string   `json:"wait,omitempty"`          // the pool's configured wait, in the duration form of spec 5.2
+	OldestWaitS *int64   `json:"oldest_wait_s,omitempty"` // the longest waiter's waited_s; present only with waiters
 	Holders     []Holder `json:"holders"`
 	Waiters     []Waiter `json:"waiters"`
 	LastStarved string   `json:"last_starved,omitempty"`
@@ -94,12 +97,26 @@ func redactAll(red *redact.Set, in []string) []string {
 
 func iso(ns int64) string { return time.Unix(0, ns).UTC().Format(time.RFC3339) }
 
+// ageS is the whole seconds from ns to now, measured between the same second-truncated times the
+// report prints, so the age and the "since" beside it agree. Never negative.
+func ageS(now time.Time, ns int64) int64 {
+	d := now.Unix() - time.Unix(0, ns).Unix()
+	if d < 0 {
+		return 0
+	}
+	return d
+}
+
+// ageText is s whole seconds in the duration form of spec 5.2 ("1h22m").
+func ageText(s int64) string { return config.FormatDuration(time.Duration(s) * time.Second) }
+
 // Snapshot reads tickets, locks and memory without taking any lock: holders come from
 // /proc/locks on Linux and fcntl(F_GETLK) on darwin (lock.HeldRO; neither takes a lock), so a
 // concurrent `--wait 0s` caller or a legacy `flock -n` never sees a lock made busy by status
 // (read-only, best effort; except on a Linux without /proc/locks, see lock.HeldRO).
 func Snapshot(e *config.Effective, l state.Layout, only []string) Report {
-	r := Report{Version: "1", Time: time.Now().UTC().Format(time.RFC3339), Pools: []Pool{}, Groups: []Group{}}
+	now := time.Now().UTC().Truncate(time.Second) // the report's own time: every age is measured to it
+	r := Report{Version: "1", Time: now.Format(time.RFC3339), Pools: []Pool{}, Groups: []Group{}}
 	names := only
 	if len(names) == 0 {
 		for n := range e.Pools {
@@ -114,6 +131,7 @@ func Snapshot(e *config.Effective, l state.Layout, only []string) Report {
 		p := Pool{Name: n, Holders: []Holder{}, Waiters: []Waiter{}, LastStarved: red.String(last[n])}
 		if cfg := e.Pools[n]; cfg != nil {
 			p.Slots = cfg.Slots
+			p.Wait = config.FormatDuration(cfg.Wait)
 		}
 		for _, t := range admit.ReadTickets(l, n) {
 			if !lock.HeldRO(l.Tickets(n) + "/" + t.Name) {
@@ -127,8 +145,14 @@ func Snapshot(e *config.Effective, l state.Layout, only []string) Report {
 				if t.T.Class == 0 {
 					class = "high"
 				}
-				p.Waiters = append(p.Waiters, Waiter{Job: red.String(t.T.Job), Class: class, Pid: t.T.Pid, Since: iso(t.T.WaitStarted), Units: t.T.Units,
+				p.Waiters = append(p.Waiters, Waiter{Job: red.String(t.T.Job), Class: class, Pid: t.T.Pid, Since: iso(t.T.WaitStarted), WaitedS: ageS(now, t.T.WaitStarted), Units: t.T.Units,
 					Blocking: red.String(strings.Join(t.T.GroupWait, ","))})
+			}
+		}
+		for i, q := range p.Waiters {
+			if i == 0 || q.WaitedS > *p.OldestWaitS {
+				v := q.WaitedS
+				p.OldestWaitS = &v
 			}
 		}
 		p.Holders = append(p.Holders, legacyHolders(e.Compat, n, p)...)
@@ -214,7 +238,11 @@ func lastStarved(l state.Layout) map[string]string {
 // Text prints the report for people.
 func (r Report) Text(w io.Writer) {
 	for _, p := range r.Pools {
-		fmt.Fprintf(w, "%s: %d/%d slots held, %d waiting\n", p.Name, len(p.Holders), p.Slots, len(p.Waiters))
+		ages := ""
+		if p.OldestWaitS != nil {
+			ages = fmt.Sprintf(" (wait %s, oldest %s)", p.Wait, ageText(*p.OldestWaitS))
+		}
+		fmt.Fprintf(w, "%s: %d/%d slots held, %d waiting%s\n", p.Name, len(p.Holders), p.Slots, len(p.Waiters), ages)
 		for _, h := range p.Holders {
 			if h.Legacy {
 				pid := ""
@@ -231,7 +259,7 @@ func (r Report) Text(w io.Writer) {
 			fmt.Fprintf(w, "  slot %d  %s  pid %d%s%s  since %s  %s\n", h.Slot, h.Job, h.Pid, nested, unitsText(h.Units), h.Since, strings.Join(h.Argv, " "))
 		}
 		for _, q := range p.Waiters {
-			fmt.Fprintf(w, "  waiting  %s  %s  pid %d%s  since %s\n", q.Job, q.Class, q.Pid, unitsText(q.Units), q.Since)
+			fmt.Fprintf(w, "  waiting  %s  %s  pid %d%s  since %s (%s)\n", q.Job, q.Class, q.Pid, unitsText(q.Units), q.Since, ageText(q.WaitedS))
 		}
 		if p.LastStarved != "" {
 			fmt.Fprintf(w, "  last STARVED: %s\n", p.LastStarved)
