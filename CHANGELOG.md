@@ -89,8 +89,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Sprites stays refused until the catch-all egress deny lands
   ([#6](https://github.com/Exploded-views/bitc/issues/6)).
 - A run from a working directory in the high priority lane (`priority.high_cwd` or
-  `priority.high_cwd_contains`) can still starve normal runs in the same pool while high runs keep overlapping;
-  aging is planned for 0.1.5.
+  `priority.high_cwd_contains`) can still starve normal runs in the same pool while high runs keep
+  overlapping; aging is planned for 0.1.5.
 
 ## [0.1.3] - 2026-11-02
 
