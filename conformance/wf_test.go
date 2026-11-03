@@ -559,7 +559,7 @@ func TestWF8_ReleaseGatesRunHosted(t *testing.T) {
 		if !regexp.MustCompile(`(?m)^\s+(run: )?sh scripts/retry\.sh [0-9]+ [0-9]+ make tools-ci$`).MatchString(b) {
 			t.Errorf("release.yml %s: does not install the pinned tools with make tools-ci", job)
 		}
-		if !strings.Contains(b, "github.event_name != 'push' || github.ref == 'refs/heads/main'") {
+		if !strings.Contains(b, "github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main')") {
 			t.Errorf("release.yml %s: does not run on a push to main:\n%s", job, b)
 		}
 		if !strings.Contains(b, "persist-credentials: false") || !regexp.MustCompile(`(?m)^\s+timeout-minutes: [0-9]+$`).MatchString(b) {
@@ -569,6 +569,9 @@ func TestWF8_ReleaseGatesRunHosted(t *testing.T) {
 	// a known finding must not block every pull request: advisory there, strict on push and merge_group
 	if v := wfJob(t, "release.yml", "vuln"); !strings.Contains(v, "continue-on-error: ${{ github.event_name == 'pull_request' }}") {
 		t.Errorf("release.yml vuln: not advisory on pull_request only:\n%s", v)
+	}
+	if !strings.Contains(text, "group: release-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || '' }}") {
+		t.Error("release.yml: a push to main shares a concurrency group with other pushes, so a pending run can be cancelled")
 	}
 	// the tool pins: version-pinned, never latest
 	mk := string(must(os.ReadFile("../Makefile")))

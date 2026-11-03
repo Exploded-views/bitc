@@ -202,25 +202,32 @@ func TestREL4_ReleaseWorkflowUploadsADraftWithTheJobToken(t *testing.T) {
 		}
 	}
 	jobText := func(from, to int) string { return strings.Join(lines[from:to], "\n") }
-	dry, rel := jobText(di, dend), jobText(ri, rend)
+	vi, vend := job("vuln")
+	dry, rel, vuln := jobText(di, dend), jobText(ri, rend), jobText(vi, vend)
 
 	// which event runs which job
-	if !regexp.MustCompile(`(?m)^    if: github\.event_name == 'pull_request' \|\| github\.event_name == 'merge_group'$`).MatchString(dry) {
-		t.Error("the dry-run job is not limited to pull_request and merge_group")
+	gate := regexp.MustCompile(`(?m)^    if: github\.event_name == 'pull_request' \|\| github\.event_name == 'merge_group' \|\| \(github\.event_name == 'push' && github\.ref == 'refs/heads/main'\)$`)
+	for name, j := range map[string]string{"dry-run": dry, "vuln": vuln} {
+		if !gate.MatchString(j) {
+			t.Errorf("the %s job is not limited to pull_request, merge_group and a push to main", name)
+		}
 	}
 	if !regexp.MustCompile(`(?m)^    if: github\.event_name == 'push' && startsWith\(github\.ref, 'refs/tags/v'\)$`).MatchString(rel) {
 		t.Error("the release job is not limited to a pushed v* tag")
 	}
 
 	// the dry run checks the config and builds the snapshot, publishing nothing, with no secret
-	if !regexp.MustCompile(`(?m)^\s*run: goreleaser check$`).MatchString(dry) {
-		t.Error("the dry-run job does not run goreleaser check")
+	// (make release-check: goreleaser check, the snapshot build, the checksum and tarball checks)
+	if !regexp.MustCompile(`(?m)^\s*run: make release-check$`).MatchString(dry) {
+		t.Error("the dry-run job does not run make release-check")
 	}
-	if !regexp.MustCompile(`(?m)^\s*run: goreleaser release --snapshot --clean --skip=publish$`).MatchString(dry) {
-		t.Error("the dry-run job does not run goreleaser release --snapshot --clean --skip=publish")
+	if !regexp.MustCompile(`(?m)^\s*run: make vuln$`).MatchString(vuln) {
+		t.Error("the vuln job does not run make vuln")
 	}
-	if strings.Contains(dry, "secrets.") || strings.Contains(dry, "permissions:") {
-		t.Error("the dry-run job uses a secret or widens its permissions")
+	for name, j := range map[string]string{"dry-run": dry, "vuln": vuln} {
+		if strings.Contains(j, "secrets.") || strings.Contains(j, "permissions:") {
+			t.Errorf("the %s job uses a secret or widens its permissions", name)
+		}
 	}
 
 	// the release: full history, the job's own token, no snapshot, no skipped publish
@@ -240,7 +247,7 @@ func TestREL4_ReleaseWorkflowUploadsADraftWithTheJobToken(t *testing.T) {
 	// both jobs: credentials not persisted, the toolchain and tools ci.yml uses
 	ci := string(must(os.ReadFile("../.github/workflows/ci.yml")))
 	goVer := regexp.MustCompile(`(?m)^\s*go-version: "[^"]+"$`).FindString(ci)
-	for name, j := range map[string]string{"dry-run": dry, "release": rel} {
+	for name, j := range map[string]string{"dry-run": dry, "vuln": vuln, "release": rel} {
 		if c, p := strings.Count(j, "uses: actions/checkout@"), strings.Count(j, "persist-credentials: false"); c != 1 || p != 1 {
 			t.Errorf("%s: %d checkouts, %d persist-credentials: false", name, c, p)
 		}

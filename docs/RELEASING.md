@@ -50,10 +50,10 @@ upload a release. Most of its jobs are one `make` command that also runs locally
 itself is not used in CI), and the tool install (`make tools-ci`, versions pinned) is retried up to
 three times, 20 seconds apart, in both workflows.
 `.github/workflows/release.yml` runs the release gates of steps 2 and 3 as hosted jobs, on pull requests, in the
-merge queue and on pushes to `main`: the `dry-run` job (the dry run runs in the merge queue too) runs
+merge queue and on pushes to `main`: the dry run runs in the merge queue as the `dry-run` job:
 `make release-check` (`goreleaser check`, the snapshot build that uploads nothing, `sha256sum -c` over
 `checksums.txt` and the tarball and binary checks), and the `vuln` job runs `make vuln`. The hosted run at the
-release sha on `main` is the gate for both: step 4 needs that run green for the sha to release. `vuln` is
+release sha on `main` is the gate for both: step 4 needs that run green for the sha to release, except that a red `vuln` run is acceptable only when every finding is listed as an exception in the release notes (step 3). `vuln` is
 advisory on a pull request (`continue-on-error`: a new advisory against code a PR did not touch must not block
 every PR) and strict in the merge queue and on `main`; only `dry-run` is a required check, and `vuln` is not
 in the ruleset. The same workflow also runs, on a pushed
