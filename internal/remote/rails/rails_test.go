@@ -239,14 +239,15 @@ func TestLegacyReservationLineAndLaunchLock(t *testing.T) {
 }
 
 // legacyCheckJob is a job whose Check reaches the legacy launch lock: its own accounting dir,
-// a short scaled launch_wait, and a [compat] legacy dir (nil legacy: no [compat]).
+// a launch_wait no test waits out (every lock it takes is free, so it is taken at once; the busy
+// case sets its own short real wait), and a [compat] legacy dir (empty legacy: no [compat]).
 func legacyCheckJob(t *testing.T, legacy, typ string) (*remote.Job, string) {
 	t.Helper()
 	acct := t.TempDir()
 	if err := os.Chmod(acct, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	eff := &config.Effective{Test: &config.Test{AccountingDir: acct, TimeScale: 0.05}}
+	eff := &config.Effective{Test: &config.Test{AccountingDir: acct}}
 	if legacy != "" {
 		eff.Compat = &config.Compat{LegacyDir: legacy}
 	}
@@ -292,6 +293,7 @@ func TestLegacyLaunchLockBusyRefusesTheLaunch(t *testing.T) {
 	}
 	defer other.Unlock()
 	j, dir := legacyCheckJob(t, legacy, "runpod")
+	j.Core.LaunchWait = 50 * time.Millisecond // the lock stays held, so Check waits this out and refuses
 	_, err = Check(context.Background(), j)
 	assertRefusedBeforeLaunch(t, j, dir, legacy, err)
 }
