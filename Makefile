@@ -159,9 +159,9 @@ release-check:
 tools-ci:
 	$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 	$(GO) install github.com/goreleaser/goreleaser/v2@v2.18.3
+	$(GO) install golang.org/x/vuln/cmd/govulncheck@v1.8.0
 
 tools: tools-ci
-	$(GO) install golang.org/x/vuln/cmd/govulncheck@v1.8.0
 	$(GO) install github.com/zricethezav/gitleaks/v8@v8.30.1
 
 # Optional, not part of ci or the release builds: the Sprites probe tool (a live probe), built with its

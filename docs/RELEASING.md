@@ -49,9 +49,15 @@ upload a release. Most of its jobs are one `make` command that also runs locally
 `setup-go` is given the same Go version as the image pinned in `scripts/dev.sh` (`scripts/dev.sh`
 itself is not used in CI), and the tool install (`make tools-ci`, versions pinned) is retried up to
 three times, 20 seconds apart, in both workflows.
-`.github/workflows/release.yml` does: on pull requests a dry run (the dry run runs in the merge queue too, as the `dry-run` job: `goreleaser check`, then
-`goreleaser release --snapshot --clean --skip=publish`, which uploads nothing), and on a pushed
-`v*` tag the release itself (steps 5 and 6). Its token is read-only except in the release job,
+`.github/workflows/release.yml` runs the release gates of steps 2 and 3 as hosted jobs, on pull requests, in the
+merge queue and on pushes to `main`: the `dry-run` job (the dry run runs in the merge queue too) runs
+`make release-check` (`goreleaser check`, the snapshot build that uploads nothing, `sha256sum -c` over
+`checksums.txt` and the tarball and binary checks), and the `vuln` job runs `make vuln`. The hosted run at the
+release sha on `main` is the gate for both: step 4 needs that run green for the sha to release. `vuln` is
+advisory on a pull request (`continue-on-error`: a new advisory against code a PR did not touch must not block
+every PR) and strict in the merge queue and on `main`; only `dry-run` is a required check, and `vuln` is not
+in the ruleset. The same workflow also runs, on a pushed
+`v*` tag, the release itself (steps 5 and 6). Its token is read-only except in the release job,
 which alone has `contents: write`. The README badges point at the ci workflow,
 the latest GitHub release, pkg.go.dev and Go Report
 Card. There is no coverage badge: it needs a coverage service.
@@ -60,12 +66,14 @@ Card. There is no coverage badge: it needs a coverage service.
 
 1. Update `config.BuiltinKnownHosts` if the forge's published SSH host keys changed: check the
    three fingerprints against the forge's documentation page.
-2. `scripts/dev.sh make ci && scripts/dev.sh make release-check`. The second command builds
+2. `scripts/dev.sh make ci && scripts/dev.sh make release-check` (the `dry-run` job runs the second command hosted
+   too; its run at the release sha on `main` is the gate). The second command builds
    the snapshot (nothing is uploaded), runs `goreleaser check`, verifies every line of `checksums.txt` with
    `sha256sum -c` (the eight assets: the linux and darwin tarballs and bare binaries, amd64 and
    arm64) and checks that the tarballs hold `bitc` and the bare binaries are executable.
-3. `scripts/dev.sh make vuln` must be clean. This is the release gate (it is advisory
-   during development). Otherwise list each finding in the release notes as a documented exception: the
+3. `scripts/dev.sh make vuln` must be clean (the `vuln` job runs it hosted; its push-to-`main` run at the release
+   sha is strict). This is the release gate (it is advisory
+   during development, and on pull requests). Otherwise list each finding in the release notes as a documented exception: the
    finding id and either why it does not reach bitc or the planned bump.
 4. Get the owner's OK on the exact commit SHA to release (`git rev-parse HEAD`). Only then tag
    that commit (`git tag -s v<x.y.z> <sha>`, or `git tag -a`) and push the tag.

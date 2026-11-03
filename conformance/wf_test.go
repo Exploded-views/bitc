@@ -457,7 +457,7 @@ func TestWF7_ShardCompletenessRunsInLint(t *testing.T) {
 // download); nothing else is retried.
 func TestWF7_ToolInstallRetriesBoundedly(t *testing.T) {
 	re := regexp.MustCompile(`^\s*(run: )?sh scripts/retry\.sh ([0-9]+) ([0-9]+) make tools-ci$`)
-	for f, jobs := range map[string][]string{"ci.yml": {"lint", "build"}, "release.yml": {"dry-run", "release"}} {
+	for f, jobs := range map[string][]string{"ci.yml": {"lint", "build"}, "release.yml": {"dry-run", "vuln", "release"}} {
 		for _, j := range jobs {
 			n := 0
 			for _, l := range strings.Split(wfJob(t, f, j), "\n") {
@@ -559,7 +559,7 @@ func TestWF8_ReleaseGatesRunHosted(t *testing.T) {
 		if !regexp.MustCompile(`(?m)^\s+(run: )?sh scripts/retry\.sh [0-9]+ [0-9]+ make tools-ci$`).MatchString(b) {
 			t.Errorf("release.yml %s: does not install the pinned tools with make tools-ci", job)
 		}
-		if !strings.Contains(b, "github.event_name == 'push'") || !strings.Contains(b, "refs/heads/main") {
+		if !strings.Contains(b, "github.event_name != 'push' || github.ref == 'refs/heads/main'") {
 			t.Errorf("release.yml %s: does not run on a push to main:\n%s", job, b)
 		}
 		if !strings.Contains(b, "persist-credentials: false") || !regexp.MustCompile(`(?m)^\s+timeout-minutes: [0-9]+$`).MatchString(b) {
