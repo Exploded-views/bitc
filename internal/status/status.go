@@ -151,7 +151,8 @@ func Snapshot(e *config.Effective, l state.Layout, only []string) Report {
 		}
 		for i, q := range p.Waiters {
 			if i == 0 || q.WaitedS > *p.OldestWaitS {
-				p.OldestWaitS = &p.Waiters[i].WaitedS
+				v := q.WaitedS
+				p.OldestWaitS = &v
 			}
 		}
 		p.Holders = append(p.Holders, legacyHolders(e.Compat, n, p)...)

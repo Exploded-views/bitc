@@ -4,15 +4,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/Exploded-views/bitc/conformance/harness"
 )
 
-// t6Poll is slow on purpose: the queued waiter W sleeps through most of it, so a newcomer that
-// arrives right after a release has a real window in which to jump the queue.
-var t6Poll = []string{"BITC_POLL=5s"}
+// t6Poll keeps the polling waiters quick on a platform without a wake-up (macOS). The window the
+// test needs does not come from the poll: W is stopped (t6Stop), whatever the platform's waker.
+var t6Poll = []string{"BITC_POLL=1s"}
 
 // t6Log runs `echo name >> log`.
 const t6Log = `echo "$1" >> "$2"`
@@ -28,15 +29,16 @@ func TestT6_NewcomerAfterReleaseDoesNotJumpTheQueue(t *testing.T) {
 	hold := h.Hold(t6Poll, "lint")
 	log := filepath.Join(h.Root, "t6-order")
 	w := h.StartWith(t6Poll, "run", "lint", "--", "sh", "-c", t6Log, "_", "W", log)
-	h.Until(func() bool { return len(tickets(h, "lint")) == 2 }, 10*time.Second)
+	t6Stop(t, h, w, 2)
 	hold.Release()
 	ps := []*harness.Proc{w}
 	for i, name := range []string{"N1", "N2", "N3"} {
-		n := h.StartWith(t6Poll, "run", "lint", "--", "sh", "-c", t6Log, "_", name, log)
+		n := h.StartWith(t6Poll, "run", "--wait", "30s", "lint", "--", "sh", "-c", t6Log, "_", name, log)
 		ps = append(ps, n)
 		h.Until(func() bool { return len(tickets(h, "lint")) >= i+2 || n.Exited() }, 10*time.Second)
 	}
 	t6AssertWindow(t, h, log)
+	t6Cont(w)
 	for _, p := range ps {
 		if r := p.Wait(); r.Code != 0 {
 			t.Fatalf("%+v", r)
@@ -53,13 +55,14 @@ func TestT6_OneSlotImpatientNewcomersStarveWhileAWaiterIsQueued(t *testing.T) {
 	hold := h.Hold(t6Poll, "lint")
 	log, gate := filepath.Join(h.Root, "t6-strict"), filepath.Join(h.Root, "t6-gate")
 	w := h.StartWith(t6Poll, "run", "lint", "--", "sh", "-c", t6Gated, "_", "W", log, gate)
-	h.Until(func() bool { return len(tickets(h, "lint")) == 2 }, 10*time.Second)
+	t6Stop(t, h, w, 2)
 	hold.Release()
 	for _, name := range []string{"N1", "N2", "N3"} {
 		if r := h.RunWith(t6Poll, "run", "--wait", "0s", "lint", "--", "sh", "-c", t6Log, "_", name, log); r.Code != 75 || !strings.Contains(r.Stderr, "(queue;") {
 			t.Errorf("%s: want STARVED (75) for the queue, got %+v", name, r)
 		}
 	}
+	t6Cont(w)
 	t6Open(t, gate)
 	if r := w.Wait(); r.Code != 0 {
 		t.Fatalf("%+v", r)
@@ -76,13 +79,14 @@ func TestT6_TwoSlotsFreedSlotGoesToTheWaiter(t *testing.T) {
 	h2 := h.Hold(t6Poll, "lint")
 	log, gate := filepath.Join(h.Root, "t6-two"), filepath.Join(h.Root, "t6-two-gate")
 	w := h.StartWith(t6Poll, "run", "lint", "--", "sh", "-c", t6Gated, "_", "W", log, gate)
-	h.Until(func() bool { return len(tickets(h, "lint")) == 3 }, 10*time.Second)
+	t6Stop(t, h, w, 3)
 	h1.Release()
 	for _, name := range []string{"N1", "N2", "N3"} {
 		if r := h.RunWith(t6Poll, "run", "--wait", "0s", "lint", "--", "sh", "-c", t6Log, "_", name, log); r.Code != 75 || !strings.Contains(r.Stderr, "(queue;") {
 			t.Errorf("%s: want STARVED (75) for the queue, got %+v", name, r)
 		}
 	}
+	t6Cont(w)
 	t6Open(t, gate)
 	if r := w.Wait(); r.Code != 0 {
 		t.Fatalf("%+v", r)
@@ -92,6 +96,26 @@ func TestT6_TwoSlotsFreedSlotGoesToTheWaiter(t *testing.T) {
 		t.Fatalf("ran %s, want only W", got)
 	}
 }
+
+// t6Stop waits until W's ticket (the nth) is waiting, then stops W's bitc. A stopped waiter keeps
+// its ticket lock, so it stays the oldest live waiter while it cannot attempt: the window in which a
+// newcomer would jump the queue, on every platform and whatever the poll or the waker. The cleanup
+// continues W, so a failing test never leaves a stopped process.
+func t6Stop(t *testing.T, h *harness.H, w *harness.Proc, nth int) {
+	t.Helper()
+	h.Until(func() bool {
+		ts := tickets(h, "lint")
+		if len(ts) != nth {
+			return false
+		}
+		b, err := os.ReadFile(filepath.Join(h.State, "pools", "lint", "tickets", ts[nth-1]))
+		return err == nil && strings.Contains(strings.ReplaceAll(string(b), " ", ""), `"state":"waiting"`)
+	}, 10*time.Second)
+	w.Signal(syscall.SIGSTOP)
+	t.Cleanup(func() { t6Cont(w) })
+}
+
+func t6Cont(w *harness.Proc) { w.Signal(syscall.SIGCONT) }
 
 func t6Open(t *testing.T, gate string) {
 	t.Helper()
