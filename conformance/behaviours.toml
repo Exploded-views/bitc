@@ -29,6 +29,7 @@ rows = [
   { id = "T3", task = "1.3", ported = "TestT3_PollDefaultEnvOverrideAndDeadline", desc = "the poll interval defaults to 5s, BITC_POLL overrides it (>= 100ms), and the deadline is start + wait" },
   { id = "T4", task = "1.3", ported = "TestT4_WaitZeroIsOneAttempt", desc = "wait = \"0s\" makes exactly one attempt" },
   { id = "T5", task = "1.3", changed = "starved-wording", test = "TestT5_FIFOWithinClass", desc = "waiters of one class are admitted in arrival order" },
+  { id = "T6", task = "1.3", ported = "TestT6_NewcomerAfterReleaseDoesNotJumpTheQueue", desc = "characterization guard (passes on the code that added it): a newcomer arriving right after a release does not jump a queued waiter; with --wait 0s it is STARVED while the waiter is queued, in a one-slot and a two-slot pool" },
 
   # R: priority lane
   { id = "R1", task = "1.3", ported = "TestR1_LiteralSubstringNeverGlob", desc = "a caller is high priority when a high_cwd_contains entry is a literal substring of its logical or canonical cwd (never a glob)" },
