@@ -9,6 +9,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `bitc status` shows how long runs have waited. A pool with waiters prints
+  `lint: 1/1 slots held, 3 waiting (wait 3h, oldest 1h22m)`, the pool's configured wait and its
+  longest waiter's age, and each waiter line ends `since <ts> (<age>)`. `status --json` adds per
+  pool `wait` (the configured wait) and `oldest_wait_s` (only with waiters), and per waiter
+  `waited_s`, all optional in [the schema](docs/status.schema.json). Ages are measured to the
+  report's own `time`.
+- Conformance test T6 guards first-in-first-out admission when newcomers arrive after a release: a
+  newcomer does not jump a queued waiter, and `--wait 0s` newcomers exit 75 while one is queued.
 - A per-run time limit for local runs. The host key `pools.<p>.timeout` (a duration such as `30m`
   or `1h30m`; unset means no limit; `0s` is a config error, 78) and `bitc run --timeout DUR`. The
   flag can only narrow: the effective limit is the shorter of the two, and a `--timeout` longer
