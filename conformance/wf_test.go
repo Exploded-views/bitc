@@ -457,7 +457,7 @@ func TestWF7_ShardCompletenessRunsInLint(t *testing.T) {
 // download); nothing else is retried.
 func TestWF7_ToolInstallRetriesBoundedly(t *testing.T) {
 	re := regexp.MustCompile(`^\s*(run: )?sh scripts/retry\.sh ([0-9]+) ([0-9]+) make tools-ci$`)
-	for f, jobs := range map[string][]string{"ci.yml": {"lint", "build"}, "release.yml": {"dry-run", "release"}} {
+	for f, jobs := range map[string][]string{"ci.yml": {"lint", "build"}, "release.yml": {"dry-run", "vuln", "release"}} {
 		for _, j := range jobs {
 			n := 0
 			for _, l := range strings.Split(wfJob(t, f, j), "\n") {
@@ -533,5 +533,65 @@ func TestWF7_ReleasingDocNamesTheJobs(t *testing.T) {
 	}
 	if !strings.Contains(doc, "merge queue") || !strings.Contains(doc, "merge_group") {
 		t.Error("docs/RELEASING.md does not say the merge queue runs the same jobs (merge_group)")
+	}
+}
+
+// WF8: the release gates (docs/RELEASING.md steps 2-3) run as hosted jobs, so the hosted run at the
+// release sha on main is their gate. `dry-run` (a required check, so the name is fixed) runs
+// make release-check; `vuln` runs make vuln. Both run on pull requests, the merge queue and pushes
+// to main, with the pinned tools.
+func TestWF8_ReleaseGatesRunHosted(t *testing.T) {
+	text := string(must(os.ReadFile("../.github/workflows/release.yml")))
+	on := text[:strings.Index(text, "\njobs:")]
+	for _, trig := range []string{`(?m)^  pull_request:`, `(?m)^  merge_group:`, `(?m)^  push:`} {
+		if !regexp.MustCompile(trig).MatchString(on) {
+			t.Errorf("release.yml: no trigger matching %s", trig)
+		}
+	}
+	if !regexp.MustCompile(`(?m)^    branches: \[main\]$`).MatchString(on) {
+		t.Error("release.yml: push does not run on branches: [main]")
+	}
+	for job, cmd := range map[string]string{"dry-run": "make release-check", "vuln": "make vuln"} {
+		b := wfJob(t, "release.yml", job)
+		if !regexp.MustCompile(`(?m)^\s+run: ` + cmd + `$`).MatchString(b) {
+			t.Errorf("release.yml %s: does not run `%s`:\n%s", job, cmd, b)
+		}
+		if !regexp.MustCompile(`(?m)^\s+(run: )?sh scripts/retry\.sh [0-9]+ [0-9]+ make tools-ci$`).MatchString(b) {
+			t.Errorf("release.yml %s: does not install the pinned tools with make tools-ci", job)
+		}
+		if !strings.Contains(b, "github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main')") {
+			t.Errorf("release.yml %s: does not run on a push to main:\n%s", job, b)
+		}
+		if !strings.Contains(b, "persist-credentials: false") || !regexp.MustCompile(`(?m)^\s+timeout-minutes: [0-9]+$`).MatchString(b) {
+			t.Errorf("release.yml %s: missing persist-credentials: false or a timeout", job)
+		}
+	}
+	// a known finding must not block every pull request: advisory there, strict on push and merge_group
+	if v := wfJob(t, "release.yml", "vuln"); !strings.Contains(v, "continue-on-error: ${{ github.event_name == 'pull_request' }}") {
+		t.Errorf("release.yml vuln: not advisory on pull_request only:\n%s", v)
+	}
+	if !strings.Contains(text, "group: release-${{ github.ref }}-${{ github.event_name == 'push' && github.ref_type == 'branch' && github.sha || '' }}") {
+		t.Error("release.yml: a push to main shares a concurrency group with other pushes, so a pending run can be cancelled")
+	}
+	// the tool pins: version-pinned, never latest
+	mk := string(must(os.ReadFile("../Makefile")))
+	ci := mk[strings.Index(mk, "\ntools-ci:"):]
+	ci = ci[:strings.Index(ci, "\n\n")]
+	for _, tool := range []string{"golangci-lint", "goreleaser", "govulncheck"} {
+		if !regexp.MustCompile(`(?m)^\t\$\(GO\) install \S*` + tool + `\S*@v[0-9]+\.[0-9]+\.[0-9]+$`).MatchString(ci) {
+			t.Errorf("Makefile tools-ci does not install %s at a pinned version:\n%s", tool, ci)
+		}
+	}
+}
+
+func TestWF8_ReleasingDocSaysTheGatesRunHosted(t *testing.T) {
+	doc := string(must(os.ReadFile("../docs/RELEASING.md")))
+	for _, want := range []string{"`vuln`", "release-check", "release sha", "release.yml"} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("docs/RELEASING.md does not mention %q", want)
+		}
+	}
+	if !strings.Contains(doc, "hosted") {
+		t.Error("docs/RELEASING.md does not say the release gates run hosted")
 	}
 }

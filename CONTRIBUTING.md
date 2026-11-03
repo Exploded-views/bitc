@@ -16,7 +16,7 @@ You need Linux. Either install Go (the version in `go.mod` or newer, plus `gcc` 
 run the Makefile directly, or use the pinned toolchain container, which needs only `docker`:
 
 ```sh
-make tools-ci               # once: golangci-lint and goreleaser, at the pinned versions
+make tools-ci               # once: golangci-lint, goreleaser and govulncheck, at the pinned versions
 make ci                     # lint, unit tests, coverage floors, conformance suite (also with -race), examples, link check
 
 scripts/dev.sh make ci      # the same, inside one pinned toolchain image; nothing else to install
@@ -24,7 +24,7 @@ scripts/dev.sh make ci      # the same, inside one pinned toolchain image; nothi
 
 Smaller runs while you work: `go test ./internal/<package>/` (or `scripts/dev.sh go test ...`) for
 one package. `make ci` must pass before a pull request is ready; CI runs the same target.
-`make vuln` (govulncheck) is run by the maintainers at checkpoints and before a release.
+`make vuln` (govulncheck) is run by the maintainers at checkpoints and before a release, and hosted by the `vuln` job (advisory on a pull request).
 
 Tests never touch the network beyond loopback and never call a real provider.
 
