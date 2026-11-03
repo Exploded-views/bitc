@@ -179,6 +179,7 @@ rows = [
   { id = "ST8", task = "1.9", ported = "TestST8_AdminArgumentsAreChecked", desc = "status takes [--json] [POOL...], doctor [--remote], sweep's flags; anything else is 64 with a usage line" },
   { id = "ST9", task = "1.9", ported = "TestST9_StatusRedactsSecretsInArgvCwdAndReason", desc = "status, status --json and doctor redact configured credentials in holders' argv, cwd, job and reasons (spec 10)" },
   { id = "ST10", task = "2.7", ported = "TestST10_SweepRemovesStaleStagingDirs", desc = "sweep removes artifact staging dirs (<wt>/.bitc/staging/<job>) older than 6h in the current work tree and in the work trees of remote jobs in history; --dry-run only reports them" },
+  { id = "ST11", task = "1.9", ported = "TestST11_StatusShowsWaitAges", desc = "status shows the pool's configured wait and the oldest waiter's age, and each waiter's age, computed from the report's own time; status --json has wait, oldest_wait_s and waited_s" },
 
   # Q: remote dispatch and opt-in
   { id = "Q1", task = "2.1a", ported = "TestQ1_LocalByDefaultEnvCannotEnable", desc = "every pool is local by default; the environment cannot enable a provider" },
