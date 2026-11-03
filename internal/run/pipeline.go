@@ -125,7 +125,7 @@ func Prepare(inv Invocation, red *redact.Set) (*Prepared, error) {
 	for _, s := range eff.Secrets {
 		red.Add(s)
 	}
-	if err := eff.ApplyRunFlags(config.RunFlags{Wait: ra.Wait, Timeout: ra.Timeout, Local: ra.Local, Provider: ra.Provider, Artifacts: ra.Artifacts}); err != nil {
+	if err := eff.ApplyRunFlags(config.RunFlags{Wait: ra.Wait, Timeout: ra.Timeout, Local: ra.Local, Provider: ra.Provider, Artifacts: ra.Artifacts, Units: ra.Units}); err != nil {
 		return nil, err
 	}
 	pool, err := eff.Resolve(ra.Pool)
@@ -348,7 +348,7 @@ func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Wri
 		return out
 	}
 	waitMS := hold.WaitMS
-	hist(state.Event{Event: "start", Slot: hold.Slot, Nested: hold.Nested, WaitMS: &waitMS})
+	hist(state.Event{Event: "start", Slot: hold.Slot, Units: hold.Counts, Nested: hold.Nested, WaitMS: &waitMS})
 	t0 := time.Now()
 	res, err := Exec(parent, ExecSpec{
 		Argv: argv, Env: env, Dir: inv.Cwd, Stdin: inv.Stdin, Stdout: inv.Stdout, Stderr: inv.Stderr,
@@ -377,7 +377,7 @@ func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Wri
 	case code != 0:
 		outcome = "command-failed"
 	}
-	hist(state.Event{Event: "end", Slot: hold.Slot, Nested: hold.Nested, RunMS: &runMS, Exit: &code, Outcome: outcome})
+	hist(state.Event{Event: "end", Slot: hold.Slot, Units: hold.Counts, Nested: hold.Nested, RunMS: &runMS, Exit: &code, Outcome: outcome})
 	postEnv := append(append([]string{}, env...), "BITC_EXIT="+strconv.Itoa(code))
 	// A signal during post_run cuts it short (the hook's group is killed); the command's own
 	// code and result still come back. A fresh context: a signal that ended the command must
@@ -398,7 +398,7 @@ func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Wri
 		origin = "bitc"
 	}
 	return Outcome{Code: code, Result: Result{Origin: origin, Outcome: outcome, ExitCode: code, Pool: pool.Name,
-		Slot: hold.Slot, Provider: "local", Job: p.Job, HoldStarted: hold.Started.UTC().Format(time.RFC3339Nano),
+		Slot: hold.Slot, Units: hold.Counts, Provider: "local", Job: p.Job, HoldStarted: hold.Started.UTC().Format(time.RFC3339Nano),
 		WaitMS: hold.WaitMS, RunMS: runMS, Head: head, TreeClean: treeClean, Cwd: eff.Cwd}}
 }
 

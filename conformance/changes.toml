@@ -8,7 +8,7 @@ changes = [
   { key = "detached-logs", anchor = "Detached logs live in the state dir unless --log", text = "Detached logs live in the state dir unless --log; an uncreatable log exits 64; pre_run of a detached job runs after started (12.1)" },
   { key = "remote-text", anchor = "Remote text: notes are", text = "Remote notes are bitc: <provider>: ...; the launch line names job and size key; STARVED is (<provider>: <why>) (12.1)" },
   { key = "artifacts-subset", anchor = "BITC_ARTIFACTS may only select declared paths", text = "BITC_ARTIFACTS may only select declared paths (12.1)" },
-  { key = "starved-wording", anchor = "admission is FIFO per class", text = "STARVED reasons for groups and memory use the spec 4 wording; admission is FIFO per class (12.1)" },
+  { key = "starved-wording", anchor = "admission is FIFO per class", text = "STARVED reasons (slots, queue, groups, memory) use the spec 4 wording and the slot, queue and group lines name the wait; admission is FIFO per class (12.1)" },
   { key = "stragglers", anchor = "Processes left in a hold's group are killed", text = "Processes left in a hold's group are killed at its end (12.1)" },
   { key = "sweep-owner", anchor = "Sweep tears down only resources with this install's owner tag", text = "Sweep tears down only resources with this install's owner tag; others need --foreign (12.1)" },
   { key = "sampler-dropped", anchor = "The host sampler is dropped", text = "The host sampler is dropped (12.1)" },

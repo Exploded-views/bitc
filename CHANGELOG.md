@@ -23,6 +23,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   work tree's `git rev-parse HEAD`, taken when the hold starts) and `tree_clean` (true when
   `git status --porcelain` is empty, ignored files excluded); `result.json` also carries `cwd`, the
   run's working directory. Outside a git work tree `head` is empty and `tree_clean` is omitted.
+- `bitc run --units <group>=<k>` (repeatable, one per group) replaces the pool's unit count of a
+  group for that run only. The group must be one the pool lists, `k` must be 1 to the group's
+  units, and a pool may cap it with the new host-only key `pools.<pool>.groups_max.<group>`. A bad
+  `--units` exits 64 with one line naming the group and the limit, a bad `groups_max` exits 78
+  naming the key, and a remote-only pool refuses the flag (64). Admission is unchanged: units are
+  all or none, first in first out by ticket time, and a running hold is never preempted.
+- `status` (text and `--json`), `result.json` and the history `start` and `end` lines now show the
+  units held per group (`"units": {"cpu": 7}`); a waiting ticket shows the units it asks for.
+- The 75 line (and `reason` in `result.json` and the history `starved` line) now says what the run
+  wanted and what expired: `STARVED heavy (group cpu busy: wanted 2 of 8 units; waited 1d)`,
+  `STARVED gate (slots busy; waited 3h)`, `STARVED lint (queue; waited 10m)`. The wait is the
+  pool's, after `--wait`, in the config's duration form. Before, a slot wait printed a bare
+  `STARVED <pool>` and a group wait named no units or wait. Other reasons are unchanged.
+- `docs/local-heavy-pool.md`: a recipe for one machine with a `cpu` group and gate, heavy, light
+  and bench pools.
 
 ### Fixed
 

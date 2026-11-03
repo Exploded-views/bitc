@@ -67,7 +67,8 @@ Hidden: `bitc __supervise <job>` (detached supervisor), `bitc __agent` (remote s
 ### 3.1 `run`
 
 ```
-bitc run [--detach] [--name N] [--log PATH] [--wait DUR] [--timeout DUR] [--local | --provider P]
+bitc run [--detach] [--name N] [--log PATH] [--wait DUR] [--timeout DUR] [--units G=K]...
+         [--local | --provider P]
          [--artifacts a,b] [--result PATH] <pool> [--] <cmd> [args...]
 ```
 
@@ -80,6 +81,17 @@ bitc run [--detach] [--name N] [--log PATH] [--wait DUR] [--timeout DUR] [--loca
   `--provider P`: P must be a remote provider in the pool's effective list (else 64); the list
   becomes `[P]` plus `local` if listed; eligibility, cap and breaker still apply. `--artifacts`: a
   subset of the declared ones.
+- `--units G=K` (repeatable, one per group): replaces the pool's unit count of group `G` for this run
+  only. `G` must be a group in the pool's `groups`; `K` is an integer `1..N`, `N` = `groups.<G>.units`,
+  and at most the pool's `groups_max.<G>` if set (5.3). A `--units` value that is malformed or
+  repeated, a `K` of 0 or above `N` or `groups_max`, or a group the pool does not list is 64 with a
+  one-line message (no usage text) naming the form or the group and the limit (`k must be 1..N`); a
+  missing or empty value gets the usage error every flag gets. A pool whose effective providers
+  lack `local` refuses it (64): units are local group admission. On a pool with `local` and a
+  remote provider it is accepted and has no effect when the run goes remote. Admission is unchanged
+  (6.2): the ticket asks for `K` units all or none, in ticket-time order, and nothing running is
+  preempted. `status`, `result.json` and the history `start` and `end` lines show the units held
+  per group; a detached run keeps the flag.
 - `--detach`: runs pipeline steps 1–4, opens the log and writes `spec.json` (any failure:
   64/69/75/78, empty stdout; an uncreatable log is 64); starts a supervisor in a new session; prints
   exactly `started <name> pid <pid> log <path>` (absolute). Everything from step 6 on, `pre_run`
@@ -144,20 +156,21 @@ retrying agent forever. 75 means only a genuine wait-and-retry (starved, lost, p
 `result.json`: `{origin: "bitc"|"command", outcome:
 "ok"|"command-failed"|"timed-out"|"starved"|"refused"|"config"|"unavailable"|"interrupted"|"lost"|
 "internal",
-exit_code, reason, pool, slot, provider, job, generation, hold_started, wait_ms, run_ms, head,
+exit_code, reason, pool, slot, provider, job, generation, hold_started, units, wait_ms, run_ms, head,
 tree_clean, cwd}`; for a local run that held a slot, `head` is `git rev-parse HEAD` of the work
 tree containing the run's directory and `tree_clean` is true when `git status --porcelain` was empty
 (ignored files excluded), both taken when the hold started, and `cwd` is the run's working
-directory; outside a git work tree `head` is empty and `tree_clean` is omitted. The history `start`
-and `end` lines carry the same `head` and `tree_clean` (9). Every
+directory; outside a git work tree `head` is empty and `tree_clean` is omitted. `units` is the group
+units held, `{"cpu": 7}`, absent when the pool holds none. The history `start`
+and `end` lines carry the same `head` and `tree_clean` (9), and `units`. Every
 detached job writes it in its record, a foreground run only with `--result PATH`.
 
 stderr lines (stdout belongs to the command):
 
 | Line | When |
 | --- | --- |
-| `STARVED <pool>` | 75 from admission: every slot busy, no one ahead |
-| `STARVED <pool> (<reason>)` | 75 from admission otherwise: `queue`, `group <g> busy`, `memory: <n> MiB available, floor <f> MiB`, `priority lane`, `nested child busy`, `legacy pool: <what> busy`, `pre_run: <why>`, `env hook: <why>` |
+| `STARVED <pool> (slots busy; waited <wait>)` | 75 from admission: every slot busy, no one ahead; `<wait>` is the pool's wait as configured, after `--wait` (config duration form: `1d`, `1h30m`, `200ms`; unscaled under `[test] time_scale`) |
+| `STARVED <pool> (<reason>)` | 75 from admission otherwise: `queue; waited <wait>`, `group <g> busy: wanted <k> of <N> units; waited <wait>` (`k` the units this run asked for, `--units` applied; `N` the group's size), `memory: <n> MiB available, floor <f> MiB`, `priority lane`, `nested child busy`, `legacy pool: <what> busy`, `pre_run: <why>`, `env hook: <why>` |
 | `STARVED <pool> (<provider>: <why>)` | 75 from a remote job after it started; `<why>` names the resource, e.g. `pod <id> timed out after 61 min` |
 | `bitc: <provider>: running <pool> locally: <why>` | remote preflight or launch fell back (only when `local` is the next provider in the walk, 8.2) |
 | `bitc: <provider>: <pool>: trying <next>: <why>` | the same, when the next provider in the walk is remote (8.2); after a resource was discarded before attach `<why>` ends `; <id> torn down before attach`, or `; <id> left for sweep` when its teardown failed |
@@ -217,6 +230,7 @@ only (repo: 78). **narrowable**: others may only narrow it (widening: 78 in a fi
 | `[host]` except `state_dir`, `poll` | host | — | — |
 | `host.state_dir` / `host.poll` | host | `BITC_DIR`, `--state-dir` / `BITC_POLL` (≥ 100ms) | replaces |
 | `slots`, `memory`, `groups`, `groups.<g>.units`, `[priority]` | host | — | — |
+| `pools.<p>.groups_max.<g>` | host | `--units <g>=<k>` may not ask for more; `<g>` must be in the pool's `groups`, the value `1..groups.<g>.units` (else 78 naming the key) | — |
 | `[defaults] wait`, `pools.<p>.wait` | host, narrow=min | repo `wait`, `--wait` | minimum |
 | `pools.<p>.timeout` (a duration above 0; unset: no limit) | host, narrow=min | `--timeout` (a local run only) | minimum, unset counting as infinite |
 | `pools.<p>.providers` | host, narrow=exclude | repo `providers_exclude`, `BITC_PROVIDER=local`, `--local`, `--provider` | host order; removals only |
@@ -403,8 +417,12 @@ group, not a pool`.
    releases everything taken in the attempt.
 3. **Wait:** sleep `poll` and retry; inotify on the same `tickets/` dirs wakes it early (a hold
    ends by unlocking, then unlinking its ticket).
-4. **Deadline:** `start + wait` passed → `STARVED <pool>` with the last reason, 75. `wait = "0s"`
-   makes one attempt. Fairness: FIFO per class for slots, FIFO by ticket time for group units.
+4. **Deadline:** `start + wait` passed → `STARVED <pool> (<reason>)` with the last reason as the
+   stderr table words it, which `result.json` `reason` and the history `starved` line repeat, 75.
+   `wait = "0s"` makes one attempt. Fairness: FIFO per class for slots, FIFO by ticket time for group units. With
+   `--units` the count `k` of step 2 is the flag's; a waiting heavy ticket therefore blocks every
+   later ticket of the group (a light run that arrives after it waits too), and a running hold is
+   never preempted.
 
 ### 6.3 Environment
 
@@ -1496,7 +1514,9 @@ Each is a `changed` row in `behaviours.toml`; they are listed in 15.
 - Remote text: notes are `bitc: <provider>: ...` (legacy `runpod: ...`); the launch line names the
   job and size key (legacy: type and vCPU); STARVED is `(<provider>: <why>)`.
 - `BITC_ARTIFACTS` may only select declared paths (legacy replaced the list).
-- STARVED reasons for groups and memory use the 4 wording; admission is FIFO per class.
+- STARVED reasons (slots, queue, groups, memory) use the stderr-table wording (4), and the slot,
+  queue and group lines name the wait (legacy: a bare `STARVED <pool>` for a slot wait); admission
+  is FIFO per class.
 - Processes left in a hold's group are killed at its end (legacy left them running).
 - A create that left a resource (reaped by name after a failed create) is 75 and never falls back
   to local or retries; signals stay absorbed through all cleanup and cut the create-retry wait short.

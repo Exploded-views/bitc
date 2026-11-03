@@ -214,3 +214,20 @@ func TestLegacySlotLockIsTheAdmissionPath(t *testing.T) {
 		t.Fatalf("admission's slot lock is not at %s", rel)
 	}
 }
+
+func TestTextShowsUnitsHeldAndWanted(t *testing.T) {
+	r := Report{Pools: []Pool{{Name: "work", Slots: 4,
+		Holders: []Holder{{Job: "g", Slot: 1, Pid: 7, Argv: []string{"true"}, Since: "t", Units: map[string]int{"cpu": 3, "mem": 1}}},
+		Waiters: []Waiter{{Job: "h", Class: "normal", Pid: 8, Since: "t", Units: map[string]int{"cpu": 2}}}}}}
+	var out bytes.Buffer
+	r.Text(&out)
+	for _, want := range []string{"units cpu=3 mem=1", "units cpu=2"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("status text lacks %q:\n%s", want, out.String())
+		}
+	}
+	b, _ := json.Marshal(r)
+	if !strings.Contains(string(b), `"units":{"cpu":3,"mem":1}`) || !strings.Contains(string(b), `"units":{"cpu":2}`) {
+		t.Errorf("status --json lacks units: %s", b)
+	}
+}

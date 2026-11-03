@@ -18,7 +18,7 @@ start in time, bitc exits **75**, "try again later", and never pretends your com
 ```console
 $ bitc run heavy -- npm test               # waits for a free slot, then runs; exit code is npm's
 $ bitc run --wait 1s heavy -- npm test     # from another terminal, while the first still runs
-STARVED heavy
+STARVED heavy (slots busy; waited 1s)
 $ echo $?
 75
 ```
@@ -103,7 +103,7 @@ memory: 15350 MiB available (MemAvailable), floor 6144 MiB
 
 **3. See "try again later".** While one command holds the only slot, a second caller waits up to
 the pool's `wait` (10 minutes by default; `--wait` shortens it here), then gives up with
-`STARVED heavy` and exit 75:
+`STARVED heavy (slots busy; waited 1s)` and exit 75:
 
 <!-- doc-test -->
 ```sh
@@ -115,11 +115,11 @@ wait
 ```
 
 ```text
-STARVED heavy
+STARVED heavy (slots busy; waited 1s)
 exit 75
 heavy: 1/1 slots held, 0 waiting
   slot 1  19e3b439  pid 10745  since 2026-10-27T18:15:22Z  sleep 3
-  last STARVED: all slots busy at 2026-10-27T18:15:24.777Z
+  last STARVED: slots busy; waited 1s at 2026-10-27T18:15:24.777Z
 memory: 15354 MiB available (MemAvailable), floor 6144 MiB
 ```
 
@@ -263,6 +263,7 @@ for agents are in [docs/agent-guide.md](docs/agent-guide.md).
 | Read | For |
 | --- | --- |
 | [docs/agent-guide.md](docs/agent-guide.md) | the rules an AI agent follows when it runs commands through bitc |
+| [docs/local-heavy-pool.md](docs/local-heavy-pool.md) | one machine, four pools sharing its cores: gate, heavy, light, bench |
 | [docs/concepts.md](docs/concepts.md) | pools, slots, groups, tickets, nested holds, providers, state |
 | [docs/configuration.md](docs/configuration.md), [docs/config-reference.md](docs/config-reference.md) | the two config files, and every key with its class and default |
 | [docs/exit-codes.md](docs/exit-codes.md) | exit codes, stderr lines, `wait` outcomes, `result.json` |
