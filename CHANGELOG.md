@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.4] - 2026-11-04
 
 ### Added
 
@@ -47,6 +47,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `docs/local-heavy-pool.md`: a recipe for one machine with a `cpu` group and gate, heavy, light
   and bench pools.
 
+### Changed
+
+- CI runs in the merge queue (`merge_group`) and is split into named jobs; `make ci` is unchanged
+  locally.
+- The release workflow's `dry-run` job now runs `make release-check`, and a new `vuln` job runs
+  `make vuln`, on pull requests, in the merge queue and on a push to `main`, so the run at the
+  release sha is the release gate. `vuln` is advisory on pull requests. `make tools-ci` now also
+  installs govulncheck.
+
 ### Fixed
 
 - With `[compat]` set, a RunPod launch is now refused when the legacy launch lock
@@ -67,6 +76,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `set BITC_DIR (or --state-dir) to a local path (in a container, a tmpfs or a named volume)`; the
   accounting-dir message has no hint
   ([#25](https://github.com/Exploded-views/bitc/issues/25)).
+
+### Known issues
+
+- macOS builds still refuse every remote provider (78). macOS as a client to remote providers
+  ([#4](https://github.com/Exploded-views/bitc/issues/4),
+  [#26](https://github.com/Exploded-views/bitc/issues/26)) is planned for 0.1.5.
+- On Linux without a readable `/proc/locks`, `bitc status`, `bitc doctor` and
+  `bitc sweep --dry-run` still read pool slot holders with a brief try-lock, so for that moment a
+  concurrent admission can find a free slot busy
+  ([#24](https://github.com/Exploded-views/bitc/issues/24)); now planned for 0.1.5.
+- Sprites stays refused until the catch-all egress deny lands
+  ([#6](https://github.com/Exploded-views/bitc/issues/6)).
+- A run from a working directory in the high priority lane (`priority.high_cwd` or
+  `priority.high_cwd_contains`) can still starve normal runs in the same pool while high runs keep
+  overlapping; aging is planned for 0.1.5.
 
 ## [0.1.3] - 2026-11-02
 
