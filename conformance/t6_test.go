@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Exploded-views/bitc/conformance/harness"
+	"github.com/Exploded-views/bitc/internal/lock"
 )
 
 // t6Poll keeps the polling waiters quick on a platform without a wake-up (macOS). The window the
@@ -62,6 +63,7 @@ func TestT6_OneSlotImpatientNewcomersStarveWhileAWaiterIsQueued(t *testing.T) {
 			t.Errorf("%s: want STARVED (75) for the queue, got %+v", name, r)
 		}
 	}
+	t6AssertAdmitFree(t, h)
 	t6Cont(w)
 	t6Open(t, gate)
 	if r := w.Wait(); r.Code != 0 {
@@ -86,6 +88,7 @@ func TestT6_TwoSlotsFreedSlotGoesToTheWaiter(t *testing.T) {
 			t.Errorf("%s: want STARVED (75) for the queue, got %+v", name, r)
 		}
 	}
+	t6AssertAdmitFree(t, h)
 	t6Cont(w)
 	t6Open(t, gate)
 	if r := w.Wait(); r.Code != 0 {
@@ -111,8 +114,33 @@ func t6Stop(t *testing.T, h *harness.H, w *harness.Proc, nth int) {
 		b, err := os.ReadFile(filepath.Join(h.State, "pools", "lint", "tickets", ts[nth-1]))
 		return err == nil && strings.Contains(strings.ReplaceAll(string(b), " ", ""), `"state":"waiting"`)
 	}, 10*time.Second)
-	w.Signal(syscall.SIGSTOP)
 	t.Cleanup(func() { t6Cont(w) })
+	// W writes its waiting ticket before its first attempt, which holds admit.lock. A stop inside
+	// that attempt would leave the lock held by a stopped process, so check after the stop and, if
+	// it is held, continue W and try again.
+	h.Until(func() bool {
+		w.Signal(syscall.SIGSTOP)
+		if t6AdmitLockHeld(h) {
+			t6Cont(w)
+			return false
+		}
+		return true
+	}, 10*time.Second)
+}
+
+// t6AdmitLockHeld reports whether any process holds the host's admit.lock. It is the one place
+// the test reads that lock: PR #41 replaces lock.HeldRO with lock.Inspect(path) == lock.StateHeld,
+// so its merge changes this line only.
+func t6AdmitLockHeld(h *harness.H) bool {
+	return lock.HeldRO(filepath.Join(h.State, "admit.lock"))
+}
+
+// t6AssertAdmitFree checks that the stopped W does not hold admit.lock.
+func t6AssertAdmitFree(t *testing.T, h *harness.H) {
+	t.Helper()
+	if t6AdmitLockHeld(h) {
+		t.Error("admit.lock is held while W is stopped")
+	}
 }
 
 func t6Cont(w *harness.Proc) { w.Signal(syscall.SIGCONT) }
