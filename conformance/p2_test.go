@@ -80,7 +80,7 @@ func TestP4_DashAndUnderscoreAreOnePool(t *testing.T) {
 	h := harness.New(t)
 	h.HostConfig("[pools.release_tag]\nwait = \"0s\"\n")
 	hold := h.Hold(nil, "release-tag")
-	if r := h.Run("run", "release_tag", "--", "true"); r.Code != 75 || r.Stderr != "STARVED release-tag\n" {
+	if r := h.Run("run", "release_tag", "--", "true"); r.Code != 75 || r.Stderr != "STARVED release-tag (slots busy; waited 0s)\n" {
 		t.Fatalf("%+v", r)
 	}
 	hold.Release()

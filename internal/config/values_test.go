@@ -89,3 +89,16 @@ func TestNames(t *testing.T) {
 		t.Fatal("env names")
 	}
 }
+
+func TestFormatDuration(t *testing.T) {
+	for d, want := range map[time.Duration]string{0: "0s", 200 * time.Millisecond: "200ms", time.Second: "1s",
+		1500 * time.Millisecond: "1s500ms", 90 * time.Minute: "1h30m", 3 * time.Hour: "3h", 24 * time.Hour: "1d",
+		25*time.Hour + 5*time.Second: "1d1h5s"} {
+		if got := FormatDuration(d); got != want {
+			t.Errorf("FormatDuration(%v) = %q, want %q", d, got, want)
+		}
+		if back, err := ParseDuration(FormatDuration(d)); err != nil || back != d {
+			t.Errorf("%q does not parse back to %v: %v %v", FormatDuration(d), d, back, err)
+		}
+	}
+}

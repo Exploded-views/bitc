@@ -7,6 +7,7 @@ import (
 	"os"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/Exploded-views/bitc/internal/config"
@@ -83,8 +84,17 @@ func Acquire(ctx context.Context, r Request) (*Hold, error) {
 		class = 0
 	}
 	token := randHex(16)
+	var units map[string]int
+	for g, k := range r.Pool.Groups {
+		if !contains(a.inherited, g) {
+			if units == nil {
+				units = map[string]int{}
+			}
+			units[g] = k
+		}
+	}
 	me, err := newTicket(r.Layout, r.Pool.Name, Ticket{Pid: os.Getpid(), Start: self.Start, Argv: r.Argv,
-		Cwd: r.Eff.Cwd, Job: r.Job, Class: class, Nested: a.samePool, Depth: a.depth, Inherited: a.inherited, State: "waiting", Token: token})
+		Cwd: r.Eff.Cwd, Job: r.Job, Class: class, Nested: a.samePool, Depth: a.depth, Inherited: a.inherited, Units: units, State: "waiting", Token: token})
 	if err != nil {
 		return nil, exit.Unavailablef("cannot create a ticket: %v", err)
 	}
@@ -109,7 +119,7 @@ func Acquire(ctx context.Context, r Request) (*Hold, error) {
 		}
 		if !now().Before(deadline) {
 			a.abandon(removeMirror)
-			return nil, exit.Starved(r.Pool.Name, reason)
+			return nil, exit.Starved(r.Pool.Name, a.starvedReason(reason))
 		}
 		if ctx.Err() != nil {
 			a.abandon(removeMirror)
@@ -386,7 +396,7 @@ func (a *admission) abandon(removeMirror func()) {
 
 func (a *admission) hold(start, now time.Time, removeMirror func()) *Hold {
 	h := &Hold{Pool: a.pool.Name, Slot: a.slot, Ticket: a.me.name, Token: a.me.t.Token, Nested: a.parent != nil,
-		Depth: a.depth, Units: a.units, WaitMS: now.Sub(start).Milliseconds(), Started: now}
+		Depth: a.depth, Units: a.units, Counts: a.me.t.Units, WaitMS: now.Sub(start).Milliseconds(), Started: now}
 	if a.compat != nil {
 		if kv := a.compat.HoldEnv(a.units); kv != "" {
 			h.ExtraEnv = []string{kv}
@@ -433,4 +443,23 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// starvedReason is the reason of the STARVED line, result.json and the history line. A wait for
+// slots ("" or "queue") or for a group's units says what expired: "slots busy; waited 3h",
+// "queue; waited 3h", "group cpu busy: wanted 2 of 8 units; waited 1d" (the pool's wait as
+// configured, after --wait). Other reasons (priority lane, memory, legacy locks, nested child)
+// are unchanged.
+func (a *admission) starvedReason(reason string) string {
+	waited := "; waited " + config.FormatDuration(a.r.Pool.Wait)
+	switch {
+	case reason == "":
+		return "slots busy" + waited
+	case reason == "queue":
+		return reason + waited
+	case strings.HasPrefix(reason, "group ") && strings.HasSuffix(reason, " busy"):
+		g := strings.TrimSuffix(strings.TrimPrefix(reason, "group "), " busy")
+		return fmt.Sprintf("%s: wanted %d of %d units%s", reason, a.pool.Groups[g], a.r.Eff.Groups[g].Units, waited)
+	}
+	return reason
 }

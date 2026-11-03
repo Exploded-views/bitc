@@ -373,6 +373,23 @@ func mergePools(p *problems, e *Effective, host layer, repo *layer) {
 			}
 			pool.Groups[gc] = int(units)
 		}
+		for g, max := range hp.GroupsMax {
+			gc := CanonName(g)
+			grp := e.Groups[gc]
+			switch {
+			case grp.Name == "":
+				p.addf("%s: %s.groups_max names %s, which is not a [groups] entry", host.file, key, g)
+			case pool.Groups[gc] == 0:
+				p.addf("%s: %s.groups_max names %s, which the pool does not list in groups", host.file, key, g)
+			case max < 1 || int(max) > grp.Units:
+				p.addf("%s: %s.groups_max.%s = %d must be 1..%d", host.file, key, g, max, grp.Units)
+			default:
+				if pool.GroupsMax == nil {
+					pool.GroupsMax = map[string]int{}
+				}
+				pool.GroupsMax[gc] = int(max)
+			}
+		}
 		if hp.Providers != nil {
 			pool.Providers = hp.Providers
 		}

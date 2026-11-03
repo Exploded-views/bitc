@@ -20,6 +20,7 @@ type runState struct {
 	local    bool
 	provider string
 	arts     *[]string
+	units    map[string]int
 }
 
 func rs(e *Effective) *runState { return &e.run }
@@ -286,7 +287,7 @@ func (e *Effective) ApplyRunFlags(f RunFlags) error {
 		}
 		st.timeout = &d
 	}
-	st.local, st.provider, st.arts = f.Local, f.Provider, f.Artifacts
+	st.local, st.provider, st.arts, st.units = f.Local, f.Provider, f.Artifacts, f.Units
 	return nil
 }
 
@@ -334,6 +335,11 @@ func (e *Effective) Resolve(name string) (*Pool, error) {
 		}
 		pool.Providers = list
 	}
+	if len(st.units) > 0 {
+		if err := e.applyUnits(&pool, st.units); err != nil {
+			return nil, err
+		}
+	}
 	arts := st.arts
 	if arts == nil {
 		arts = e.EnvArtifacts
@@ -360,4 +366,34 @@ func (e *Effective) Resolve(name string) (*Pool, error) {
 		}
 	}
 	return &pool, nil
+}
+
+// applyUnits replaces the pool's unit count for each --units group (this run only). The group
+// must be one the pool lists, the count at most the group's units and the pool's groups_max, and
+// the pool must be able to run locally (groups are local admission). The pool's own map is
+// copied, never changed.
+func (e *Effective) applyUnits(pool *Pool, units map[string]int) error {
+	if !contains(pool.Providers, "local") {
+		return exit.Usagef("--units: pool %s runs only on %s, and units are a local group's admission", pool.Name, strings.Join(pool.Providers, ", "))
+	}
+	groups := make(map[string]int, len(pool.Groups))
+	for g, k := range pool.Groups {
+		groups[g] = k
+	}
+	for _, g := range sortedKeys(units) {
+		k := units[g]
+		if _, listed := pool.Groups[g]; !listed {
+			return exit.Usagef("--units %s=%d: pool %s does not list group %s in groups", g, k, pool.Name, g)
+		}
+		n := e.Groups[g].Units
+		if k < 1 || k > n {
+			return exit.Usagef("--units %s=%d: k must be 1..%d (group %s has %d units)", g, k, n, g, n)
+		}
+		if max, capped := pool.GroupsMax[g]; capped && k > max {
+			return exit.Usagef("--units %s=%d: pool %s allows at most %d units of %s (groups_max)", g, k, pool.Name, max, g)
+		}
+		groups[g] = k
+	}
+	pool.Groups = groups
+	return nil
 }

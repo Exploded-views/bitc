@@ -38,7 +38,7 @@ func TestOneSlotThenStarved(t *testing.T) {
 	}
 	t0 := time.Now()
 	_, err = Acquire(context.Background(), req(l, e, lint))
-	if exit.Code(err) != 75 || err.Error() != "STARVED lint" {
+	if exit.Code(err) != 75 || err.Error() != "STARVED lint (slots busy; waited 200ms)" {
 		t.Fatalf("%v", err)
 	}
 	if d := time.Since(t0); d < 200*time.Millisecond { // starved no sooner than the wait
@@ -79,7 +79,7 @@ func TestGroupBusyReleasesSlot(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = Acquire(context.Background(), req(l, e, cov))
-	if err == nil || err.Error() != "STARVED coverage (group bigmem busy)" {
+	if err == nil || err.Error() != "STARVED coverage (group bigmem busy: wanted 1 of 1 units; waited 100ms)" {
 		t.Fatalf("%v", err)
 	}
 	h.Release()

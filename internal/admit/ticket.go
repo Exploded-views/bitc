@@ -32,6 +32,7 @@ type Ticket struct {
 	GroupWait   []string         `json:"group_wait,omitempty"`
 	Slot        int              `json:"slot,omitempty"`
 	Groups      map[string][]int `json:"groups,omitempty"`
+	Units       map[string]int   `json:"units,omitempty"`            // units asked for per group (held once running); inherited groups omitted
 	Inherited   []string         `json:"inherited_groups,omitempty"` // groups an ancestor holds; never unlocked here
 	Token       string           `json:"token"`
 	Leader      int              `json:"leader,omitempty"` // the command's pid

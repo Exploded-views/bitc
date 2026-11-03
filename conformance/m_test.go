@@ -51,7 +51,7 @@ func TestM2_NoHoldAndWait(t *testing.T) {
 	if lockHeld(filepath.Join(h.State, "pools", "coverage", "slot.1.lock")) {
 		t.Fatal("a waiter holds its slot while the group is busy")
 	}
-	if r := w.Wait(); r.Code != 75 || r.Stderr != "STARVED coverage (group bigmem busy)\n" {
+	if r := w.Wait(); r.Code != 75 || r.Stderr != "STARVED coverage (group bigmem busy: wanted 1 of 1 units; waited 1s)\n" {
 		t.Fatalf("%+v", r)
 	}
 	hold.Release()
