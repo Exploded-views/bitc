@@ -1470,10 +1470,12 @@ stem>" }`) makes the two pools exclude each other while callers move one at a ti
   resources are counted (8.3), never destroyed. bitc also takes `<legacy_dir>/locks/runpod-launch.lock`
   (after its own, within `launch_wait`) and appends `<pid> <name> <usd> <expiry>` to
   `<legacy_dir>/runpod-reservations` for each job, removed at its end, so legacy launches count it.
-  If the launch lock is not acquired in time, the launch is refused with exit 75 (temp-fail):
-  nothing is created, no reservation is written and the slot is released. Releases up to and
-  including 0.1.2 still launch without it; the fix is tracked as
-  [public issue #9](https://github.com/Exploded-views/bitc/issues/9).
+  Both apply to RunPod only. If that lock cannot be opened, or is not acquired within
+  `launch_wait`, the RunPod launch is refused as a temporary failure
+  (`legacy launch lock <path>: busy`, or `: <error>`): nothing is created and no reservation is
+  written. Like any rails refusal (a busy launch lock, the cap), it skips that provider: the run
+  goes on to the next provider, runs locally if `local` comes next, and ends 75 with
+  `STARVED <pool> (no provider left: legacy launch lock <path>: busy)` only when none is left.
 - Jobs a legacy launcher started before the shim switch have no record: the `wait` shim passes
   `--log <their log>` (3.2).
 

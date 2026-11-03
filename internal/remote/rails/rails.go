@@ -90,7 +90,12 @@ func Check(ctx context.Context, j *remote.Job) (func(), error) {
 		ll.Close()
 		return nil, &provider.ErrTransient{Why: "the launch lock is busy"}
 	}
-	unlockLegacy := legacyLaunchLock(ctx, j)                       // [compat]: after our own, within launch_wait
+	unlockLegacy, err := legacyLaunchLock(ctx, j) // [compat]: after our own, within launch_wait
+	if err != nil {                               // refused (75) before any reservation or create
+		_ = ll.Unlock()
+		ll.Close()
+		return nil, err
+	}
 	defer func() { unlockLegacy(); _ = ll.Unlock(); ll.Close() }() // released before the job runs
 	secret, err := state.InstallSecret(acct)
 	if err != nil {

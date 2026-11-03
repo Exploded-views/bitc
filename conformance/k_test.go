@@ -1,6 +1,7 @@
 package conformance
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Exploded-views/bitc/conformance/harness"
+	"github.com/Exploded-views/bitc/internal/lock"
 )
 
 // slurp reads a file, "" if it is missing, so a missing file is an assertion failure, not a panic.
@@ -295,5 +297,40 @@ func TestRA4_CompatSharesLegacyLaunchLockAndReservations(t *testing.T) {
 	a.Wait()
 	if b, _ := os.ReadFile(filepath.Join(legacy, "runpod-reservations")); strings.TrimSpace(string(b)) != "" {
 		t.Fatalf("legacy reservation not removed: %q", b)
+	}
+}
+
+// A legacy launcher holds runpod-launch.lock past launch_wait (spec 12): the only provider is
+// refused as a temporary failure, so the run ends 75 with the STARVED line, nothing is created and
+// no reservation line (either kind) is written.
+func TestRA8_CompatLegacyLaunchLockBusyRefusesTheLaunch(t *testing.T) {
+	h := harness.New(t)
+	st := capRepo(t, h, 0)
+	legacy := filepath.Join(h.Root, "legacy")
+	_ = os.MkdirAll(filepath.Join(legacy, "locks"), 0o700)
+	h.HostConfig("[remote_limits]\nworktrees = [\"**/app\"]\n" +
+		"[pools.heavy]\nproviders = [\"fake\"]\nremote_limits = { size = { fake = \"cpu8\" }, timeout = \"60m\" }\nwait = \"5s\"\n" +
+		"[providers.fake]\ndaily_usd = 25\nmax_live = 6\nstart_timeout = \"20m\"\nusd_per_hour = 0.24\nlaunch_wait = \"300ms\"\n" +
+		"spend_usd = 0.00\nstate_dir = " + harness.Q(st) + "\n" +
+		"[compat]\nlegacy_dir = " + harness.Q(legacy) + "\nname_prefix = \"legacy-pool-\"\n")
+	legacyLock, err := lock.Open(filepath.Join(legacy, "locks", "runpod-launch.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer legacyLock.Close()
+	if err := legacyLock.LockWait(context.Background(), time.Second); err != nil {
+		t.Fatal(err)
+	}
+	defer legacyLock.Unlock()
+	r := h.Run("run", "heavy", "--", "echo", "x")
+	want := "STARVED heavy (no provider left: legacy launch lock " + filepath.Join(legacy, "locks", "runpod-launch.lock") + ": busy)"
+	if r.Code != 75 || !strings.Contains(r.Stderr, want) || r.Stdout != "" {
+		t.Fatalf("want 75 and %q, got %+v", want, r)
+	}
+	if b, _ := os.ReadFile(filepath.Join(legacy, "runpod-reservations")); len(b) != 0 {
+		t.Fatalf("a legacy reservation line was written: %q", b)
+	}
+	if b, _ := os.ReadFile(filepath.Join(st, "resources.json")); strings.Contains(string(b), "bitc-") {
+		t.Fatalf("a resource was created: %s", b)
 	}
 }

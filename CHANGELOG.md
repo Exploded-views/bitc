@@ -26,6 +26,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- With `[compat]` set, a RunPod launch is now refused when the legacy launch lock
+  (`<legacy_dir>/locks/runpod-launch.lock`) cannot be opened or is not taken within
+  `launch_wait`, with `legacy launch lock <path>: busy` (or the open error). It is refused as a
+  temporary failure like a busy launch lock: nothing is created, no reservation is written, and
+  that provider is skipped. The run ends 75 with
+  `STARVED <pool> (no provider left: legacy launch lock <path>: busy)` only when no provider is
+  left, and runs locally if `local` comes next in the pool's providers. Before, such a launch
+  went ahead without the lock and could slip past the spend cap a legacy launcher was checking
+  ([#9](https://github.com/Exploded-views/bitc/issues/9)). Only RunPod takes the legacy lock and
+  writes the legacy reservation line; other provider types are unaffected.
 - On Linux a state or accounting dir on CIFS, SMB2, SMB, 9p, AFS or any FUSE mount (sshfs, rclone,
   s3fs) is now refused (78) like NFS, naming the filesystem (`is on cifs; ...`), because flock
   there is not bitc's exclusion. A local FUSE filesystem is refused too; point `BITC_DIR` at a
