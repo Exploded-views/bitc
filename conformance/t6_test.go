@@ -2,7 +2,10 @@ package conformance
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -120,12 +123,40 @@ func t6Stop(t *testing.T, h *harness.H, w *harness.Proc, nth int) {
 	// it is held, continue W and try again.
 	h.Until(func() bool {
 		w.Signal(syscall.SIGSTOP)
+		// SIGSTOP is asynchronous: read the lock only once W has really stopped, or it could
+		// still finish a locked attempt after the read says free.
+		h.Until(func() bool { return t6IsStopped(w.Cmd.Process.Pid) }, 10*time.Second)
 		if t6AdmitLockHeld(h) {
 			t6Cont(w)
 			return false
 		}
 		return true
 	}, 10*time.Second)
+}
+
+// t6IsStopped reports whether the process is in the stopped state (T): from /proc/<pid>/stat on
+// Linux, from `ps -o stat=` on darwin.
+func t6IsStopped(pid int) bool {
+	var st string
+	if runtime.GOOS == "linux" {
+		b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+		if err != nil {
+			return false
+		}
+		// "pid (comm) S ...": comm may hold spaces and parentheses, so cut at the last ')'.
+		i := strings.LastIndex(string(b), ") ")
+		if i < 0 {
+			return false
+		}
+		st = string(b)[i+2:]
+	} else {
+		out, err := exec.Command("ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output()
+		if err != nil {
+			return false
+		}
+		st = strings.TrimSpace(string(out))
+	}
+	return strings.HasPrefix(st, "T") || strings.HasPrefix(st, "t")
 }
 
 // t6AdmitLockHeld reports whether any process holds the host's admit.lock. It is the one place
