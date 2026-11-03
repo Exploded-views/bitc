@@ -24,6 +24,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `git status --porcelain` is empty, ignored files excluded); `result.json` also carries `cwd`, the
   run's working directory. Outside a git work tree `head` is empty and `tree_clean` is omitted.
 
+### Fixed
+
+- With `[compat]` set, a RunPod launch is now refused when the legacy launch lock
+  (`<legacy_dir>/locks/runpod-launch.lock`) cannot be opened or is not taken within
+  `launch_wait`, with `legacy launch lock <path>: busy` (or the open error). It is refused as a
+  temporary failure like a busy launch lock: nothing is created, no reservation is written, and
+  that provider is skipped. The run ends 75 with
+  `STARVED <pool> (no provider left: legacy launch lock <path>: busy)` only when no provider is
+  left, and runs locally if `local` comes next in the pool's providers. Before, such a launch
+  went ahead without the lock and could slip past the spend cap a legacy launcher was checking
+  ([#9](https://github.com/Exploded-views/bitc/issues/9)). Only RunPod takes the legacy lock and
+  writes the legacy reservation line; other provider types are unaffected.
+
 ## [0.1.3] - 2026-11-02
 
 ### Changed

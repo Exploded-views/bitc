@@ -289,8 +289,6 @@ Open issues that make up the roadmap:
 - [#3](https://github.com/Exploded-views/bitc/issues/3), [#4](https://github.com/Exploded-views/bitc/issues/4),
   [#26](https://github.com/Exploded-views/bitc/issues/26): macOS parity, macOS as a client to remote
   providers and exec plugins on macOS (planned for 0.1.5)
-- [#9](https://github.com/Exploded-views/bitc/issues/9): the launch lock must exclude across
-  implementations during a mixed rollout (spend-cap safety)
 - [#10](https://github.com/Exploded-views/bitc/issues/10): IO-pressure admission (`io_pressure_max`)
 
 Planned but not scheduled (macOS as a remote build target, Sprites egress, RunPod placement, the
