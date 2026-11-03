@@ -9,6 +9,8 @@
     "pools": {"type": "array", "items": {"type": "object", "required": ["name", "slots", "holders", "waiters"],
       "properties": {
         "name": {"type": "string"}, "slots": {"type": "integer"}, "last_starved": {"type": "string"},
+        "wait": {"type": "string", "description": "the pool's configured wait, in the duration form of the spec (5.2), such as 3h or 1h30m"},
+        "oldest_wait_s": {"type": "integer", "description": "whole seconds the longest-waiting waiter has waited, to the report's time; present only when the pool has waiters"},
         "holders": {"type": "array", "items": {"type": "object", "required": ["job", "slot", "pid", "cwd", "argv", "provider", "nested", "since"],
           "properties": {"job": {"type": "string"}, "slot": {"type": "integer"}, "pid": {"type": "integer"}, "cwd": {"type": "string"},
             "argv": {"type": "array", "items": {"type": "string"}}, "provider": {"type": "string"}, "nested": {"type": "boolean"}, "since": {"type": "string"},
@@ -16,6 +18,7 @@
             "legacy": {"type": "boolean", "description": "true for a slot held by a legacy shell-pool caller under [compat]; such a holder has job \"legacy\", empty since, cwd and argv, and pid 0 when the lock file holds no pid"}}}},
         "waiters": {"type": "array", "items": {"type": "object", "required": ["job", "class", "pid", "since"],
           "properties": {"job": {"type": "string"}, "class": {"enum": ["high", "normal"]}, "pid": {"type": "integer"}, "since": {"type": "string"}, "group_wait": {"type": "string"},
+            "waited_s": {"type": "integer", "description": "whole seconds from since to the report's time"},
             "units": {"type": "object", "additionalProperties": {"type": "integer"}, "description": "units asked for per group, with --units applied"}}}}
       }}},
     "groups": {"type": "array", "items": {"type": "object", "required": ["name", "units", "held"],

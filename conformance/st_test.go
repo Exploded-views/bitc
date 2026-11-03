@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -285,4 +286,61 @@ func TestST10_SweepRemovesStaleStagingDirs(t *testing.T) {
 	if _, err := os.Stat(fresh); err != nil {
 		t.Fatal("a fresh staging dir was removed")
 	}
+}
+
+func TestST11_StatusShowsWaitAges(t *testing.T) {
+	h := harness.New(t)
+	h.HostConfig("[pools.lint]\nwait = \"30s\"\n[pools.idle]\nwait = \"45s\"\n")
+	hold := h.Hold(nil, "--name", "holder", "lint")
+	w := h.Start("run", "--name", "waiter", "lint", "--", "true")
+	h.Until(func() bool { return len(tickets(h, "lint")) == 2 }, 10*time.Second)
+
+	r := h.Run("status")
+	if !regexp.MustCompile(`(?m)^lint: 1/1 slots held, 1 waiting \(wait 30s, oldest \d+(ms|s|m|h|d)[0-9a-z]*\)$`).MatchString(r.Stdout) {
+		t.Errorf("pool line lacks the wait and the oldest age:\n%s", r.Stdout)
+	}
+	if !regexp.MustCompile(`(?m)^  waiting  waiter  normal  pid \d+  since \S+ \(\d+(ms|s|m|h|d)[0-9a-z]*\)$`).MatchString(r.Stdout) {
+		t.Errorf("waiter line lacks its age:\n%s", r.Stdout)
+	}
+	if !regexp.MustCompile(`(?m)^idle: 0/1 slots held, 0 waiting$`).MatchString(r.Stdout) {
+		t.Errorf("a pool without waiters gained a suffix:\n%s", r.Stdout)
+	}
+
+	var got struct {
+		Pools []struct {
+			Name        string `json:"name"`
+			Wait        string `json:"wait"`
+			OldestWaitS *int   `json:"oldest_wait_s"`
+			Waiters     []struct {
+				WaitedS *int `json:"waited_s"`
+			} `json:"waiters"`
+		} `json:"pools"`
+	}
+	out := h.Run("--json", "status").Stdout
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range got.Pools {
+		switch p.Name {
+		case "lint":
+			if p.Wait != "30s" || p.OldestWaitS == nil || len(p.Waiters) != 1 || p.Waiters[0].WaitedS == nil || *p.OldestWaitS != *p.Waiters[0].WaitedS {
+				t.Errorf("lint: %+v\n%s", p, out)
+			}
+		case "idle":
+			if p.Wait != "45s" || p.OldestWaitS != nil {
+				t.Errorf("idle: %+v\n%s", p, out)
+			}
+		}
+	}
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatal(err)
+	}
+	var schema map[string]any
+	if err := json.Unmarshal(must(os.ReadFile("../docs/status.schema.json")), &schema); err != nil {
+		t.Fatal(err)
+	}
+	checkSchema(t, "$", schema, doc)
+	hold.Release()
+	w.Wait()
 }
