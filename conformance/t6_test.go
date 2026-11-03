@@ -36,6 +36,7 @@ func TestT6_NewcomerAfterReleaseDoesNotJumpTheQueue(t *testing.T) {
 		ps = append(ps, n)
 		h.Until(func() bool { return len(tickets(h, "lint")) >= i+2 || n.Exited() }, 10*time.Second)
 	}
+	t6AssertWindow(t, h, log)
 	for _, p := range ps {
 		if r := p.Wait(); r.Code != 0 {
 			t.Fatalf("%+v", r)
@@ -55,8 +56,8 @@ func TestT6_OneSlotImpatientNewcomersStarveWhileAWaiterIsQueued(t *testing.T) {
 	h.Until(func() bool { return len(tickets(h, "lint")) == 2 }, 10*time.Second)
 	hold.Release()
 	for _, name := range []string{"N1", "N2", "N3"} {
-		if r := h.RunWith(t6Poll, "run", "--wait", "0s", "lint", "--", "sh", "-c", t6Log, "_", name, log); r.Code != 75 {
-			t.Errorf("%s: want STARVED (75), got %+v", name, r)
+		if r := h.RunWith(t6Poll, "run", "--wait", "0s", "lint", "--", "sh", "-c", t6Log, "_", name, log); r.Code != 75 || !strings.Contains(r.Stderr, "(queue;") {
+			t.Errorf("%s: want STARVED (75) for the queue, got %+v", name, r)
 		}
 	}
 	t6Open(t, gate)
@@ -78,8 +79,8 @@ func TestT6_TwoSlotsFreedSlotGoesToTheWaiter(t *testing.T) {
 	h.Until(func() bool { return len(tickets(h, "lint")) == 3 }, 10*time.Second)
 	h1.Release()
 	for _, name := range []string{"N1", "N2", "N3"} {
-		if r := h.RunWith(t6Poll, "run", "--wait", "0s", "lint", "--", "sh", "-c", t6Log, "_", name, log); r.Code != 75 {
-			t.Errorf("%s: want STARVED (75), got %+v", name, r)
+		if r := h.RunWith(t6Poll, "run", "--wait", "0s", "lint", "--", "sh", "-c", t6Log, "_", name, log); r.Code != 75 || !strings.Contains(r.Stderr, "(queue;") {
+			t.Errorf("%s: want STARVED (75) for the queue, got %+v", name, r)
 		}
 	}
 	t6Open(t, gate)
@@ -96,5 +97,23 @@ func t6Open(t *testing.T, gate string) {
 	t.Helper()
 	if err := os.WriteFile(gate, nil, 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// t6AssertWindow checks that the window the test depends on is real: W's ticket is still waiting
+// and nothing has run, so a newcomer was refused (or queued) because of W, not because W was
+// already admitted.
+func t6AssertWindow(t *testing.T, h *harness.H, log string) {
+	t.Helper()
+	if got := lines(t, log); len(got) != 0 {
+		t.Errorf("W was admitted before the newcomers arrived: log %v", got)
+	}
+	ts := tickets(h, "lint")
+	if len(ts) == 0 {
+		t.Fatal("no tickets")
+	}
+	b := must(os.ReadFile(filepath.Join(h.State, "pools", "lint", "tickets", ts[0])))
+	if !strings.Contains(strings.ReplaceAll(string(b), " ", ""), `"state":"waiting"`) {
+		t.Errorf("the oldest ticket is not waiting: %s", b)
 	}
 }
