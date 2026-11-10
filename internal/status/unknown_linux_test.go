@@ -131,7 +131,7 @@ func TestUnknownWaiterRendersItsOwnSuffixAndIsNotCountedAsASlot(t *testing.T) {
 	}
 	var out bytes.Buffer
 	r.Text(&out)
-	if !strings.Contains(out.String(), "lint: 0/2 slots held, 1 waiting\n") || strings.Contains(out.String(), "1 unknown, 1 waiting") {
+	if !strings.Contains(out.String(), "lint: 0/2 slots held, 1 waiting (wait ") || strings.Contains(out.String(), "1 unknown, 1 waiting") {
 		t.Fatalf("pool line counts the waiter as an unknown slot:\n%s", out.String())
 	}
 	if !strings.Contains(out.String(), "  waiting  test  normal  pid 43  since ") || !strings.HasSuffix(strings.Split(out.String(), "\n")[1], "  unknown") {
