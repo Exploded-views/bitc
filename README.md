@@ -18,7 +18,7 @@ start in time, bitc exits **75**, "try again later", and never pretends your com
 ```console
 $ bitc run heavy -- npm test               # waits for a free slot, then runs; exit code is npm's
 $ bitc run --wait 1s heavy -- npm test     # from another terminal, while the first still runs
-STARVED heavy
+STARVED heavy (slots busy; waited 1s)
 $ echo $?
 75
 ```
@@ -59,7 +59,7 @@ Download a release binary and check it against `checksums.txt`
 1.26 or newer:
 
 ```sh
-go install github.com/Exploded-views/bitc/cmd/bitc@v0.1.2
+go install github.com/Exploded-views/bitc/cmd/bitc@v0.1.3
 ```
 
 ## Quickstart (local, about two minutes)
@@ -103,7 +103,7 @@ memory: 15350 MiB available (MemAvailable), floor 6144 MiB
 
 **3. See "try again later".** While one command holds the only slot, a second caller waits up to
 the pool's `wait` (10 minutes by default; `--wait` shortens it here), then gives up with
-`STARVED heavy` and exit 75:
+`STARVED heavy (slots busy; waited 1s)` and exit 75:
 
 <!-- doc-test -->
 ```sh
@@ -115,11 +115,11 @@ wait
 ```
 
 ```text
-STARVED heavy
+STARVED heavy (slots busy; waited 1s)
 exit 75
 heavy: 1/1 slots held, 0 waiting
   slot 1  19e3b439  pid 10745  since 2026-10-27T18:15:22Z  sleep 3
-  last STARVED: all slots busy at 2026-10-27T18:15:24.777Z
+  last STARVED: slots busy; waited 1s at 2026-10-27T18:15:24.777Z
 memory: 15354 MiB available (MemAvailable), floor 6144 MiB
 ```
 
@@ -263,6 +263,7 @@ for agents are in [docs/agent-guide.md](docs/agent-guide.md).
 | Read | For |
 | --- | --- |
 | [docs/agent-guide.md](docs/agent-guide.md) | the rules an AI agent follows when it runs commands through bitc |
+| [docs/local-heavy-pool.md](docs/local-heavy-pool.md) | one machine, four pools sharing its cores: gate, heavy, light, bench |
 | [docs/concepts.md](docs/concepts.md) | pools, slots, groups, tickets, nested holds, providers, state |
 | [docs/configuration.md](docs/configuration.md), [docs/config-reference.md](docs/config-reference.md) | the two config files, and every key with its class and default |
 | [docs/exit-codes.md](docs/exit-codes.md) | exit codes, stderr lines, `wait` outcomes, `result.json` |
@@ -273,7 +274,7 @@ for agents are in [docs/agent-guide.md](docs/agent-guide.md).
 
 ## Status and roadmap
 
-bitc is pre-1.0 ([v0.1.2 release notes](https://github.com/Exploded-views/bitc/releases/tag/v0.1.2)),
+bitc is pre-1.0 ([v0.1.3 release notes](https://github.com/Exploded-views/bitc/releases/tag/v0.1.3)),
 so interfaces may still change.
 
 - **Stable in intent:** the local gate (pools, slots, groups, priority lanes, memory admission,
@@ -287,17 +288,12 @@ so interfaces may still change.
 Open issues that make up the roadmap:
 
 - [#3](https://github.com/Exploded-views/bitc/issues/3), [#4](https://github.com/Exploded-views/bitc/issues/4),
-  [#5](https://github.com/Exploded-views/bitc/issues/5): macOS parity, macOS as a client to remote
-  providers (planned for 0.1.4), macOS as a remote build target (design first)
-- [#6](https://github.com/Exploded-views/bitc/issues/6): Sprites catch-all egress deny
-- [#7](https://github.com/Exploded-views/bitc/issues/7), [#8](https://github.com/Exploded-views/bitc/issues/8):
-  RunPod ordered data-centre walk with a per-pool US-only option; fallback CPU types per size
-- [#9](https://github.com/Exploded-views/bitc/issues/9): the launch lock must exclude across
-  implementations during a mixed rollout (spend-cap safety)
+  [#26](https://github.com/Exploded-views/bitc/issues/26): macOS parity, macOS as a client to remote
+  providers and exec plugins on macOS (planned for 0.1.5)
 - [#10](https://github.com/Exploded-views/bitc/issues/10): IO-pressure admission (`io_pressure_max`)
 
-Later: signed checksums after 1.0, packages under the name `bitc`, and volume caches for remote
-jobs ([spec.md](docs/spec.md) section 16.1, not scheduled).
+Planned but not scheduled (macOS as a remote build target, Sprites egress, RunPod placement, the
+remote-runner features and the later items): [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Known issues
 

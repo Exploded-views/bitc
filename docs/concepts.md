@@ -20,6 +20,12 @@ units it takes of each group (`groups = { bigmem = 1 }`). Two pools in the same 
 at the same time when the group has one unit, even though each pool has its own slots. Group
 units are numbered 1 to k.
 
+A run can ask for a different count of a group it already lists: `bitc run --units bigmem=2 heavy
+-- ...` replaces the pool's count for that run. The host file may cap it per pool with
+`groups_max = { bigmem = 2 }`. It is still all or none, first in first out, and it never takes
+units from a run that is already going. [`local-heavy-pool.md`](local-heavy-pool.md) shows a
+four-pool recipe built on this.
+
 ## Tickets, FIFO and priority
 
 A caller that cannot start takes a **ticket**, a file in the pool's queue that it keeps locked for
@@ -30,7 +36,8 @@ command ends. There is no daemon: the kernel's `flock(2)` locks do the work, so 
 killed releases everything it held, and the next caller reaps what it left.
 
 If the caller cannot start within the pool's `wait`, it exits **75** and prints `STARVED <pool>`
-with a reason. Exit 75 always means "wait and retry", never "your command failed".
+with a reason, for example `STARVED heavy (group cpu busy: wanted 2 of 8 units; waited 1d)`.
+Exit 75 always means "wait and retry", never "your command failed".
 
 ## Nested holds
 

@@ -1,17 +1,21 @@
-# Releases (docs/RELEASING.md). On a pull request: a GoReleaser dry run that builds the snapshot
-# and uploads nothing. On a pushed v* tag: GoReleaser builds the release and uploads it as a DRAFT
+# Releases (docs/RELEASING.md). On a pull request, in the merge queue and on a push to main: the
+# release gates, make release-check (dry-run) and make vuln (vuln); the run at the release sha on
+# main is their gate. On a pushed v* tag: GoReleaser builds the release and uploads it as a DRAFT
 # (.goreleaser.yaml draft: true) with this job's own GITHUB_TOKEN; a maintainer reviews the draft
 # and publishes it. No personal token is involved.
 name: release
 
 on:
   pull_request:
+  merge_group:
   push:
+    branches: [main]
     tags: ['v*']
 
-# A tag's release is never cancelled; a newer push to a pull request replaces its dry run.
+# A tag's release is never cancelled; a newer push to a pull request replaces its dry run. A branch push
+# gets a group of its own per sha, so every main sha keeps its run (the release sha's run is the gate).
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.ref }}-${{ github.event_name == 'push' && github.ref_type == 'branch' && github.sha || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -21,8 +25,9 @@ env:
   GOTOOLCHAIN: local
 
 jobs:
+  # The job name is a required check; it stays dry-run.
   dry-run:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -36,12 +41,33 @@ jobs:
           cache: true
       - name: Install pinned tools
         run: |
-          make tools-ci
+          sh scripts/retry.sh 3 20 make tools-ci
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-      - name: goreleaser check
-        run: goreleaser check
-      - name: goreleaser dry run (snapshot, nothing published)
-        run: goreleaser release --snapshot --clean --skip=publish
+      - name: make release-check (goreleaser check, snapshot, checksums and tarballs; nothing published)
+        run: make release-check
+
+  # govulncheck over the module (needs vuln.go.dev). A finding is advisory on a pull request (it can
+  # come from a new advisory against code this PR did not touch, and would block every PR) and fails
+  # the merge queue and the push to main, whose run at the release sha is the release gate.
+  vuln:
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.3"
+          cache: true
+      - name: Install pinned tools
+        run: |
+          sh scripts/retry.sh 3 20 make tools-ci
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: make vuln
+        run: make vuln
 
   release:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
@@ -63,7 +89,7 @@ jobs:
           cache: false
       - name: Install pinned tools
         run: |
-          make tools-ci
+          sh scripts/retry.sh 3 20 make tools-ci
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: goreleaser release (draft)
         run: goreleaser release --clean

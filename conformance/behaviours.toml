@@ -6,7 +6,7 @@ rows = [
   { id = "P1", task = "1.1", ported = "TestP1_ExitCodePassThrough", desc = "a command run under a pool returns its own exit code (128+N when killed by signal N)" },
   { id = "P2", task = "1.7", ported = "TestP2_UsageWithoutPoolOrCommand", desc = "a run with no pool or no command prints usage, exits 64 and creates no state" },
   { id = "P3", task = "1.7", ported = "TestP3_InvalidPoolNames", desc = "a pool name outside [A-Za-z0-9_-]+ exits 64 with 'invalid pool name' before anything is created or run" },
-  { id = "P4", task = "1.7", ported = "TestP4_DashAndUnderscoreAreOnePool", desc = "'-' and '_' spell the same pool everywhere: locks, history, settings" },
+  { id = "P4", task = "1.7", changed = "starved-wording", test = "TestP4_DashAndUnderscoreAreOnePool", desc = "'-' and '_' spell the same pool everywhere: locks, history, settings" },
   { id = "P5", task = "1.7", changed = "unknown-pools", test = "TestP5_UnknownPoolsRefusedUnlessDefault", desc = "an unknown pool is refused with 64; unknown_pools = \"default\" gives it one slot and the default wait" },
   { id = "P6", task = "1.3", ported = "TestP6_PoolsAreIndependent", desc = "pools are independent: a held slot in one never blocks another except through a shared group" },
   { id = "P7", task = "1.2b", ported = "TestP7_HostWinsOverRepoKeyByKey", desc = "for project keys the host file wins over the repo file key by key" },
@@ -24,11 +24,12 @@ rows = [
   { id = "S7", task = "1.7", ported = "TestS7_BitcStaysTheParentAndHistoryNamesIt", desc = "bitc stays the command's parent for the whole hold; history and the ticket name bitc's pid" },
 
   # T: waiting, deadline, STARVED
-  { id = "T1", task = "1.3", ported = "TestT1_StarvedAfterWait", desc = "no slot within the pool's wait: STARVED <pool> on stderr, exit 75, the command never runs" },
+  { id = "T1", task = "1.3", changed = "starved-wording", test = "TestT1_StarvedAfterWait", desc = "no slot within the pool's wait: STARVED <pool> (slots busy; waited <wait>) on stderr, exit 75, the command never runs" },
   { id = "T2", task = "1.4", ported = "TestT2_ReasonRecomputedEveryAttempt", desc = "the STARVED reason is recomputed every attempt, so a reason that no longer applies never survives" },
   { id = "T3", task = "1.3", ported = "TestT3_PollDefaultEnvOverrideAndDeadline", desc = "the poll interval defaults to 5s, BITC_POLL overrides it (>= 100ms), and the deadline is start + wait" },
   { id = "T4", task = "1.3", ported = "TestT4_WaitZeroIsOneAttempt", desc = "wait = \"0s\" makes exactly one attempt" },
   { id = "T5", task = "1.3", changed = "starved-wording", test = "TestT5_FIFOWithinClass", desc = "waiters of one class are admitted in arrival order" },
+  { id = "T6", task = "1.3", ported = "TestT6_NewcomerAfterReleaseDoesNotJumpTheQueue", desc = "characterization guard (passes on the code that added it): a newcomer arriving right after a release does not jump a queued waiter; with --wait 0s it is STARVED while the waiter is queued, in a one-slot and a two-slot pool" },
 
   # R: priority lane
   { id = "R1", task = "1.3", ported = "TestR1_LiteralSubstringNeverGlob", desc = "a caller is high priority when a high_cwd_contains entry is a literal substring of its logical or canonical cwd (never a glob)" },
@@ -163,7 +164,7 @@ rows = [
   # Z: platform
   { id = "Z1", task = "1.9", ported = "TestZ1_LinuxAndADarwinClientOnly", desc = "bitc runs on Linux, and on macOS as a client build that refuses the Linux-only features; elsewhere it exits 69 and creates nothing" },
   { id = "Z4", task = "3.1", ported = "TestZ4_ClientCrossBuildsForDarwin", desc = "cmd/bitc cross-compiles with cgo off to a Mach-O executable for darwin/arm64 and darwin/amd64" },
-  { id = "Z5", task = "3.1", ported = "TestZ5_CISmokesTheDarwinClient", desc = "ci.yml cross-builds the darwin client in the ci job and runs a macos-smoke job on macos-latest (build, version, a one-slot run of true, status --json) read-only, without persisted credentials, within 15 minutes, with the ci job's pins and Go version" },
+  { id = "Z5", task = "3.1", ported = "TestZ5_CISmokesTheDarwinClient", desc = "ci.yml cross-builds the darwin client in the build job and runs a macos-smoke job on macos-latest (build, version, a one-slot run of true, status --json) read-only, without persisted credentials, within 15 minutes, with the ci job's pins and Go version" },
   { id = "Z2", task = "1.1", dropped = "one binary: no script self-location", desc = "scripts find their own directory under CDPATH" },
   { id = "Z3", task = "1.1", dropped = "harness detail of the reference suite", desc = "suites skip without their tools" },
 
@@ -178,6 +179,7 @@ rows = [
   { id = "ST8", task = "1.9", ported = "TestST8_AdminArgumentsAreChecked", desc = "status takes [--json] [POOL...], doctor [--remote], sweep's flags; anything else is 64 with a usage line" },
   { id = "ST9", task = "1.9", ported = "TestST9_StatusRedactsSecretsInArgvCwdAndReason", desc = "status, status --json and doctor redact configured credentials in holders' argv, cwd, job and reasons (spec 10)" },
   { id = "ST10", task = "2.7", ported = "TestST10_SweepRemovesStaleStagingDirs", desc = "sweep removes artifact staging dirs (<wt>/.bitc/staging/<job>) older than 6h in the current work tree and in the work trees of remote jobs in history; --dry-run only reports them" },
+  { id = "ST11", task = "1.9", ported = "TestST11_StatusShowsWaitAges", desc = "status shows the pool's configured wait and the oldest waiter's age, and each waiter's age, computed from the report's own time; status --json has wait, oldest_wait_s and waited_s" },
 
   # Q: remote dispatch and opt-in
   { id = "Q1", task = "2.1a", ported = "TestQ1_LocalByDefaultEnvCannotEnable", desc = "every pool is local by default; the environment cannot enable a provider" },
@@ -428,6 +430,7 @@ rows = [
   { id = "RA5", task = "2.4", ported = "TestRA5_UnavailablePausesTheProvider", desc = "a provider-side ErrUnavailable (auth, no balance) writes one pause record; the next call falls back with '<type> is paused' without calling the provider" },
   { id = "RA6", task = "2.4", ported = "TestRA6_LedgerCountsCreatedJobsOnlyAndOnce", desc = "without a spend API, capacity fallbacks cost nothing and a running job is counted once (listed, not again from the ledger)" },
   { id = "RA7", task = "2.4", ported = "TestRA7_FailureAfterCreateBeforeBeginIs75NoBreaker", desc = "a failure after the create and before BEGIN ledgers end 75 (never fallback), tears down and records no breaker failure" },
+  { id = "RA8", task = "issue-9", ported = "TestRA8_CompatLegacyLaunchLockBusyRefusesTheLaunch", desc = "with [compat], a legacy launch lock held past launch_wait refuses the RunPod launch: 75 with STARVED naming the legacy lock when it is the only provider, nothing created, no reservation line written" },
 
   # TR: transport (bitc-only)
   { id = "TR1", task = "2.5", ported = "TestTR1_CredentialsInTheOriginAreNeverSent", desc = "credentials in the origin URL are never sent, printed or recorded" },
@@ -598,6 +601,8 @@ rows = [
   { id = "WF4", task = "3.3", ported = "TestWF4_FindingsNameFileAndLine", desc = "each workflow lint finding is reported as file:line: message" },
   { id = "WF5", task = "3.3", ported = "TestWF5_TheRepoWorkflowsPass", desc = "the lint scans .github/workflows/*.yml and *.yaml, an empty directory is an error, and this repo's workflows pass" },
   { id = "WF6", task = "3.3", ported = "TestWF6_CIRunsTheSecretScanOnEveryPushAndPullRequest", desc = "ci.yml runs on every push to main and every pull request (no path filter) and has a secrets job: full history (fetch-depth 0), no persisted credentials, contents: read, gitleaks installed at the version make tools pins, then make secrets (gitleaks over the whole history with the committed .gitleaks.toml; counts and rule/file/commit only)" },
+  { id = "WF7", task = "3.3", ported = "TestWF7_CIJobsAndLegs", desc = "both workflows run on merge_group; ci.yml is the jobs lint, unit (legs providers, core), coverage (needs unit, fails when a leg is missing), conformance and conformance-race (one leg per shard of scripts/conformance-shards.sh, each conformance test in exactly one), docs, build, secrets, macos-smoke; the tool install is retried 3 times 20 s apart" },
+  { id = "WF8", task = "3.3", ported = "TestWF8_ReleaseGatesRunHosted", desc = "release.yml runs on pull_request, merge_group and a push to main or a v* tag; the dry-run job runs make release-check and the vuln job runs make vuln, both only on pull_request, merge_group or a push to main, vuln advisory on pull_request; each branch push has its own concurrency group; RELEASING says the release gates run hosted and the run at the release sha is their gate" },
 
   # PUB: contributing and gitleaks (bitc-only)
   { id = "PUB1", task = "3.3", ported = "TestPUB1_ContributorFilesExist", desc = "the contributor files exist: CONTRIBUTING (build, register rule, secrets), SECURITY, two issue forms, a pull request template" },
@@ -612,6 +617,25 @@ rows = [
   # SPR: the sprites provider is refused in this release (bitc-only)
   { id = "SPR1", task = "3.4", ported = "TestSPR1_SpritesIsRefusedInThisRelease", desc = "any [providers.sprites] table or a pool naming sprites is 78 at load with the refusal line (egress not restricted, the job would get the forwarded env and the deploy key; links #6 and the known issues), even with experimental_remote, before the token or deploy key file is read, any sprites API call, state or accounting dir; without the flag the sprites line comes first, then the experimental line; a production host cannot bypass it ([host] key unknown, no BITC_* variable), and [test] allow_sprites is honoured only when every sprites endpoint is loopback; sweep and doctor --remote are the cleanup exception (SPR2)" },
   { id = "SPR2", task = "3.4", ported = "TestSPR2_SweepCleansUpSpritesOnly", desc = "with experimental_remote, sweep and doctor --remote may clean up Sprites left by 0.1.0: only list, organization reads and deletes reach the API (no create, exec, attach, fs, policy or checkpoint call), only Sprites whose owner tag verifies are deleted (never by name, ledger line or --foreign), the deploy key file (mode 000) is never opened and no forwarded env reaches a request; run, run --detach, status, doctor and config check still exit 78 with the Sprites jobs line before any call; without the flag sweep and doctor --remote are 78 with the cleanup line; the sweep timer's ExecStart command from docs/sweep-timer.md exits 0" },
+  # GC: group classes (bitc-only): bitc run --units and pools.<p>.groups_max
+  { id = "GC1", task = "heavy-pool", ported = "TestGC1_GateLeavesOneUnitForALightRun", desc = "with --units a gate takes three of a four-unit group: a light run (one unit) is admitted beside it and a heavy run that needs three waits until the gate ends" },
+  { id = "GC2", task = "heavy-pool", ported = "TestGC2_ALaterHeavyQueuesBehindAWaitingGate", desc = "group units stay FIFO by ticket time with --units: a heavy run that arrives after a waiting gate queues behind it even when the units that free up would fit the heavy run first" },
+  { id = "GC3", task = "heavy-pool", ported = "TestGC3_UnitsLimitsAndGroupsMax", desc = "a --units value that is malformed, zero, repeated, above the group's units or the pool's groups_max, or for a group the pool does not list exits 64 naming the group and the limit; a groups_max that names an unlisted group or is not 1..units is 78 naming the key" },
+  { id = "GC4", task = "heavy-pool", ported = "TestGC4_StatusAndResultNameTheUnits", desc = "status (text and --json), result.json and the history start and end lines name the units held per group, for a --units override and for the pool's own count; a waiting ticket shows the units it asks for" },
+  { id = "GC5", task = "heavy-pool", ported = "TestGC5_ARunningHeavyIsNeverPreempted", desc = "a running heavy run is never preempted when a gate arrives: it finishes with its own exit code, then the gate runs" },
+  { id = "GC6", task = "heavy-pool", ported = "TestGC6_ALightRunQueuesBehindAWaitingHeavy", desc = "group units are strictly FIFO: with a gate running and a heavy run waiting, a later light run waits behind the heavy run (STARVED, group cpu busy) although a unit is free" },
+  { id = "GC7", task = "heavy-pool", ported = "TestGC7_BadUnitsIsOneLine", desc = "a malformed or zero --units exits 64 with exactly one stderr line (no usage text) naming the form <group>=<k> or the limit 1..N" },
+  { id = "GC8", task = "heavy-pool", ported = "TestGC8_DetachedRunCarriesUnits", desc = "run --units G=K --detach carries the units through the supervisor: the job's result.json names them" },
+  { id = "GC9", task = "heavy-pool", ported = "TestGC9_StarvedLineNamesUnitsAndWait", desc = "a run that starves says so in one line, in result.json's reason and in the history line: a group wait names the units wanted of the group's size and the wait as configured, a slot wait says slots busy and the wait" },
+  { id = "GC10", task = "heavy-pool", ported = "TestGC10_StarvedInTheQueueNamesTheWait", desc = "a run that starves in the queue of a held one-slot pool says so in the line and in result.json's reason: queue, and the wait as configured" },
   # TIM: test determinism (bitc-only)
   { id = "TIM1", task = "3.4", ported = "TestTIM1_NoTimingMarginsInTests", desc = "no test or test-only helper passes or fails on scheduling: time.Sleep; any timer anywhere (time.After, Tick, NewTimer, NewTicker, AfterFunc: in a select, a blocking <-time.After or one kept in a variable); context.WithTimeout or WithDeadline; a TimeScale, a time_scale key or a (\"time_scale\", \"0.x\") call such as SetSeam below 1; and verdicts on elapsed time (time.Since or Sub, directly, through .Seconds() or through a variable) are flagged, under any import name including a dot import, outside conformance/timing-allow.txt, whose entries each carry a reason and whose size (the cap) may only shrink: never above the cap at the merge base with main, or on main above its first parent's, checked in CI with the full history (TestTIM1_CapOnlyGoesDown)" },
+  # TL: local per-run time limit (bitc-only)
+  { id = "TL1", task = "3.5", ported = "TestTL1_ForegroundRunIsKilledAtTheLimit", desc = "pools.<p>.timeout ends a local run that is still going that long after the command started: terminate as for a signal (group SIGTERM, SIGKILL after grace), exit 124 and 'bitc: <pool>: time limit <dur> reached; terminated' on stderr; a command's own 124 is not a timeout" },
+  { id = "TL2", task = "3.5", ported = "TestTL2_TimeoutFlagNarrowsNeverWidens", desc = "run --timeout DUR narrows the pool's limit and sets one where the pool has none; a larger one is not an error and the pool's value wins; a bad value is 64, a bad pools.<p>.timeout is 78" },
+  { id = "TL3", task = "3.5", ported = "TestTL3_TheCommandsBackgroundChildIsGoneAfterTheLimit", desc = "after a time limit the command's whole process group is gone and the slot is free" },
+  { id = "TL4", task = "3.5", ported = "TestTL4_DetachedJobHitsTheLimit", desc = "a --detach job's supervisor applies the limit: wait --exit job reports 124 and the log has the time-limit line" },
+  { id = "TL5", task = "3.5", ported = "TestTL5_ARemoteRunIgnoresTheTimeoutFlag", desc = "--timeout does not apply to a remote run (remote_limits.timeout does); the run is neither refused nor limited" },
+  { id = "TL6", task = "3.5", ported = "TestTL6_ResultNamesTheCommitTreeStateAndCwd", desc = "result.json and the history start and end lines of a local run carry head (git rev-parse HEAD at hold start), tree_clean (git status --porcelain empty, ignored files excluded) and cwd" },
+  { id = "TL7", task = "3.5", ported = "TestTL7_ResultOutsideAGitTreeHasCwdOnly", desc = "outside a git work tree head is empty, tree_clean is omitted and cwd is still named" },
 ]

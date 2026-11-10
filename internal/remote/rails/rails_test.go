@@ -217,9 +217,12 @@ func TestPruneReservations(t *testing.T) {
 func TestLegacyReservationLineAndLaunchLock(t *testing.T) {
 	legacy := t.TempDir()
 	_ = os.MkdirAll(filepath.Join(legacy, "locks"), 0o700)
-	j := &remote.Job{P: &run.Prepared{Eff: &config.Effective{Compat: &config.Compat{LegacyDir: legacy}}},
+	j := &remote.Job{Type: "runpod", P: &run.Prepared{Eff: &config.Effective{Compat: &config.Compat{LegacyDir: legacy}}},
 		Core: &config.Provider{LaunchWait: time.Second}, Spec: &provider.JobSpec{Name: "bitc-x", Expiry: time.Unix(1_900_000_000, 0)}}
-	unlock := legacyLaunchLock(context.Background(), j)
+	unlock, err := legacyLaunchLock(context.Background(), j)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !lock.Held(filepath.Join(legacy, "locks", "runpod-launch.lock")) {
 		t.Fatal("the legacy launch lock was not taken")
 	}
@@ -232,6 +235,127 @@ func TestLegacyReservationLineAndLaunchLock(t *testing.T) {
 	drop()
 	if b, _ := os.ReadFile(filepath.Join(legacy, "runpod-reservations")); len(b) != 0 {
 		t.Fatalf("line not removed: %q", b)
+	}
+}
+
+// legacyCheckJob is a job whose Check reaches the legacy launch lock: its own accounting dir,
+// a launch_wait no test waits out (every lock it takes is free, so it is taken at once; the busy
+// case sets its own short real wait), and a [compat] legacy dir (empty legacy: no [compat]).
+func legacyCheckJob(t *testing.T, legacy, typ string) (*remote.Job, string) {
+	t.Helper()
+	acct := t.TempDir()
+	if err := os.Chmod(acct, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	eff := &config.Effective{Test: &config.Test{AccountingDir: acct}}
+	if legacy != "" {
+		eff.Compat = &config.Compat{LegacyDir: legacy}
+	}
+	return &remote.Job{Type: typ, P: &run.Prepared{Eff: eff}, Core: &config.Provider{LaunchWait: 2 * time.Second, DailyUSD: 10_000_000, MaxLive: 4},
+		Prov: &stubProvider{}, Spec: &provider.JobSpec{Name: "bitc-x", Expiry: time.Unix(1_900_000_000, 0)}}, filepath.Join(acct, "remote", typ)
+}
+
+// assertRefusedBeforeLaunch: Check refused with a transient error naming the legacy lock, wrote
+// no reservation of either kind, and released bitc's own launch lock.
+func assertRefusedBeforeLaunch(t *testing.T, j *remote.Job, dir, legacy string, err error) {
+	t.Helper()
+	var tr *provider.ErrTransient
+	if !errors.As(err, &tr) {
+		t.Fatalf("want *provider.ErrTransient (75), got %v", err)
+	}
+	if !strings.Contains(tr.Why, "legacy launch lock") {
+		t.Fatalf("the refusal must name the legacy launch lock: %q", tr.Why)
+	}
+	if _, serr := os.Stat(filepath.Join(dir, "reservations.json")); serr == nil {
+		t.Fatal("a reservation was written for a refused launch")
+	}
+	if b, _ := os.ReadFile(filepath.Join(legacy, "runpod-reservations")); len(b) != 0 {
+		t.Fatalf("a legacy reservation line was written: %q", b)
+	}
+	if lock.Held(filepath.Join(dir, "launch.lock")) {
+		t.Fatal("bitc's own launch lock was not released")
+	}
+	if j.Estimate != 0 {
+		t.Fatal("the launch went on past the lock")
+	}
+}
+
+func TestLegacyLaunchLockBusyRefusesTheLaunch(t *testing.T) {
+	legacy := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(legacy, "locks"), 0o700)
+	other, err := lock.Open(filepath.Join(legacy, "locks", "runpod-launch.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	if err := other.LockWait(context.Background(), time.Second); err != nil { // a legacy launch in flight
+		t.Fatal(err)
+	}
+	defer other.Unlock()
+	j, dir := legacyCheckJob(t, legacy, "runpod")
+	j.Core.LaunchWait = 50 * time.Millisecond // the lock stays held, so Check waits this out and refuses
+	_, err = Check(context.Background(), j)
+	assertRefusedBeforeLaunch(t, j, dir, legacy, err)
+}
+
+func TestLegacyLaunchLockUnopenableRefusesTheLaunch(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root opens anything")
+	}
+	legacy := t.TempDir()
+	locks := filepath.Join(legacy, "locks")
+	if err := os.MkdirAll(locks, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locks, 0o500); err != nil { // no create, no open of a new lock file
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locks, 0o700) })
+	j, dir := legacyCheckJob(t, legacy, "runpod")
+	_, err := Check(context.Background(), j)
+	assertRefusedBeforeLaunch(t, j, dir, legacy, err)
+	if want := "legacy launch lock " + filepath.Join(locks, "runpod-launch.lock") + ": permission denied"; err.Error() != want {
+		t.Fatalf("got %q, want %q", err, want)
+	}
+}
+
+// The legacy launch lock and the runpod-reservations file are RunPod's (spec 12): under [compat]
+// an ssh or plugin launch neither waits on that lock nor writes a legacy reservation line.
+func TestLegacyLaunchLockAndReservationAreRunpodOnly(t *testing.T) {
+	legacy := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(legacy, "locks"), 0o700)
+	other, err := lock.Open(filepath.Join(legacy, "locks", "runpod-launch.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	if err := other.LockWait(context.Background(), time.Second); err != nil { // a legacy RunPod launch
+		t.Fatal(err)
+	}
+	defer other.Unlock()
+	j, dir := legacyCheckJob(t, legacy, "ssh")
+	rel, err := Check(context.Background(), j)
+	if err != nil {
+		t.Fatalf("a non-runpod launch must not be refused by the legacy RunPod lock: %v", err)
+	}
+	defer rel()
+	if _, serr := os.Stat(filepath.Join(dir, "reservations.json")); serr != nil {
+		t.Fatalf("the reservation was not written: %v", serr)
+	}
+	if b, _ := os.ReadFile(filepath.Join(legacy, "runpod-reservations")); len(b) != 0 {
+		t.Fatalf("a non-runpod job wrote a legacy RunPod reservation line: %q", b)
+	}
+}
+
+func TestNoCompatLaunchIsUnchanged(t *testing.T) {
+	j, dir := legacyCheckJob(t, "", "runpod")
+	rel, err := Check(context.Background(), j)
+	if err != nil {
+		t.Fatalf("without [compat] the launch proceeds: %v", err)
+	}
+	defer rel()
+	if _, serr := os.Stat(filepath.Join(dir, "reservations.json")); serr != nil {
+		t.Fatalf("the reservation was not written: %v", serr)
 	}
 }
 

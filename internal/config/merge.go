@@ -26,6 +26,18 @@ func dur(p *problems, file, key string, s *string, def time.Duration) time.Durat
 	return d
 }
 
+// positiveDur is a duration that may be unset (0) but not "0s": a limit of zero would end the run
+// before it began, and 0 as "no limit" would invite exactly that mistake.
+func positiveDur(p *problems, file, key string, s *string) time.Duration {
+	d := dur(p, file, key, s, 0)
+	if s != nil && d == 0 {
+		if _, err := ParseDuration(*s); err == nil {
+			p.addf("%s: %s = %q must be greater than 0 (leave it unset for no limit)", file, key, *s)
+		}
+	}
+	return d
+}
+
 func size(p *problems, file, key string, s *string, def Size) Size {
 	if s == nil {
 		return def
@@ -348,6 +360,7 @@ func mergePools(p *problems, e *Effective, host layer, repo *layer) {
 		} else if repoDefSet && repoDefWait < pool.Wait {
 			pool.Wait = repoDefWait // the repo's [defaults].wait narrows an explicit host pool wait too
 		}
+		pool.Timeout = positiveDur(p, host.file, key+".timeout", hp.Timeout)
 		pool.Memory = size(p, host.file, key+".memory", hp.Memory, 0)
 		for g, units := range hp.Groups {
 			gc := CanonName(g)
@@ -359,6 +372,23 @@ func mergePools(p *problems, e *Effective, host layer, repo *layer) {
 				p.addf("%s: %s.groups.%s = %d must be 1..%d", host.file, key, g, units, grp.Units)
 			}
 			pool.Groups[gc] = int(units)
+		}
+		for g, max := range hp.GroupsMax {
+			gc := CanonName(g)
+			grp := e.Groups[gc]
+			switch {
+			case grp.Name == "":
+				p.addf("%s: %s.groups_max names %s, which is not a [groups] entry", host.file, key, g)
+			case pool.Groups[gc] == 0:
+				p.addf("%s: %s.groups_max names %s, which the pool does not list in groups", host.file, key, g)
+			case max < 1 || int(max) > grp.Units:
+				p.addf("%s: %s.groups_max.%s = %d must be 1..%d", host.file, key, g, max, grp.Units)
+			default:
+				if pool.GroupsMax == nil {
+					pool.GroupsMax = map[string]int{}
+				}
+				pool.GroupsMax[gc] = int(max)
+			}
 		}
 		if hp.Providers != nil {
 			pool.Providers = hp.Providers

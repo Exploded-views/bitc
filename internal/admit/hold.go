@@ -34,6 +34,7 @@ type Hold struct {
 	Nested  bool
 	Depth   int // 0 for a top-level hold
 	Units   map[string][]int
+	Counts  map[string]int // units held per group (the ticket's Units; nil when none)
 	WaitMS  int64
 	Started time.Time
 

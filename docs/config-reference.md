@@ -23,8 +23,10 @@ Generated from `internal/config/schema.go` by `go generate ./internal/config`. D
 | `defaults.env_unset` | project | unset |
 | `pools.<pool>.slots` | host | `1` |
 | `pools.<pool>.wait` | narrow | `10m` |
+| `pools.<pool>.timeout` | host | unset |
 | `pools.<pool>.memory` | host | unset |
 | `pools.<pool>.groups` | host | unset |
+| `pools.<pool>.groups_max` | host | unset |
 | `pools.<pool>.providers` | host | `["local"]` |
 | `pools.<pool>.providers_exclude` | repo | unset |
 | `pools.<pool>.remote_limits.size` | host | unset |

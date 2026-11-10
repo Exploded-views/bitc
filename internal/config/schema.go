@@ -45,8 +45,10 @@ type defaultsSchema struct {
 type poolSchema struct {
 	Slots            *int64                  `toml:"slots" bitc:"host,default=1"`
 	Wait             *string                 `toml:"wait" bitc:"narrow,default=10m"`
+	Timeout          *string                 `toml:"timeout" bitc:"host"`
 	Memory           *string                 `toml:"memory" bitc:"host"`
 	Groups           map[string]int64        `toml:"groups" bitc:"host"`
+	GroupsMax        map[string]int64        `toml:"groups_max" bitc:"host"`
 	Providers        []string                `toml:"providers" bitc:"host,default=[\"local\"]"`
 	ProvidersExclude []string                `toml:"providers_exclude" bitc:"repo"`
 	RemoteLimits     *poolRemoteLimitsSchema `toml:"remote_limits" bitc:"host"`

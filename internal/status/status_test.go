@@ -214,3 +214,55 @@ func TestLegacySlotLockIsTheAdmissionPath(t *testing.T) {
 		t.Fatalf("admission's slot lock is not at %s", rel)
 	}
 }
+
+func TestTextShowsUnitsHeldAndWanted(t *testing.T) {
+	r := Report{Pools: []Pool{{Name: "work", Slots: 4,
+		Holders: []Holder{{Job: "g", Slot: 1, Pid: 7, Argv: []string{"true"}, Since: "t", Units: map[string]int{"cpu": 3, "mem": 1}}},
+		Waiters: []Waiter{{Job: "h", Class: "normal", Pid: 8, Since: "t", Units: map[string]int{"cpu": 2}}}}}}
+	var out bytes.Buffer
+	r.Text(&out)
+	for _, want := range []string{"units cpu=3 mem=1", "units cpu=2"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("status text lacks %q:\n%s", want, out.String())
+		}
+	}
+	b, _ := json.Marshal(r)
+	if !strings.Contains(string(b), `"units":{"cpu":3,"mem":1}`) || !strings.Contains(string(b), `"units":{"cpu":2}`) {
+		t.Errorf("status --json lacks units: %s", b)
+	}
+}
+
+func TestTextAndJSONShowWaitAges(t *testing.T) {
+	oldest := int64(4920)
+	r := Report{Pools: []Pool{
+		{Name: "lint", Slots: 1, Wait: "3h", OldestWaitS: &oldest, Holders: []Holder{},
+			Waiters: []Waiter{{Job: "a", Class: "normal", Pid: 1, Since: "t1", WaitedS: 4920}, {Job: "b", Class: "high", Pid: 2, Since: "t2", WaitedS: 59}}},
+		{Name: "idle", Slots: 1, Wait: "10m", Holders: []Holder{}, Waiters: []Waiter{}},
+	}}
+	var out bytes.Buffer
+	r.Text(&out)
+	for _, want := range []string{"lint: 0/1 slots held, 2 waiting (wait 3h, oldest 1h22m)\n", "since t1 (1h22m)\n", "since t2 (59s)\n", "idle: 0/1 slots held, 0 waiting\n"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("status text lacks %q:\n%s", want, out.String())
+		}
+	}
+	b, _ := json.Marshal(r)
+	for _, want := range []string{`"wait":"3h","oldest_wait_s":4920`, `"waited_s":4920`, `"waited_s":59`, `"wait":"10m"`} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("status --json lacks %s: %s", want, b)
+		}
+	}
+	if strings.Count(string(b), "oldest_wait_s") != 1 {
+		t.Errorf("a pool without waiters has oldest_wait_s: %s", b)
+	}
+}
+
+func TestAgeIsMeasuredToTheReportTimeAndNeverNegative(t *testing.T) {
+	now := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
+	if got := ageS(now, now.Add(-82*time.Minute).Add(300*time.Millisecond).UnixNano()); got != 4920 {
+		t.Errorf("age %d, want 4920", got)
+	}
+	if got := ageS(now, now.Add(5*time.Second).UnixNano()); got != 0 {
+		t.Errorf("a ticket from the future has age %d", got)
+	}
+}

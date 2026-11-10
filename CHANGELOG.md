@@ -17,6 +17,93 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `/proc/locks`, and `sweep --dry-run` never counts an unknown slot as reclaimable
   ([#24](https://github.com/Exploded-views/bitc/issues/24)).
 
+## [0.1.4] - 2026-11-04
+
+### Added
+
+- `bitc status` shows how long runs have waited. A pool with waiters prints
+  `lint: 1/1 slots held, 3 waiting (wait 3h, oldest 1h22m)`, the pool's configured wait and its
+  longest waiter's age, and each waiter line ends `since <ts> (<age>)`. `status --json` adds per
+  pool `wait` (the configured wait) and `oldest_wait_s` (only with waiters), and per waiter
+  `waited_s`, all optional in [the schema](docs/status.schema.json). Ages are measured to the
+  report's own `time`.
+- Conformance test T6 guards first-in-first-out admission when newcomers arrive after a release: a
+  newcomer does not jump a queued waiter, and `--wait 0s` newcomers exit 75 while one is queued.
+- A per-run time limit for local runs. The host key `pools.<p>.timeout` (a duration such as `30m`
+  or `1h30m`; unset means no limit; `0s` is a config error, 78) and `bitc run --timeout DUR`. The
+  flag can only narrow: the effective limit is the shorter of the two, and a `--timeout` longer
+  than the pool's is accepted with the pool's value still in force. The clock starts when the
+  command starts, so the wait for a slot does not count, and `--detach` jobs are limited the same
+  way. At the limit bitc prints `bitc: <pool>: time limit <dur> reached; terminated`, terminates
+  the command's process group as for a signal (the leader alone on a terminal; SIGTERM, SIGKILL
+  after `grace`) and exits 124, the code `timeout(1)` uses; `result.json` and the history `end`
+  line say `outcome = "timed-out"`. A remote run ignores `--timeout`; `remote_limits.timeout`
+  limits it.
+- `result.json` of a local run and its history `start` and `end` lines now carry `head` (the
+  work tree's `git rev-parse HEAD`, taken when the hold starts) and `tree_clean` (true when
+  `git status --porcelain` is empty, ignored files excluded); `result.json` also carries `cwd`, the
+  run's working directory. Outside a git work tree `head` is empty and `tree_clean` is omitted.
+- `bitc run --units <group>=<k>` (repeatable, one per group) replaces the pool's unit count of a
+  group for that run only. The group must be one the pool lists, `k` must be 1 to the group's
+  units, and a pool may cap it with the new host-only key `pools.<pool>.groups_max.<group>`. A bad
+  `--units` exits 64 with one line naming the group and the limit, a bad `groups_max` exits 78
+  naming the key, and a remote-only pool refuses the flag (64). Admission is unchanged: units are
+  all or none, first in first out by ticket time, and a running hold is never preempted.
+- `status` (text and `--json`), `result.json` and the history `start` and `end` lines now show the
+  units held per group (`"units": {"cpu": 7}`); a waiting ticket shows the units it asks for.
+- The 75 line (and `reason` in `result.json` and the history `starved` line) now says what the run
+  wanted and what expired: `STARVED heavy (group cpu busy: wanted 2 of 8 units; waited 1d)`,
+  `STARVED gate (slots busy; waited 3h)`, `STARVED lint (queue; waited 10m)`. The wait is the
+  pool's, after `--wait`, in the config's duration form. Before, a slot wait printed a bare
+  `STARVED <pool>` and a group wait named no units or wait. Other reasons are unchanged.
+- `docs/local-heavy-pool.md`: a recipe for one machine with a `cpu` group and gate, heavy, light
+  and bench pools.
+
+### Changed
+
+- CI runs in the merge queue (`merge_group`) and is split into named jobs; `make ci` is unchanged
+  locally.
+- The release workflow's `dry-run` job now runs `make release-check`, and a new `vuln` job runs
+  `make vuln`, on pull requests, in the merge queue and on a push to `main`, so the run at the
+  release sha is the release gate. `vuln` is advisory on pull requests. `make tools-ci` now also
+  installs govulncheck.
+
+### Fixed
+
+- With `[compat]` set, a RunPod launch is now refused when the legacy launch lock
+  (`<legacy_dir>/locks/runpod-launch.lock`) cannot be opened or is not taken within
+  `launch_wait`, with `legacy launch lock <path>: busy` (or the open error). It is refused as a
+  temporary failure like a busy launch lock: nothing is created, no reservation is written, and
+  that provider is skipped. The run ends 75 with
+  `STARVED <pool> (no provider left: legacy launch lock <path>: busy)` only when no provider is
+  left, and runs locally if `local` comes next in the pool's providers. Before, such a launch
+  went ahead without the lock and could slip past the spend cap a legacy launcher was checking
+  ([#9](https://github.com/Exploded-views/bitc/issues/9)). Only RunPod takes the legacy lock and
+  writes the legacy reservation line; other provider types are unaffected.
+- On Linux a state or accounting dir on CIFS, SMB2, SMB, 9p, AFS or any FUSE mount (sshfs, rclone,
+  s3fs) is now refused (78) like NFS, naming the filesystem (`is on cifs; ...`), because flock
+  there is not bitc's exclusion. A local FUSE filesystem is refused too; point `BITC_DIR` at a
+  local directory instead. `BITC_DIR` moves the state dir only, not the accounting dir. The
+  state-dir 78 message, on macOS too, now ends with
+  `set BITC_DIR (or --state-dir) to a local path (in a container, a tmpfs or a named volume)`; the
+  accounting-dir message has no hint
+  ([#25](https://github.com/Exploded-views/bitc/issues/25)).
+
+### Known issues
+
+- macOS builds still refuse every remote provider (78). macOS as a client to remote providers
+  ([#4](https://github.com/Exploded-views/bitc/issues/4),
+  [#26](https://github.com/Exploded-views/bitc/issues/26)) is planned for 0.1.5.
+- On Linux without a readable `/proc/locks`, `bitc status`, `bitc doctor` and
+  `bitc sweep --dry-run` still read pool slot holders with a brief try-lock, so for that moment a
+  concurrent admission can find a free slot busy
+  ([#24](https://github.com/Exploded-views/bitc/issues/24)); now planned for 0.1.5.
+- Sprites stays refused until the catch-all egress deny lands
+  ([#6](https://github.com/Exploded-views/bitc/issues/6)).
+- A run from a working directory in the high priority lane (`priority.high_cwd` or
+  `priority.high_cwd_contains`) can still starve normal runs in the same pool while high runs keep
+  overlapping; aging is planned for 0.1.5.
+
 ## [0.1.3] - 2026-11-02
 
 ### Changed
