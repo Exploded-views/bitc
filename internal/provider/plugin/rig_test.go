@@ -24,10 +24,14 @@ import (
 var stubBin string
 
 // TestMain builds the stub plugin once, and doubles as the __plugin-exec shim: the adapter starts
-// plugins as `/proc/self/exe __plugin-exec <path>`, which in this process is the test binary.
+// plugins as `<this executable> __plugin-exec <path>` (/proc/self/exe on Linux, os.Executable on
+// darwin), which in this process is the test binary. It is also the bitc that tests kill (__host).
 func TestMain(m *testing.M) {
 	if len(os.Args) > 2 && os.Args[1] == "__plugin-exec" {
 		os.Exit(ExecShim(os.Args[2:]))
+	}
+	if len(os.Args) > 2 && os.Args[1] == "__host" {
+		os.Exit(hostMain(os.Args[2:]))
 	}
 	dir, err := os.MkdirTemp("", "plugin-stub-")
 	if err != nil {
@@ -166,6 +170,7 @@ type diagT struct {
 	Args       []string `json:"args"`
 	Tmpdir     string   `json:"tmpdir"`
 	Pid, Pgid  int
+	Ppid       int
 	NoNewPrivs string   `json:"nonewprivs"`
 	Fds        []string `json:"fds"`
 	Secrets    string   `json:"secrets"`
@@ -181,7 +186,7 @@ func (r *rig) diag() diagT {
 	}
 	var m map[string]any
 	_ = json.Unmarshal(r.read("diag.json"), &m)
-	d.Pid, d.Pgid = int(m["pid"].(float64)), int(m["pgid"].(float64))
+	d.Pid, d.Pgid, d.Ppid = int(m["pid"].(float64)), int(m["pgid"].(float64)), int(m["ppid"].(float64))
 	return d
 }
 
