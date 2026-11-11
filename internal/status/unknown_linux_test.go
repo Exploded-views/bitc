@@ -175,3 +175,17 @@ func TestDoctorWarnsWhenProcLocksOpensButCannotBeRead(t *testing.T) {
 		t.Fatalf("%d warnings, want 1:\n%s", n, out.String())
 	}
 }
+
+// An unknown holder's text line names its units, as a known holder's does (the JSON already has them).
+func TestUnknownHolderTextLineNamesItsUnits(t *testing.T) {
+	noProcLocks(t)
+	l, _ := state.Open(filepath.Join(t.TempDir(), "s"))
+	writeTicket(t, l, "lint", ticketName, `{"pid":42,"job":"build","class":1,"state":"running","slot":1,"argv":["make"],"cwd":"/w","hold_started":1,"wait_started":1,"units":{"cpu":2}}`)
+	e := &config.Effective{Pools: map[string]*config.Pool{"lint": {Name: "lint", Slots: 2}}}
+	r := Snapshot(e, l, nil)
+	var out bytes.Buffer
+	r.Text(&out)
+	if !strings.Contains(out.String(), "  slot 1  unknown  build  pid 42  units cpu=2  since ") {
+		t.Fatalf("unknown holder line lacks its units:\n%s", out.String())
+	}
+}
