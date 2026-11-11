@@ -163,10 +163,9 @@ func t6IsStopped(pid int) bool {
 func t6StateIsT(st string) bool { return strings.HasPrefix(st, "T") || strings.HasPrefix(st, "t") }
 
 // t6AdmitLockHeld reports whether any process holds the host's admit.lock. It is the one place
-// the test reads that lock: PR #41 replaces lock.HeldRO with lock.Inspect(path) == lock.StateHeld,
-// so its merge changes this line only.
+// the test reads that lock.
 func t6AdmitLockHeld(h *harness.H) bool {
-	return lock.HeldRO(filepath.Join(h.State, "admit.lock"))
+	return lock.Inspect(filepath.Join(h.State, "admit.lock")) == lock.StateHeld
 }
 
 // t6AssertAdmitFree checks that the stopped W does not hold admit.lock.

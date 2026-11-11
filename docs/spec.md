@@ -125,15 +125,21 @@ record (a job a legacy launcher started, 12): legacy J8/J9 apply, so the last li
 
 - **status** (`--json`: `docs/status.schema.json`): holders (job, slot, pid, cwd, argv, provider,
   `nested`), waiters, last STARVED reason, groups, memory, per-provider resources, spend, breaker.
+  On Linux without a readable `/proc/locks` (no procfs, an LSM or seccomp denial, gVisor) a lock
+  cannot be inspected without taking it, and status never takes one: a slot or group unit that is
+  in use as far as its ticket or lock file shows reads `unknown` (text), `"unknown": true` on
+  the holder or waiter and an `unknown` unit list on the group (`--json`), is not counted as
+  held, and is never called free.
   Ages: a pool with waiters prints `(wait <configured>, oldest <age>)` after its count, and each
   waiter line ends `since <ts> (<age>)`, ages in the duration form of 5.2 (`1h22m`, whole
   seconds). `--json` adds per pool `wait` (the configured wait) and, only with waiters,
   `oldest_wait_s`, and per waiter `waited_s` (integer seconds). Every age is measured to the
   report's own `time`, so text and JSON agree.
-- **sweep**: exit 0 unless 64/78 (78 also for a network-filesystem home, 8.3); prints `swept <kind> <id> (<why>)`. Local: dead tickets and their
+- **sweep**: exit 0 unless 64/78 (78 also for a network-filesystem home, 8.3); prints `swept <kind> <id> (<why>)`. `--dry-run` never lists a ticket whose holder is `unknown` as swept; it prints `kept ticket <pool>/<name> (holder unknown: /proc/locks unreadable)`. Local: dead tickets and their
   process groups, dead supervisors' records (`lost`), stale staging dirs, rotation, `retention`.
   Remote: 8.3. Run it from a timer (`docs/sweep-timer.md`: systemd user timer, 15 min).
 - **doctor**: `ok|warn|fail <check>: <detail>`; exit 0, 69 on a fail, 78 for config (`--remote` also 78 for an agent `module_dir` that is not a clean git tree). Checks Linux,
+  `warn locks: /proc/locks unreadable; ...` when slot holders cannot be read (see status),
   dirs (flock, local fs, 0700, owner), config, `/proc/meminfo`, schema. `--remote`: credentials
   resolvable, API and billing reachable, cap headroom, agent source, ref namespace, known hosts.
 - **cancel**: SIGTERM to the supervisor, which applies `on_signal` (6.4); `--kill` or a second

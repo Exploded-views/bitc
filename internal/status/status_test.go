@@ -210,7 +210,7 @@ func TestLegacySlotLockIsTheAdmissionPath(t *testing.T) {
 		return admit.LegacySlotLock(c, "lint", 2), rel
 	}()
 	defer unlock()
-	if !lock.HeldRO(rel) {
+	if lock.Inspect(rel) != lock.StateHeld {
 		t.Fatalf("admission's slot lock is not at %s", rel)
 	}
 }

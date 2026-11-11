@@ -70,12 +70,12 @@ func holdInChild(t *testing.T, path, mode string) (release func()) {
 	return release
 }
 
-func TestHeldROSeesAnotherProcessHolding(t *testing.T) {
+func TestInspectSeesAnotherProcessHolding(t *testing.T) {
 	for _, mode := range []string{"ex", "sh"} {
 		t.Run(mode, func(t *testing.T) {
 			p := filepath.Join(t.TempDir(), "unit.1.lock")
 			release := holdInChild(t, p, mode)
-			if !HeldRO(p) {
+			if Inspect(p) != StateHeld {
 				t.Fatal("a lock held by another process reads as free")
 			}
 			b, err := Open(p)
@@ -97,7 +97,7 @@ func TestHeldROSeesAnotherProcessHolding(t *testing.T) {
 				}
 			}
 			t.Cleanup(func() { inProbe = nil })
-			if HeldRO(p) {
+			if Inspect(p) == StateHeld {
 				t.Fatal("a released lock reads as held")
 			}
 			if !ran || !got {
