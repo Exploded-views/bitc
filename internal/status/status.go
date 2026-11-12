@@ -279,7 +279,7 @@ func (r Report) Text(w io.Writer) {
 				continue
 			}
 			if h.Unknown {
-				fmt.Fprintf(w, "  slot %d  unknown  %s  pid %d  since %s  %s\n", h.Slot, h.Job, h.Pid, h.Since, strings.Join(h.Argv, " "))
+				fmt.Fprintf(w, "  slot %d  unknown  %s  pid %d%s  since %s  %s\n", h.Slot, h.Job, h.Pid, unitsText(h.Units), h.Since, strings.Join(h.Argv, " "))
 				continue
 			}
 			if h.Legacy {

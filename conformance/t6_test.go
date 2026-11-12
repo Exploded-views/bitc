@@ -28,6 +28,7 @@ const t6Gated = `while [ ! -e "$3" ]; do sleep 0.02; done; echo "$1" >> "$2"`
 // T6 is a characterization guard: it passes on the code that introduced it. It pins first-in,
 // first-out admission when newcomers arrive just after a release.
 func TestT6_NewcomerAfterReleaseDoesNotJumpTheQueue(t *testing.T) {
+	t6NeedHolders(t)
 	h := harness.New(t)
 	h.HostConfig("[pools.lint]\nwait = \"60s\"\n")
 	hold := h.Hold(t6Poll, "lint")
@@ -54,6 +55,7 @@ func TestT6_NewcomerAfterReleaseDoesNotJumpTheQueue(t *testing.T) {
 }
 
 func TestT6_OneSlotImpatientNewcomersStarveWhileAWaiterIsQueued(t *testing.T) {
+	t6NeedHolders(t)
 	h := harness.New(t)
 	h.HostConfig("[pools.lint]\nwait = \"60s\"\n")
 	hold := h.Hold(t6Poll, "lint")
@@ -78,6 +80,7 @@ func TestT6_OneSlotImpatientNewcomersStarveWhileAWaiterIsQueued(t *testing.T) {
 }
 
 func TestT6_TwoSlotsFreedSlotGoesToTheWaiter(t *testing.T) {
+	t6NeedHolders(t)
 	h := harness.New(t)
 	h.HostConfig("[pools.lint]\nslots = 2\nwait = \"60s\"\n")
 	h1 := h.Hold(t6Poll, "lint")
@@ -161,6 +164,15 @@ func t6IsStopped(pid int) bool {
 }
 
 func t6StateIsT(st string) bool { return strings.HasPrefix(st, "T") || strings.HasPrefix(st, "t") }
+
+// t6NeedHolders skips a T6 test where lock holders cannot be read (a Linux host without a readable
+// /proc/locks): there every admit.lock read is unknown, so the test would pass without testing.
+func t6NeedHolders(t *testing.T) {
+	t.Helper()
+	if !lock.HoldersVisible() {
+		t.Skip("T6 reads admit.lock holders, and this host cannot read lock holders (#24)")
+	}
+}
 
 // t6AdmitLockHeld reports whether any process holds the host's admit.lock. It is the one place
 // the test reads that lock.
