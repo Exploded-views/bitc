@@ -37,7 +37,7 @@ jobs:
       # The same toolchain as scripts/dev.sh pins and ci.yml uses.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.3"
+          go-version: "1.27.4"
           cache: true
       - name: Install pinned tools
         run: |
@@ -60,7 +60,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.3"
+          go-version: "1.27.4"
           cache: true
       - name: Install pinned tools
         run: |
@@ -85,7 +85,7 @@ jobs:
       # No build cache on a release: nothing another workflow saved goes into the assets.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.3"
+          go-version: "1.27.4"
           cache: false
       - name: Install pinned tools
         run: |
