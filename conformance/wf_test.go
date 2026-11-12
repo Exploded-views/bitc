@@ -595,3 +595,46 @@ func TestWF8_ReleasingDocSaysTheGatesRunHosted(t *testing.T) {
 		t.Error("docs/RELEASING.md does not say the release gates run hosted")
 	}
 }
+
+// wfMinGo is the oldest Go toolchain the pins may name: go1.27.3 has GO-2026-6859 (net/http),
+// fixed in go1.27.4. Raise it when a later standard-library advisory needs a newer patch.
+var wfMinGo = [3]int{1, 27, 4}
+
+func TestWF9_OneGoToolchainEverywhereAndPatched(t *testing.T) {
+	pinRE := regexp.MustCompile(`(?m)^\s*go-version: "([^"]+)"$`)
+	vers := map[string]bool{}
+	for _, f := range []string{"../.github/workflows/ci.yml", "../.github/workflows/release.yml"} {
+		ms := pinRE.FindAllStringSubmatch(string(must(os.ReadFile(f))), -1)
+		if len(ms) == 0 {
+			t.Fatalf("%s has no go-version pin", f)
+		}
+		for _, m := range ms {
+			vers[m[1]] = true
+		}
+	}
+	if len(vers) != 1 {
+		t.Fatalf("the workflows pin more than one Go toolchain: %v", vers)
+	}
+	var v string
+	for k := range vers {
+		v = k
+	}
+	var got [3]int
+	if n, err := fmt.Sscanf(v, "%d.%d.%d", &got[0], &got[1], &got[2]); n != 3 || err != nil {
+		t.Fatalf("go-version %q is not a full x.y.z version", v)
+	}
+	for i := range got {
+		if got[i] != wfMinGo[i] {
+			if got[i] < wfMinGo[i] {
+				t.Errorf("go-version %s is older than the patched go%d.%d.%d", v, wfMinGo[0], wfMinGo[1], wfMinGo[2])
+			}
+			break
+		}
+	}
+	if dev := string(must(os.ReadFile("../scripts/dev.sh"))); !regexp.MustCompile(`(?m)^BITC_DEV_IMAGE=\$\{BITC_DEV_IMAGE:-golang:` + regexp.QuoteMeta(v) + `-bookworm@sha256:[0-9a-f]{64}\}$`).MatchString(dev) {
+		t.Errorf("scripts/dev.sh does not pin the golang:%s-bookworm image by digest", v)
+	}
+	if doc := string(must(os.ReadFile("../docs/install.md"))); !strings.Contains(doc, "(CI tests "+v+")") {
+		t.Errorf("docs/install.md does not say CI tests %s", v)
+	}
+}
