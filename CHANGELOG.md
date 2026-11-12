@@ -17,6 +17,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `/proc/locks`, and `sweep --dry-run` never counts an unknown slot as reclaimable
   ([#24](https://github.com/Exploded-views/bitc/issues/24)).
 
+### Security
+
+- Builds and CI use Go 1.27.4, which fixes the standard-library `net/http` advisory
+  GO-2026-6859 that `govulncheck` reports in Go 1.27.3.
+
 ## [0.1.4] - 2026-11-04
 
 ### Added
