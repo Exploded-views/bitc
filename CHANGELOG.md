@@ -18,8 +18,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `bitc.state` and `bitc.ticket`, and bitc force-removes it at the time
   limit, on INT, TERM or HUP, on `bitc cancel`, and when bitc is SIGKILLed (a guard process on a
   lifeline pipe, on Linux and macOS). `bitc sweep` and the next admission remove orphaned
-  containers by label. The container gets a minimal environment, not the host's, and its values
-  stay off docker's command line (`-e NAME`, the values in docker's own environment). A missing docker
+  containers by label, and a sweep error aborts the sweep with nothing deleted. Every removal is
+  by container id (from the cidfile or the listing), never by name. The container gets a minimal
+  environment, not the host's, in a 0600 `--env-file` that bitc removes when the run ends (its
+  values never reach docker's command line). A missing docker
   CLI, or docker failing before the container exists, is exit 69; a bad `container` table is 78.
   See [docs/containers.md](docs/containers.md)
   ([#60](https://github.com/Exploded-views/bitc/issues/60)).

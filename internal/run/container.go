@@ -75,24 +75,10 @@ func workTreeMount(eff *config.Effective) config.Mount {
 	return config.Mount{Source: src, Target: src}
 }
 
-// dockerReads are the variables the docker CLI reads for itself: PATH (credential helpers), HOME
-// and XDG_* (its config), DOCKER_* (the daemon, the context), proxies, the ssh agent. A container
-// value for one of them cannot replace the CLI's own, so it goes on argv as NAME=VALUE, the one
-// case a value is visible to ps.
-func dockerReads(k string) bool {
-	u := strings.ToUpper(k)
-	switch u {
-	case "PATH", "HOME", "USER", "TMPDIR", "SSH_AUTH_SOCK":
-		return true
-	}
-	return strings.HasPrefix(u, "DOCKER_") || strings.HasPrefix(u, "XDG_") || strings.HasSuffix(u, "_PROXY")
-}
-
 // containerRun is the docker side of one containerized run.
 type containerRun struct {
 	spec    container.Spec
-	cliEnv  []string // the docker run CLI's environment: the host's, plus the container's values (passed by name)
-	hostEnv []string // the host's: what the removals and the guard run with
+	env     []string // the host's environment: what the docker CLI, the removals and the guard run with
 	guard   *container.Guard
 	pending sync.WaitGroup
 	once    sync.Once
@@ -111,11 +97,16 @@ func containerRuntime(pool *config.Pool, env []string) (string, error) {
 // newContainerRun builds the docker run argv for the admitted command and starts the guard that
 // removes the container if bitc is killed. The argv replaces the command: Exec runs the docker CLI
 // as the run's child, so the limit, the signals and the exit status work as for any local run.
-func newContainerRun(inv Invocation, p *Prepared, hold *admit.Hold, rt string, in EnvInput, kv []KV, cliEnv []string, stderr io.Writer) (*containerRun, []string, error) {
+func newContainerRun(inv Invocation, p *Prepared, hold *admit.Hold, rt string, in EnvInput, kv []KV, hostEnv []string, stderr io.Writer) (*containerRun, []string, error) {
 	eff, pool := p.Eff, p.Pool
 	cenv, err := containerEnv(in, kv)
 	if err != nil {
 		return nil, nil, err
+	}
+	for _, e := range cenv { // one NAME=VALUE per line of the env file: a value cannot hold a line break
+		if k, _, _ := strings.Cut(e, "="); strings.ContainsAny(e, "\n\r\x00") {
+			return nil, nil, exit.Configf("%s: the container env %s has a line break or a NUL in its value, which docker's env file cannot hold", pool.Name, k)
+		}
 	}
 	wt := workTreeMount(eff)
 	if strings.ContainsAny(wt.Source, ",\"\n") {
@@ -127,26 +118,21 @@ func newContainerRun(inv Invocation, p *Prepared, hold *admit.Hold, rt string, i
 		return nil, nil, exit.Unavailablef("%s: cannot create %s: %v", pool.Name, p.Layout.ContainersDir(), err)
 	}
 	_ = os.Remove(cid) // docker refuses an existing --cidfile
-	// The values go to docker in its own environment, `-e NAME` on argv: argv is readable by every
-	// local user for the whole run, a process's environment by its owner only.
-	runEnv, byName := append([]string(nil), cliEnv...), make([]string, 0, len(cenv))
-	for _, kv := range cenv {
-		k, _, _ := strings.Cut(kv, "=")
-		if dockerReads(k) {
-			byName = append(byName, kv)
-			continue
-		}
-		runEnv = append(withoutKeys(runEnv, k), kv)
-		byName = append(byName, k)
+	// The container's environment goes to docker in a 0600 file in the state dir (0700), never on
+	// argv, which every local user can read for the whole run. It is removed when the run ends:
+	// finish, and the guard if bitc is killed.
+	envFile := filepath.Join(p.Layout.ContainersDir(), id+".env")
+	if err := container.WriteEnvFile(envFile, cenv); err != nil {
+		return nil, nil, exit.Unavailablef("%s: cannot write the container env file: %v", pool.Name, err)
 	}
 	c := pool.Container
-	cr := &containerRun{cliEnv: runEnv, hostEnv: cliEnv, spec: container.Spec{
-		Runtime: rt, Image: c.Image, Job: p.Job, Pool: pool.Name, State: container.StateHash(p.Layout.Root), Ticket: id, CID: cid,
-		Mounts: append([]config.Mount{wt}, c.Mounts...), Dir: eff.Cwd, CPUs: c.CPUs, Memory: c.Memory, Env: byName,
+	cr := &containerRun{env: hostEnv, spec: container.Spec{
+		Runtime: rt, Image: c.Image, Job: p.Job, Pool: pool.Name, State: container.StateHash(p.Layout.Root), Ticket: id, CID: cid, EnvFile: envFile,
+		Mounts: append([]config.Mount{wt}, c.Mounts...), Dir: eff.Cwd, CPUs: c.CPUs, Memory: c.Memory,
 		TTY: isTTY(inv.Stdin), Argv: p.Args.Argv}}
 	exe, args, err := guardCommand()
 	if err == nil {
-		cr.guard, err = container.StartGuard(exe, args, rt, container.Name(id), cliEnv)
+		cr.guard, err = container.StartGuard(exe, args, rt, cid, envFile, hostEnv)
 	}
 	if err != nil {
 		fmt.Fprintf(stderr, "bitc: %s: cannot start the container guard (%v); if bitc is killed the container stays until the next run or bitc sweep removes it\n", pool.Name, err)
@@ -154,26 +140,36 @@ func newContainerRun(inv Invocation, p *Prepared, hold *admit.Hold, rt string, i
 	return cr, container.RunArgv(cr.spec), nil
 }
 
-// kill force-removes the container without holding up the run's own teardown (Exec's SIGKILL step).
+// kill force-removes the container without holding up the run's own teardown (Exec's SIGKILL
+// step). It removes by the id docker wrote to the cidfile and by nothing else: no id, no container
+// this run created (yet; finish looks again), and a name could be another run's.
 func (cr *containerRun) kill() {
+	id := container.ReadID(cr.spec.CID)
+	if id == "" {
+		return
+	}
 	cr.pending.Add(1)
 	exit.Go(func() {
 		defer cr.pending.Done()
-		_ = container.Remove(context.Background(), cr.spec.Runtime, container.Name(cr.spec.Ticket), cr.hostEnv)
+		_ = container.Remove(context.Background(), cr.spec.Runtime, id, cr.env)
 	})
 }
 
-// finish runs once the docker CLI has ended, however it ended: the container is force-removed
-// (--rm already removed one that ended by itself), the guard is told it can go, and the cidfile is
-// read and removed. It reports whether docker created the container: a CLI that exited 125 without
-// creating one failed before the command started.
+// finish runs once the docker CLI has ended, however it ended: the container with the id in the
+// cidfile is force-removed (--rm already removed one that ended by itself), the cidfile and the env
+// file are removed, and the guard is told it can go. With no id in the cidfile docker never created
+// a container for this run: nothing is removed, and a CLI that exited 125 failed before the
+// command started. It reports whether docker created the container.
 func (cr *containerRun) finish() bool {
 	cr.once.Do(func() {
 		cr.pending.Wait()
-		_ = container.Remove(context.Background(), cr.spec.Runtime, container.Name(cr.spec.Ticket), cr.hostEnv)
-		b, err := os.ReadFile(cr.spec.CID)
-		cr.created = err == nil && len(b) > 0
+		id := container.ReadID(cr.spec.CID)
+		cr.created = id != ""
+		if cr.created {
+			_ = container.Remove(context.Background(), cr.spec.Runtime, id, cr.env)
+		}
 		_ = os.Remove(cr.spec.CID)
+		_ = os.Remove(cr.spec.EnvFile)
 		if cr.guard != nil {
 			cr.guard.Done()
 		}
@@ -191,6 +187,7 @@ func reapOrphans(ctx context.Context, p *Prepared, rt string, env []string, stde
 		hist(state.Event{Event: "container-reaped", Pool: f.Pool, Job: f.Job})
 	}, func(container.Found) {})
 	if err != nil {
-		Debugf(p, stderr, "%s: container sweep: %v", p.Pool.Name, err)
+		// an error aborts the sweep with nothing deleted; it never stops the run
+		Debugf(p, stderr, "%s: container sweep aborted: %v", p.Pool.Name, err)
 	}
 }

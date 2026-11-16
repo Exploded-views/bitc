@@ -28,14 +28,16 @@ type Guard struct {
 	w   *os.File
 }
 
-// StartGuard starts `exe exeArgs... <runtime> <name>` as the guard. Production passes bitc's own
-// binary and "__container-guard".
-func StartGuard(exe string, exeArgs []string, runtime, name string, env []string) (*Guard, error) {
+// StartGuard starts `exe exeArgs... <runtime> <cidfile> <envfile>` as the guard. Production passes
+// bitc's own binary and "__container-guard". The guard knows the run's container only through its
+// cidfile, the id docker wrote there: with no id there is no container this run created, and the
+// guard removes none (a name it could remove by might be another run's).
+func StartGuard(exe string, exeArgs []string, runtime, cidfile, envfile string, env []string) (*Guard, error) {
 	r, w, err := os.Pipe()
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.Command(exe, append(append([]string{}, exeArgs...), runtime, name)...) //nolint:gosec // G702: exe is bitc's own binary; the arguments are the runtime path bitc found and a name it built
+	cmd := exec.Command(exe, append(append([]string{}, exeArgs...), runtime, cidfile, envfile)...) //nolint:gosec // G702: exe is bitc's own binary; the arguments are the runtime path bitc found and two paths it built
 	cmd.Env = env
 	cmd.ExtraFiles = []*os.File{r} // fd 3; stdin, stdout and stderr are the null device
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -55,10 +57,11 @@ func (g *Guard) Done() {
 	exit.Go(func() { _ = g.cmd.Wait() })
 }
 
-// GuardMain is the body of `bitc __container-guard <runtime> <name>`: it waits on life; "done"
-// means bitc cleaned up, and anything else (EOF) means bitc died, so it removes the container.
+// GuardMain is the body of `bitc __container-guard <runtime> <cidfile> <envfile>`: it waits on
+// life; "done" means bitc cleaned up, and anything else (EOF) means bitc died, so it removes the
+// container whose id is in the cidfile (if there is one) and the cidfile and the env file.
 func GuardMain(args []string, life *os.File) int {
-	if len(args) != 2 {
+	if len(args) != 3 {
 		return exit.Usage
 	}
 	r := bufio.NewReader(life)
@@ -71,6 +74,10 @@ func GuardMain(args []string, life *os.File) int {
 			break
 		}
 	}
-	_ = Remove(context.Background(), args[0], args[1], os.Environ())
+	if id := ReadID(args[1]); id != "" {
+		_ = Remove(context.Background(), args[0], id, os.Environ())
+	}
+	_ = os.Remove(args[2]) //nolint:gosec // G703: the env file path bitc built in its own state dir and passed
+	_ = os.Remove(args[1]) //nolint:gosec // G703: the cidfile path, likewise
 	return 0
 }

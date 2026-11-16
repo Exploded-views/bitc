@@ -54,13 +54,13 @@ cannot also have a `wrap` hook: the container is the wrapper, and combining them
   `env_unset`, and an `env` hook's output; and `BITC_POOL`, `BITC_SLOT` and `BITC_JOB`. Tokens,
   `HOME`, `PATH`, `SSH_AUTH_SOCK` and the rest of the caller's environment stay on the host, and so
   do `BITC_HOLD` and `BITC_DIR`: a `bitc` inside the container cannot verify a hold, and the state
-  dir is not mounted. The values are not on the `docker run` command line, which every local user
-  can read with `ps`: argv has `-e NAME` and the values are in the docker CLI's own environment,
-  which only its owner (and root) can read. The exceptions are the variables docker itself reads
-  (`PATH`, `HOME`, `USER`, `TMPDIR`, `SSH_AUTH_SOCK`, `DOCKER_*`, `XDG_*` and `*_PROXY`): a pool
-  `env` value for one of those is passed as `-e NAME=VALUE`, visible to `ps`, so do not put a secret
-  there. `docker inspect` shows a container's environment to anyone who can use the docker socket,
-  whatever bitc does.
+  dir is not mounted. No value is on the `docker run` command line, which every local user can
+  read with `ps`: bitc writes the environment to `<state dir>/containers/<ticket id>.env`, a file
+  of mode 0600 in the 0700 state dir, passes `--env-file` and removes the file when the run ends
+  (a normal end, the time limit, a signal, `cancel`) and, if bitc is SIGKILLed, the guard does. A
+  value with a line break cannot be one line of that file: it is a config error (78) naming the
+  variable. `docker inspect` shows a container's environment to anyone who can use the docker
+  socket, whatever bitc does.
 - **Not carried over.** The host's environment, the process group (the container has its own),
   and the caller's user: the command runs as the image's user, so files it creates in the work
   tree belong to that user on a Linux host (OrbStack on a Mac maps them to you).
@@ -69,9 +69,11 @@ cannot also have a `wrap` hook: the container is the wrapper, and combining them
 
 Each run's container is named from its ticket, `bitc-<ticket id>` (for example
 `bitc-1-1794824899741835000-f5e7a842`), and labelled. The name is unique per run, because the job
-name (`--name`) is the caller's, can be reused and can be shared by runs going at the same time:
-every removal is by this name, so a name two runs shared would let one remove the other's container.
-The job stays a label, and `docker ps --filter label=bitc.job=<job>` finds it:
+name (`--name`) is the caller's, can be reused and can be shared by runs going at the same time.
+Nothing is ever removed by name: a removal goes by the container id docker wrote to the run's
+`--cidfile`, and the sweep by the id the listing gave. A run that never got an id created no
+container, so it removes none. The job stays a label, and `docker ps --filter label=bitc.job=<job>`
+finds it:
 
 | Label | Value |
 | --- | --- |
@@ -82,7 +84,7 @@ The job stays a label, and `docker ps --filter label=bitc.job=<job>` finds it:
 
 `docker run` is started with `--rm --init` and a `--cidfile` under the state dir's `containers/`
 (docker writes the id there once the container exists). Killing the docker CLI does not stop its
-container, so bitc removes it itself with `docker rm -f bitc-<ticket id>`:
+container, so bitc removes it itself with `docker rm -f <container id>`:
 
 - at the **time limit** (`pools.<p>.timeout`, `run --timeout`: exit 124, the usual line) and for
   INT, TERM or HUP to bitc (`128+N`) and `bitc cancel [--kill]` of a detached job: the CLI gets
@@ -93,16 +95,21 @@ container, so bitc removes it itself with `docker rm -f bitc-<ticket id>`:
   command gets no TERM, and the container is removed when the CLI has ended;
 - when **bitc is SIGKILLed**: no handler can run, so each run also starts a small guard process
   (`bitc __container-guard`, in its own session) that holds the read end of a pipe whose write end
-  is bitc's. The kernel closes bitc's end when it dies, even by SIGKILL; the guard reads EOF and runs
-  `docker rm -f`. A run that finishes normally tells the guard `done` first. This works the same on
-  Linux and macOS;
+  is bitc's. The kernel closes bitc's end when it dies, even by SIGKILL; the guard reads EOF, runs
+  `docker rm -f <id>` with the id in the cidfile (none there, none removed) and removes the env
+  file. A run that finishes normally tells the guard `done` first. This works the same on Linux and
+  macOS. (If bitc dies between docker creating the container and writing the id, the guard sees no
+  id and the sweep below catches the container.);
 - by the **orphan sweep**, as the backstop for a guard that never ran (the machine lost power, the
   guard was killed): a container with this state dir's `bitc.state` label whose `bitc.ticket` is a
   ticket nobody holds is removed by the next admission to any container pool and by `bitc sweep`
   (`swept container bitc-x (its run is gone)`; `--dry-run` only lists them). A live run's
-  container, a container of another state dir and one without the labels are never touched, and
-  neither is any container when the state dir's `pools/` cannot be read (the holders are then
-  unknown; the sweep never removes on a guess). The admission's orphan removal appears in the
+  container, a container of another state dir and one without the labels are never touched. A
+  sweep error aborts the sweep and deletes nothing, not a container and not a file: the state dir's
+  `pools/` cannot be read (nothing says which runs are live), the listing fails, a removal fails.
+  `bitc sweep` prints `container sweep aborted: <why>` and carries on with the rest of its work;
+  an admission that swept goes on and runs its command (a debug line). The sweep also removes the
+  cidfile and env file of runs that are gone. The admission's orphan removal appears in the
   history as a `container-reaped` event with the job from the `bitc.job` label (not `reaped`, which
   counts dead tickets).
 

@@ -69,7 +69,7 @@ func sweepContainers(e *config.Effective, l state.Layout, dryRun bool, out io.Wr
 		}
 		path, err := container.Lookup(rt, env)
 		if err != nil {
-			fmt.Fprintf(out, "kept containers (%s %v: its orphans, if any, stay until it is installed)\n", rt, err)
+			fmt.Fprintf(out, "container sweep aborted: %s %v; nothing was removed\n", rt, err)
 			continue
 		}
 		why := "its run is gone"
@@ -82,7 +82,8 @@ func sweepContainers(e *config.Effective, l state.Layout, dryRun bool, out io.Wr
 				fmt.Fprintf(out, "kept container %s (holder unknown: /proc/locks unreadable)\n", f.Name)
 			})
 		if err != nil {
-			fmt.Fprintf(out, "kept containers (%s: %v)\n", rt, err)
+			// the error stopped the sweep where it was: what it removed before it is in the swept lines above
+			fmt.Fprintf(out, "container sweep aborted: %s: %v\n", rt, err)
 		}
 	}
 }

@@ -316,13 +316,13 @@ func TestDK5_SigkilledBitcLeavesNoContainer(t *testing.T) {
 	if !fd.Running(name) {
 		t.Fatal("the container is not running")
 	}
-	p.Signal(syscall.SIGKILL) // no handler runs: the guard process that outlives bitc removes it
-	if r := p.Wait(); r.Code != 137 {
-		t.Fatalf("%+v", r)
-	}
 	envf := dkEnvFilePath(t, fd, "k1")
 	if dkGone(envf) {
 		t.Fatal("the env file is gone while the container runs")
+	}
+	p.Signal(syscall.SIGKILL) // no handler runs: the guard process that outlives bitc removes it
+	if r := p.Wait(); r.Code != 137 {
+		t.Fatalf("%+v", r)
 	}
 	// the guard removes the container (by the id in the cidfile) and the env file bitc could not
 	h.Until(func() bool { return fd.Removed(name) && !fd.Exists(name) && proctest.Gone(pid) && dkGone(envf) }, 20*time.Second)
@@ -409,11 +409,12 @@ func TestDK12_ASweepErrorRemovesNothing(t *testing.T) {
 	}
 	cid := filepath.Join(h.State, "containers", "0-0000000000000000002-cafef00d.cid")
 	h.Write(cid, "cidplantedbitc-orphan", 0o600)
+	rms := len(fd.CallsOf("rm")) // the priming run's own removal
 	r := h.Run("sweep")
 	if !strings.Contains(r.Stdout, "container sweep aborted") || strings.Contains(r.Stdout, "swept container") {
 		t.Fatalf("%+v", r)
 	}
-	if !fd.Exists("bitc-orphan") || len(fd.CallsOf("rm")) != 0 || dkGone(cid) {
+	if !fd.Exists("bitc-orphan") || len(fd.CallsOf("rm")) != rms || dkGone(cid) {
 		t.Fatalf("an aborted sweep deleted something: calls %v", fd.Calls())
 	}
 	// the daemon failing in the middle of the removals stops it there too

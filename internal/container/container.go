@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -83,7 +84,7 @@ type Spec struct {
 	Dir     string // --workdir
 	CPUs    string // "" = no limit
 	Memory  config.Size
-	Env     []string // passed as `-e <entry>`: NAME (docker takes the value from its own environment) or NAME=VALUE
+	EnvFile string // --env-file path (WriteEnvFile): the container's environment, never on argv
 	TTY     bool
 	Argv    []string // the command
 }
@@ -98,6 +99,9 @@ func RunArgv(s Spec) []string {
 		"--label", LabelJob + "=" + s.Job, "--label", LabelPool + "=" + s.Pool,
 		"--label", LabelState + "=" + s.State, "--label", LabelTicket + "=" + s.Ticket,
 		"--cidfile", s.CID}
+	if s.EnvFile != "" {
+		a = append(a, "--env-file", s.EnvFile)
+	}
 	for _, m := range s.Mounts {
 		v := "type=bind,source=" + m.Source + ",target=" + m.Target
 		if m.ReadOnly {
@@ -112,22 +116,61 @@ func RunArgv(s Spec) []string {
 	if s.Memory > 0 {
 		a = append(a, "--memory", strconv.FormatInt(int64(s.Memory), 10))
 	}
-	for _, e := range s.Env {
-		a = append(a, "-e", e)
-	}
 	a = append(a, s.Image)
 	return append(a, s.Argv...)
 }
 
-// RemoveArgv is the forced removal of the named container.
-func RemoveArgv(runtime, name string) []string { return []string{runtime, "rm", "-f", name} }
+// WriteEnvFile writes env (NAME=VALUE entries) one per line to path, mode 0600, for --env-file. It
+// replaces a leftover of the same name, and writes nothing if an entry cannot be one line of the
+// file (no name, no =, a newline or a NUL in it). The state dir around it is 0700 as well.
+func WriteEnvFile(path string, env []string) error {
+	var b strings.Builder
+	for _, kv := range env {
+		k, _, ok := strings.Cut(kv, "=")
+		if !ok || k == "" || strings.ContainsAny(kv, "\n\r\x00") {
+			return fmt.Errorf("%q cannot be a line of an env file", k)
+		}
+		b.WriteString(kv + "\n")
+	}
+	_ = os.Remove(path)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	err = f.Chmod(0o600)
+	if err == nil {
+		_, err = f.WriteString(b.String())
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		_ = os.Remove(path)
+	}
+	return err
+}
 
-// Remove force-removes the container (`rm -f`). A container that is already gone is not an error:
-// the run's own --rm, the guard and the sweep may all get there first.
-func Remove(ctx context.Context, runtime, name string, env []string) error {
+// ReadID is the container id docker wrote to the cidfile: "" if there is no file or nothing in it,
+// which means docker never created a container for this run.
+func ReadID(cidfile string) string {
+	b, err := os.ReadFile(cidfile) //nolint:gosec // G703: a path bitc built in its own state dir
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
+}
+
+// RemoveArgv is the forced removal of the container with this id.
+func RemoveArgv(runtime, id string) []string { return []string{runtime, "rm", "-f", id} }
+
+// Remove force-removes the container with this id (`rm -f`). It is by id and never by name: an id
+// is the one container this run (or the listing) saw, a name can be another run's. A container
+// that is already gone is not an error: the run's own --rm, the guard and the sweep may all get
+// there first.
+func Remove(ctx context.Context, runtime, id string, env []string) error {
 	ctx, cancel := context.WithTimeout(ctx, removeLimit)
 	defer cancel()
-	argv := RemoveArgv(runtime, name)
+	argv := RemoveArgv(runtime, id)
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Env = env
 	out, err := cmd.CombinedOutput()

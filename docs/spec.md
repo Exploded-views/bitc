@@ -478,20 +478,24 @@ of the caller's env.
   file only; docs/containers.md): the admitted command runs as `docker run --rm --init -i
   --name bitc-<ticket> --label bitc.job=<job> --label bitc.pool=<p> --label bitc.state=<hash> --label
   bitc.ticket=<ticket> --cidfile <state>/containers/<ticket>.cid --mount <work tree> ... --workdir
-  <cwd> [--cpus N] [--memory BYTES] -e NAME ... <image> <argv>` as the run's child, so
+  <cwd> [--cpus N] [--memory BYTES] --env-file <state>/containers/<ticket>.env <image> <argv>` as
+  the run's child, so
   admission, slots, groups, FIFO, the time limit, signals and the exit status are those of any
   local run: the status is the command's. The name is unique per run (the ticket id; `--name` is
-  the caller's and may be shared by runs going at once, so the job is only the `bitc.job` label), and every
-  removal is by that name. The work tree (with no work tree, the cwd) is mounted
+  the caller's and may be shared by runs going at once, so the job is only the `bitc.job` label),
+  and nothing is removed by name: a removal goes by the container id docker wrote to the
+  `--cidfile` (none there: no container of this run, none removed), the sweep by the id it listed.
+  The work tree (with no work tree, the cwd) is mounted
   at the same path and is the working directory; `-i` gives the command bitc's stdin (`-it` on a
-  TTY); the environment is the minimal one of 6.3, its values in the docker CLI's own environment
-  and only the names on argv (a variable docker itself reads, such as `PATH`, `HOME` or `DOCKER_*`,
-  stays `NAME=VALUE`). `--timeout`, `pools.<p>.timeout`, `cancel` and
-  INT/TERM/HUP end the run as above and then bitc runs `docker rm -f bitc-<ticket>`, also when it
+  TTY); the environment is the minimal one of 6.3, written by bitc to the 0600 env file (a value
+  with a line break is 78) and never on argv; the file is removed when the run ends (and by the
+  guard if bitc is killed). `--timeout`, `pools.<p>.timeout`, `cancel` and
+  INT/TERM/HUP end the run as above and then bitc runs `docker rm -f <id>`, also when it
   sends SIGKILL after `grace`, because killing the docker CLI does not stop its container (without
   a TTY the CLI proxies the TERM to the container; with one it does not). A
   guard process (`bitc __container-guard`, its own session, `fd 3` the read end of a pipe bitc
-  holds, the way the macOS plugin shim finds bitc dead) removes the container when that pipe
+  holds, the way the macOS plugin shim finds bitc dead) removes the container (by the id in the
+  cidfile) when that pipe
   closes without bitc having said `done`: a SIGKILLed bitc on Linux and macOS. A container whose
   `bitc.state` label is this state dir's hash and whose `bitc.ticket` names no held ticket is an
   orphan: the next admission of a container pool (note `bitc: removed orphaned container <name>
@@ -501,8 +505,10 @@ of the caller's env.
   not found on PATH ...`); `docker run` exiting 125 without having written its `--cidfile` is a
   failure before the command started: `bitc: <pool>: docker could not start the container ...`,
   69, `outcome = "unavailable"`. A 125, 126 or 127 once the container exists is the command's
-  (a 125 can still be docker's own start failure; it is not told apart). A pools dir that cannot
-  be read makes every container's holder unknown: none is removed. An orphan removed by an
+  (a 125 can still be docker's own start failure; it is not told apart). A sweep error (the pools
+  dir cannot be read, the listing or a removal fails) aborts the sweep and deletes nothing, not
+  even a cidfile or env file; `bitc sweep` says `container sweep aborted: <why>` and an admission
+  goes on. An orphan removed by an
   admission is a `container-reaped` history event, the job from the `bitc.job` label.
   `container` with a `wrap` hook, an unknown runtime, a bad `image`, `cpus`, `memory` or `mounts`
   entry is 78.
