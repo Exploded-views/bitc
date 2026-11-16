@@ -34,6 +34,9 @@ const dkPool = "[pools.box]\ncontainer = { image = \"" + dkImage + "\" }\n"
 
 var dkTicketRE = regexp.MustCompile(`^[01]-[0-9]{19}-[0-9a-f]{8}$`)
 
+// dkFullIDRE is a full container id: 64 hex digits.
+var dkFullIDRE = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
 // dkHash is the bitc.state label value: the first 12 hex digits of the state dir path's sha256.
 func dkHash(h *harness.H) string {
 	sum := sha256.Sum256([]byte(h.State))
@@ -112,8 +115,8 @@ func dkGone(path string) bool { _, err := os.Lstat(path); return os.IsNotExist(e
 func dkRemovedByID(t *testing.T, fd *harness.FakeDocker) {
 	t.Helper()
 	for _, a := range fd.RemovedBy() {
-		if strings.HasPrefix(a, "bitc-") || !strings.HasPrefix(a, "cid") {
-			t.Fatalf("a container was removed by %q, not by id: %v", a, fd.Calls())
+		if !dkFullIDRE.MatchString(a) { // a truncated id could be resolved as a name first
+			t.Fatalf("a container was removed by %q, not by its full id: %v", a, fd.Calls())
 		}
 	}
 }
@@ -411,19 +414,25 @@ func TestDK12_ASweepErrorRemovesNothing(t *testing.T) {
 	h.Write(cid, "cidplantedbitc-orphan", 0o600)
 	rms := len(fd.CallsOf("rm")) // the priming run's own removal
 	r := h.Run("sweep")
-	if !strings.Contains(r.Stdout, "container sweep aborted") || strings.Contains(r.Stdout, "swept container") {
+	// the sweep command exits 69 (unavailable: it could not do what it is for) after an abort
+	if r.Code != 69 || !strings.Contains(r.Stdout, "container sweep aborted") || strings.Contains(r.Stdout, "swept container") {
 		t.Fatalf("%+v", r)
 	}
 	if !fd.Exists("bitc-orphan") || len(fd.CallsOf("rm")) != rms || dkGone(cid) {
 		t.Fatalf("an aborted sweep deleted something: calls %v", fd.Calls())
 	}
-	// the daemon failing in the middle of the removals stops it there too
+	// the daemon failing at a removal stops it there: one rm call, however many orphans there are
 	if err := os.Remove(filepath.Join(h.State, "pools")); err != nil {
 		t.Fatal(err)
 	}
 	fd.Plant("bitc-orphan2", labels)
 	r = h.RunWith([]string{"FAKE_DOCKER_FAIL=rm"}, "sweep")
-	if !strings.Contains(r.Stdout, "container sweep aborted") || !fd.Exists("bitc-orphan") || !fd.Exists("bitc-orphan2") {
+	if r.Code != 69 || !strings.Contains(r.Stdout, "container sweep aborted") || !fd.Exists("bitc-orphan") || !fd.Exists("bitc-orphan2") ||
+		len(fd.CallsOf("rm")) != rms+1 || dkGone(cid) {
+		t.Fatalf("%+v rm calls %d, want %d: %v", r, len(fd.CallsOf("rm")), rms+1, fd.Calls())
+	}
+	// and a sweep that completes exits 0
+	if r := h.Run("sweep"); r.Code != 0 || fd.Exists("bitc-orphan") || fd.Exists("bitc-orphan2") {
 		t.Fatalf("%+v", r)
 	}
 	// and a run's admission with a failing sweep still runs the command
@@ -600,6 +609,45 @@ func TestDK9_ContainerEnvIsMinimal(t *testing.T) {
 	}
 	if !dkGone(path) {
 		t.Fatal("the env file is still there after the run")
+	}
+	// a value docker's env-file parser refuses (a line over 64 KiB) is a 78 naming the variable,
+	// before docker sees it
+	h.HostConfig("[pools.box]\ncontainer = { image = \"" + dkImage + "\" }\nenv = { BIG = \"" + strings.Repeat("x", 70000) + "\" }\n")
+	runs := len(fd.CallsOf("run"))
+	if r := h.Run("run", "box", "--", "true"); r.Code != 78 || !strings.Contains(r.Stderr, "BIG") || len(fd.CallsOf("run")) != runs {
+		t.Fatalf("%+v", r)
+	}
+}
+
+// The docker CLI, its removals, its guard and the sweep all run with the environment bitc itself
+// was given, so they all talk to one daemon: a pool's env (and an env hook's output) is the
+// container's environment and never docker's.
+func TestDK13_DockerSeesTheCallersEnvironmentNotThePools(t *testing.T) {
+	h := harness.New(t)
+	fd := h.FakeDocker()
+	h.HostConfig("[pools.box]\ncontainer = { image = \"" + dkImage + "\" }\nenv = { DOCKER_HOST = \"tcp://pool-env\" }\n")
+	pidFile := filepath.Join(h.Root, "pid")
+	p := h.StartWith([]string{"DOCKER_HOST=unix:///caller.sock"}, append([]string{"run", "--name", "d1", "box", "--"}, dkPidFile(pidFile)...)...)
+	dkWaitPid(h, pidFile)
+	p.Signal(syscall.SIGTERM) // run, ps, and (after the CLI died) rm
+	if r := p.Wait(); r.Code != 143 {
+		t.Fatalf("%+v", r)
+	}
+	if r := h.RunWith([]string{"DOCKER_HOST=unix:///caller.sock"}, "sweep"); r.Code != 0 {
+		t.Fatalf("%+v", r)
+	}
+	hosts := fd.DockerHosts()
+	if len(fd.CallsOf("run")) != 1 || len(fd.CallsOf("rm")) == 0 || len(hosts) < 4 {
+		t.Fatalf("calls: %v", fd.Calls())
+	}
+	for i, got := range hosts {
+		if got != "unix:///caller.sock" {
+			t.Fatalf("docker call %d ran with DOCKER_HOST=%q, want the caller's: %v", i, got, fd.Calls())
+		}
+	}
+	// the container still got the pool's value
+	if _, _, body, ok := fd.EnvFile(dkName(t, fd, "d1")); !ok || !strings.Contains(body, "DOCKER_HOST=tcp://pool-env\n") {
+		t.Fatalf("env file: %v %q", ok, body)
 	}
 }
 

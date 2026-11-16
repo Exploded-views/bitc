@@ -3,6 +3,8 @@ package run
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -53,7 +55,8 @@ func plantContainer(t *testing.T, stateDir, name string, labels map[string]strin
 	if err := os.MkdirAll(filepath.Join(stateDir, "c"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	id := "cid" + name
+	sum := sha256.Sum256([]byte("planted " + name))
+	id := hex.EncodeToString(sum[:]) // 64 hex digits, as docker's
 	b, _ := json.Marshal(map[string]any{"id": id, "name": name, "labels": labels})
 	if err := os.WriteFile(filepath.Join(stateDir, "c", name+".json"), b, 0o644); err != nil {
 		t.Fatal(err)
@@ -270,10 +273,22 @@ func TestContainerEnvFileHoldsEveryValue(t *testing.T) {
 		}
 	}
 	cr.finish()
-	in.Pool = &config.Pool{Name: "box", Env: map[string]config.Template{"MULTI": {Raw: "a\nb"}}}
-	if _, _, err := newContainerRun(Invocation{}, p, hold, path, in, nil, host, &stderr); exit.Code(err) != exit.Config {
-		t.Fatalf("a newline in a value: %v", err)
+	// values docker's env-file parser would refuse or the file cannot hold: a clean 78 naming the
+	// variable, never the value, before docker sees anything
+	for name, v := range map[string]string{"MULTI": "a\nb", "BAD_UTF8": "ok\xffok", "HUGE": strings.Repeat("x", 64*1024)} {
+		in.Pool = &config.Pool{Name: "box", Env: map[string]config.Template{name: {Raw: v}}}
+		_, _, err := newContainerRun(Invocation{}, p, hold, path, in, nil, host, &stderr)
+		if exit.Code(err) != exit.Config || !strings.Contains(exit.As(err).Line, name) || strings.Contains(exit.As(err).Line, "xxxx") {
+			t.Fatalf("%s: %v", name, err)
+		}
 	}
+	// a value just under the limit is fine
+	in.Pool = &config.Pool{Name: "box", Env: map[string]config.Template{"BIG": {Raw: strings.Repeat("x", 60*1024)}}}
+	cr, _, err = newContainerRun(Invocation{}, p, hold, path, in, nil, host, &stderr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cr.finish()
 }
 
 func TestReapOrphans(t *testing.T) {

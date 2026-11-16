@@ -2,6 +2,8 @@ package harness
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -145,6 +147,15 @@ func (f *FakeDocker) Created(name string) bool {
 	return false
 }
 
+// DockerHosts is the DOCKER_HOST each docker call ran with, oldest first ("" when unset).
+func (f *FakeDocker) DockerHosts() []string {
+	b, err := os.ReadFile(filepath.Join(f.State, "hostenv.log"))
+	if err != nil {
+		return nil
+	}
+	return strings.Split(strings.TrimSuffix(string(b), "\n"), "\n")
+}
+
 // RemovedBy is what each `docker rm` that removed a container was given (an id, or a name).
 func (f *FakeDocker) RemovedBy() []string {
 	var out []string
@@ -212,7 +223,8 @@ func (f *FakeDocker) Plant(name string, labels map[string]string) string {
 	if err := os.MkdirAll(filepath.Join(f.State, "c"), 0o755); err != nil {
 		f.h.T.Fatal(err)
 	}
-	id := "cidplanted" + name
+	sum := sha256.Sum256([]byte("planted " + name))
+	id := hex.EncodeToString(sum[:]) // 64 hex digits, as docker's
 	b, _ := json.Marshal(fakeRec{ID: id, Name: name, Labels: labels})
 	if err := os.WriteFile(filepath.Join(f.State, "c", name+".json"), b, 0o644); err != nil {
 		f.h.T.Fatal(err)

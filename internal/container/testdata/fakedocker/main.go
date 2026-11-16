@@ -19,10 +19,19 @@
 // is still removed by the daemon when its command exits); the fake removes it when the CLI ends or
 // on `rm -f`. bitc's `rm -f` is idempotent, so the difference is not a bitc correctness matter.
 //
-// FAKE_DOCKER_FAIL=run|ps makes that call fail at once like a daemon error (exit 125, nothing created).
+// FAKE_DOCKER_FAIL=run|rm|ps makes that call fail at once like a daemon error (exit 125, nothing
+// created or removed; the call is still logged).
+//
+// Ids are 64 hex digits. `ps` prints the 12-digit truncated id unless --no-trunc, as docker does,
+// and `rm` resolves its argument as a full id, then a name, then an id prefix, as the daemon does.
+// An --env-file with a line over 64 KiB or invalid UTF-8 makes `run` fail (125), as docker's parser
+// does. Every call also logs the DOCKER_HOST it was run with (hostenv.log), to show which
+// environment bitc gave the CLI.
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -33,6 +42,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Exploded-views/bitc/internal/exit"
 )
@@ -61,6 +71,10 @@ func main() {
 	}
 	_ = os.MkdirAll(filepath.Join(dir, "c"), 0o755)
 	logCall(os.Args[1:])
+	if f, err := os.OpenFile(filepath.Join(dir, "hostenv.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+		_, _ = f.WriteString(os.Getenv("DOCKER_HOST") + "\n")
+		f.Close()
+	}
 	if len(os.Args) < 2 {
 		os.Exit(125)
 	}
@@ -176,6 +190,10 @@ func run(args []string) int {
 		_ = os.MkdirAll(filepath.Join(dir, "envfiles"), 0o755)
 		_ = os.WriteFile(filepath.Join(dir, "envfiles", name+".json"), snap, 0o644)
 		for _, l := range strings.Split(string(b), "\n") {
+			if len(l) >= 64*1024 || !utf8.ValidString(l) { // docker's parser: a bufio.Scanner line, and valid UTF-8
+				fmt.Fprintf(os.Stderr, "docker: read %s: bufio.Scanner: token too long or invalid UTF-8\n", envfile)
+				return 125
+			}
 			switch {
 			case l == "" || strings.HasPrefix(l, "#"):
 			case strings.Contains(l, "="):
@@ -185,7 +203,8 @@ func run(args []string) int {
 			}
 		}
 	}
-	id := fmt.Sprintf("cid%x%x", time.Now().UnixNano(), os.Getpid())
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%d-%d", time.Now().UnixNano(), os.Getpid())))
+	id := hex.EncodeToString(sum[:])
 	if cidfile != "" {
 		f, err := os.OpenFile(cidfile, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 		if err != nil {
@@ -238,17 +257,30 @@ func run(args []string) int {
 	return cmd.ProcessState.ExitCode()
 }
 
-// find is a container by name or by id, as `docker rm` takes either.
-func find(nameOrID string) (record, bool) {
-	if r, ok := readRec(nameOrID); ok {
-		return r, true
-	}
+// find resolves a `docker rm` argument as the daemon does: a full id, then a name, then an id prefix.
+func find(arg string) (record, bool) {
+	var all []record
 	ents, _ := os.ReadDir(filepath.Join(dir, "c"))
 	for _, e := range ents {
 		if name, ok := strings.CutSuffix(e.Name(), ".json"); ok {
-			if r, ok := readRec(name); ok && r.ID == nameOrID {
-				return r, true
+			if r, ok := readRec(name); ok {
+				all = append(all, r)
 			}
+		}
+	}
+	for _, r := range all {
+		if r.ID == arg {
+			return r, true
+		}
+	}
+	for _, r := range all {
+		if r.Name == arg {
+			return r, true
+		}
+	}
+	for _, r := range all {
+		if arg != "" && strings.HasPrefix(r.ID, arg) {
+			return r, true
 		}
 	}
 	return record{}, false
@@ -285,8 +317,11 @@ var labelRE = regexp.MustCompile(`\{\{\s*\.Label\s+"([^"]*)"\s*\}\}`)
 func ps(args []string) int {
 	want := map[string]string{}
 	format := "{{.Names}}"
+	noTrunc := false
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
+		case "--no-trunc":
+			noTrunc = true
 		case "--filter", "-f":
 			i++
 			if i < len(args) {
@@ -318,7 +353,11 @@ next:
 				continue next
 			}
 		}
-		line := strings.ReplaceAll(strings.ReplaceAll(format, "{{.Names}}", r.Name), "{{.ID}}", r.ID)
+		id := r.ID
+		if !noTrunc && len(id) > 12 {
+			id = id[:12] // docker truncates the id in a listing unless told not to
+		}
+		line := strings.ReplaceAll(strings.ReplaceAll(format, "{{.Names}}", r.Name), "{{.ID}}", id)
 		line = labelRE.ReplaceAllStringFunc(line, func(m string) string { return r.Labels[labelRE.FindStringSubmatch(m)[1]] })
 		fmt.Println(line)
 	}

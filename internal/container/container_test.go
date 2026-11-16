@@ -2,11 +2,14 @@ package container
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -59,7 +62,8 @@ func (f *fake) plant(name string, labels map[string]string) string {
 	if err := os.MkdirAll(filepath.Join(f.state, "c"), 0o755); err != nil {
 		f.t.Fatal(err)
 	}
-	id := "cid" + name
+	sum := sha256.Sum256([]byte("planted " + name))
+	id := hex.EncodeToString(sum[:]) // 64 hex digits, as docker's
 	b, _ := json.Marshal(map[string]any{"id": id, "name": name, "labels": labels})
 	if err := os.WriteFile(filepath.Join(f.state, "c", name+".json"), b, 0o644); err != nil {
 		f.t.Fatal(err)
@@ -78,6 +82,19 @@ func (f *fake) removedBy() []string {
 		}
 	}
 	return out
+}
+
+// rmCalls is how many `docker rm` calls were made, successful or not.
+func (f *fake) rmCalls() int {
+	b, _ := os.ReadFile(filepath.Join(f.state, "argv.log"))
+	n := 0
+	for _, l := range strings.Split(string(b), "\n") {
+		var a []string
+		if json.Unmarshal([]byte(l), &a) == nil && len(a) > 0 && a[0] == "rm" {
+			n++
+		}
+	}
+	return n
 }
 
 func (f *fake) exists(name string) bool {
@@ -223,8 +240,10 @@ func TestSweepRemovesOrphansOfThisStateDirOnly(t *testing.T) {
 	if len(removed) != 2 || f.exists("bitc-dead") || f.exists("bitc-none") || len(kept) != 0 {
 		t.Fatalf("removed %v kept %v", removed, kept)
 	}
-	if by := f.removedBy(); len(by) != 2 || by[0] == "bitc-dead" || by[1] == "bitc-none" || !strings.HasPrefix(by[0], "cid") || !strings.HasPrefix(by[1], "cid") {
-		t.Fatalf("a container was removed by name, not by the id the listing gave: %v", by)
+	// by the full id: ps is asked for --no-trunc (the fake prints 12 digits otherwise, as docker does)
+	fullID := regexp.MustCompile(`^[0-9a-f]{64}$`)
+	if by := f.removedBy(); len(by) != 2 || !fullID.MatchString(by[0]) || !fullID.MatchString(by[1]) {
+		t.Fatalf("a container was removed by something but its full id: %v", by)
 	}
 	for _, n := range []string{"bitc-live", "bitc-junk", "bitc-other"} {
 		if !f.exists(n) {
@@ -289,8 +308,8 @@ func TestSweepAbortsOnAnErrorAndDeletesNothing(t *testing.T) {
 	// ... unless the docker call fails: that aborts too, after nothing was removed
 	f.plant("bitc-b", map[string]string{LabelPool: "p", LabelState: StateHash(l.Root), LabelTicket: "0-0000000000000000002-bbbbbbbb", LabelJob: "j"})
 	err = Sweep(context.Background(), f.path, l, append(f.env, "FAKE_DOCKER_FAIL=rm"), false, rec(&removed), rec(&kept))
-	if err == nil || len(removed) != 0 || !f.exists("bitc-a") || !f.exists("bitc-b") {
-		t.Fatalf("err %v removed %v", err, removed)
+	if err == nil || len(removed) != 0 || !f.exists("bitc-a") || !f.exists("bitc-b") || f.rmCalls() != 1 {
+		t.Fatalf("err %v removed %v rm calls %d: the sweep goes on past a failed removal", err, removed, f.rmCalls())
 	}
 	for _, p := range []string{cid, env} {
 		if _, err := os.Stat(p); err != nil {
@@ -335,11 +354,60 @@ func TestWriteEnvFile(t *testing.T) {
 	if got := ReadID(filepath.Join(dir, "none.cid")); got != "" {
 		t.Fatalf("%q", got)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "x.cid"), []byte("abc123\n"), 0o600); err != nil {
+	full := strings.Repeat("0123456789abcdef", 4)
+	for body, want := range map[string]string{
+		full + "\n":                  full, // a full 64-hex id, the way docker writes it
+		full:                         full,
+		"abc123\n":                   "", // anything else is no id: a prefix docker would resolve as a name or a longer id
+		full[:63]:                    "",
+		full + "0":                   "",
+		strings.ToUpper(full):        "",
+		"bitc-" + full[:30]:          "",
+		"":                           "",
+		"0123456789ab" + "\n":        "",
+		full[:32] + "\n" + full[32:]: "",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, "x.cid"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := ReadID(filepath.Join(dir, "x.cid")); got != want {
+			t.Errorf("ReadID(%q) = %q, want %q", body, got, want)
+		}
+	}
+}
+
+// The sweep keeps a container when it cannot tell whether its ticket is held: any Lstat error but
+// "it is not there" (here a path component that is a file) is unknown, never "free".
+func TestSweepKeepsWhenATicketPathCannotBeChecked(t *testing.T) {
+	f := newFake(t)
+	l, err := state.Open(filepath.Join(t.TempDir(), "state"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if got := ReadID(filepath.Join(dir, "x.cid")); got != "abc123" {
-		t.Fatalf("%q", got)
+	if err := os.MkdirAll(l.PoolDir("p"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(l.Tickets("p"), []byte("not a dir"), 0o600); err != nil { // Lstat of tickets/<id>.json: ENOTDIR
+		t.Fatal(err)
+	}
+	const id = "0-0000000000000000001-aaaaaaaa"
+	f.plant("bitc-a", map[string]string{LabelPool: "p", LabelState: StateHash(l.Root), LabelTicket: id, LabelJob: "j"})
+	var removed, kept []string
+	rec := func(into *[]string) func(Found) { return func(x Found) { *into = append(*into, x.Name) } }
+	err = Sweep(context.Background(), f.path, l, f.env, false, rec(&removed), rec(&kept))
+	if err != nil || len(removed) != 0 || len(kept) != 1 || !f.exists("bitc-a") || f.rmCalls() != 0 {
+		t.Fatalf("err %v removed %v kept %v", err, removed, kept)
+	}
+	// and a ticket that is simply not there (ENOENT) is free: the container is an orphan
+	if err := os.Remove(l.Tickets("p")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(l.Tickets("p"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	removed, kept = nil, nil
+	if err := Sweep(context.Background(), f.path, l, f.env, false, rec(&removed), rec(&kept)); err != nil || len(removed) != 1 || f.exists("bitc-a") {
+		t.Fatalf("err %v removed %v kept %v", err, removed, kept)
 	}
 }
 
