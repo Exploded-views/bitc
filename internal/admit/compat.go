@@ -174,8 +174,9 @@ func (x *compat) HoldEnv(units map[string][]int) string {
 	return ""
 }
 
-// LegacyHolders lists held legacy locks for status and doctor. It only observes (HeldRO): a
-// legacy `flock -n` racing it never finds a free lock busy.
+// LegacyHolders lists held legacy locks for status and doctor. It only observes (lock.Inspect): a
+// legacy `flock -n` racing it never finds a free lock busy. A lock it cannot inspect (no
+// /proc/locks, #24) is not listed: doctor says so once, and status shows the pool slot as unknown.
 func LegacyHolders(c *config.Compat) []string {
 	if c == nil {
 		return nil
@@ -184,7 +185,11 @@ func LegacyHolders(c *config.Compat) []string {
 	ents, _ := os.ReadDir(dir)
 	var out []string
 	for _, e := range ents {
-		if strings.HasSuffix(e.Name(), ".lock") && lock.HeldRO(filepath.Join(dir, e.Name())) {
+		if !strings.HasSuffix(e.Name(), ".lock") {
+			continue
+		}
+		switch lock.Inspect(filepath.Join(dir, e.Name())) {
+		case lock.StateHeld:
 			b, _ := os.ReadFile(filepath.Join(dir, e.Name()))
 			out = append(out, strings.TrimSuffix(e.Name(), ".lock")+" held"+pidSuffix(b))
 		}

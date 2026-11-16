@@ -32,7 +32,7 @@ you, with the same checksum checks.
 
 ## From source
 
-To build from source you need Go 1.26 or newer (CI tests 1.27.3):
+To build from source you need Go 1.26 or newer (CI tests 1.27.4):
 
 ```sh
 go install github.com/Exploded-views/bitc/cmd/bitc@v0.1.3

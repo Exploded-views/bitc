@@ -74,6 +74,9 @@ func Doctor(e *config.Effective, l state.Layout, out io.Writer) (failed bool) {
 	if unix.Statfs(l.Root, &st) == nil && onTmpfs(&st) {
 		line("warn", "state dir", "is on tmpfs: tickets and history vanish on reboot")
 	}
+	if !lock.HoldersVisible() {
+		line("warn", "locks", "/proc/locks unreadable; slot holders show as unknown (a lock cannot be inspected without taking it)")
+	}
 	for _, h := range admit.LegacyHolders(e.Compat) {
 		line("warn", "legacy", h)
 	}

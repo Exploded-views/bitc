@@ -30,8 +30,12 @@ func Sweep(e *config.Effective, l state.Layout, dryRun bool, out io.Writer) erro
 	for _, p := range pools {
 		if dryRun {
 			for _, t := range admit.ReadTickets(l, p.Name()) {
-				if !lock.HeldRO(filepath.Join(l.Tickets(p.Name()), t.Name)) {
+				switch lock.Inspect(filepath.Join(l.Tickets(p.Name()), t.Name)) {
+				case lock.StateFree:
 					swept("ticket", p.Name()+"/"+t.Name, "owner is dead; dry run")
+				case lock.StateUnknown:
+					// never reclaimable on a guess (#24)
+					fmt.Fprintf(out, "kept ticket %s/%s (holder unknown: /proc/locks unreadable)\n", p.Name(), t.Name)
 				}
 			}
 			continue
