@@ -102,6 +102,14 @@ type compatSchema struct {
 	HoldEnv    string            `toml:"hold_env" bitc:"host"`
 	NamePrefix string            `toml:"name_prefix" bitc:"host"`
 	Groups     map[string]string `toml:"groups" bitc:"host"`
+	// Flock names, per pool, the files of a shell pool built on one lock file (spec 12.2).
+	Flock map[string]*compatFlockSchema `toml:"flock" bitc:"host"`
+}
+
+type compatFlockSchema struct {
+	Lock string `toml:"lock" bitc:"host,required"`
+	Gate string `toml:"gate" bitc:"host,required"`
+	Slot string `toml:"slot" bitc:"host,required"`
 }
 
 type testSchema struct {

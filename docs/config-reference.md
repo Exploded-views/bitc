@@ -80,6 +80,9 @@ Generated from `internal/config/schema.go` by `go generate ./internal/config`. D
 | `compat.hold_env` | host | unset |
 | `compat.name_prefix` | host | unset |
 | `compat.groups` | host | unset |
+| `compat.flock.<pool>.lock` | host | `required` |
+| `compat.flock.<pool>.gate` | host | `required` |
+| `compat.flock.<pool>.slot` | host | `required` |
 | `test.procfs_root` | host | unset |
 | `test.time_scale` | host | unset |
 | `test.http_results` | host | unset |

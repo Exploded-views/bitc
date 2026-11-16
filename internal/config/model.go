@@ -321,6 +321,14 @@ type Compat struct {
 	HoldEnv    string
 	NamePrefix string
 	Groups     map[string]string // bitc group -> legacy lock stem
+	Flock      map[string]Flock  // pool -> one-lock-file shell pool ([compat.flock.<pool>])
+}
+
+// Flock names the files of a shell pool built on one lock file (spec 12.2).
+type Flock struct {
+	Lock string // flock(1) target of bare callers
+	Gate string // turnstile taken before Lock
+	Slot string // slot file template, "{n}" is the slot number
 }
 
 type Test struct {

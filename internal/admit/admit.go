@@ -249,6 +249,20 @@ func (a *admission) attempt(now time.Time) (bool, string, error) {
 		return fail("", nil)
 	}
 
+	// [compat.flock]: the shared gate and lock first (spec 12.2), before any slot is tried
+	flockExcl := false
+	if a.compat != nil && a.compat.HasFlock(a.pool.Name) {
+		flockExcl = a.exclusivePool()
+		rel, busy, ok, err := a.compat.TryFlock(a.pool.Name, flockExcl)
+		if err != nil {
+			return false, "", err
+		}
+		if !ok {
+			return fail("legacy pool: "+busy+" busy", nil)
+		}
+		a.releases = append(a.releases, rel)
+	}
+
 	// slot: lowest free slot.<i>.lock (with [compat], slot i also needs the legacy slot i lock)
 	legacyBusy := ""
 	for i := 1; i <= a.pool.Slots && a.slot == 0; i++ {
@@ -260,7 +274,7 @@ func (a *admission) attempt(now time.Time) (bool, string, error) {
 			sl.Close()
 			continue
 		}
-		if a.compat != nil {
+		if a.compat != nil && !flockExcl { // an exclusive flock pool takes the whole lock, not a slot file
 			rel, ok, err := a.compat.TrySlot(a.pool.Name, i)
 			if err != nil || !ok {
 				_ = sl.Unlock()
@@ -363,9 +377,22 @@ func (a *admission) admitted(now time.Time) (bool, string, error) {
 	return true, "", a.me.write()
 }
 
+// exclusivePool: the pool takes every unit of some group, like a bench run that must have the
+// machine to itself.
+func (a *admission) exclusivePool() bool {
+	for g, need := range a.pool.Groups {
+		if u := a.r.Eff.Groups[g].Units; u > 0 && need >= u {
+			return true
+		}
+	}
+	return false
+}
+
+// releaseHeld lets go of the legacy locks last taken first (slot file, then lock, then gate),
+// then the bitc locks.
 func (a *admission) releaseHeld() {
-	for _, rel := range a.releases {
-		rel()
+	for i := len(a.releases) - 1; i >= 0; i-- {
+		a.releases[i]()
 	}
 	a.releases = nil
 	for _, l := range a.held {

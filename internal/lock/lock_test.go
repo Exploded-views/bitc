@@ -295,3 +295,22 @@ func TestInspectSafeDirection(t *testing.T) {
 	close(start)
 	wg.Wait()
 }
+
+func TestTryLockSharedSharesAndExcludesExclusive(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "heavy.lock")
+	a, _ := Open(p)
+	defer a.Close()
+	b, _ := Open(p)
+	defer b.Close()
+	c, _ := Open(p)
+	defer c.Close()
+	if ok, err := a.TryLockShared(); !ok || err != nil {
+		t.Fatal(ok, err)
+	}
+	if ok, _ := b.TryLockShared(); !ok {
+		t.Fatal("two shared holders must coexist")
+	}
+	if ok, _ := c.TryLock(); ok {
+		t.Fatal("an exclusive lock beside shared holders")
+	}
+}
