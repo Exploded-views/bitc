@@ -47,6 +47,15 @@ loginctl enable-linger $USER
 `enable-linger` lets the timer run without a login session. Adjust `ExecStart` to wherever `bitc`
 is installed.
 
+## Container pools
+
+A host with a `container` pool ([containers.md](containers.md)) also has its orphaned containers swept
+here. The timer's environment is not your shell's, so give the unit the docker settings the runs have
+(`Environment=DOCKER_HOST=...` or `DOCKER_CONTEXT=...` under `[Service]`), or the sweep looks at
+another daemon and finds nothing. If `docker` is not on the unit's `PATH` the container sweep aborts
+and `bitc sweep` exits 69, so the unit fails visibly every 15 minutes (the rest of the sweep still
+runs first).
+
 ## Reading the output
 
 ```sh
@@ -56,7 +65,7 @@ systemctl --user list-timers bitc-sweep.timer
 
 Each torn-down item is one `swept ...` line on stdout; problems are `bitc: sweep: <provider>: ...`
 lines on stderr. Sweep exits 0 unless its own arguments are wrong (64) or the config is invalid
-(78), so a provider outage never fails the unit: read the journal for the stderr lines.
+(78), or a container sweep aborted (69, below), so a provider outage never fails the unit: read the journal for the stderr lines.
 
 The one other 78 is a home on a network filesystem (NFS, CIFS, FUSE and the like): flock, and so every reservation, cannot be
 trusted there. Sweep then tears down only resources past their own expiry (with a verified owner

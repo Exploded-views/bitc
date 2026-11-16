@@ -25,6 +25,7 @@ type Found struct {
 	Job    string // the bitc.job label
 	Ticket string
 	Live   lock.State // StateFree: the ticket is gone or nobody holds it (an orphan); StateHeld: a run owns it; StateUnknown: this host cannot tell
+	Why    string     // with StateUnknown: why (the error looking for the ticket, or the lock this host cannot inspect)
 }
 
 // listFormat prints id|name|pool|ticket|job per container.
@@ -33,9 +34,17 @@ const listFormat = `{{.ID}}|{{.Names}}|{{.Label "` + LabelPool + `"}}|{{.Label "
 // readPools lists the state dir's pools/. A dir that is not there has no tickets, which is not an
 // error; one that cannot be read says nothing about which tickets are held, which is.
 func readPools(l state.Layout) ([]os.DirEntry, error) {
-	pools, err := os.ReadDir(filepath.Join(l.Root, "pools"))
+	ents, err := os.ReadDir(filepath.Join(l.Root, "pools"))
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("cannot tell which runs are live: %w", err)
+	}
+	// bitc makes only directories here; a stray file (.DS_Store, an editor's backup) is not a pool, and
+	// must not turn every ticket check into "unknown"
+	var pools []os.DirEntry
+	for _, e := range ents {
+		if e.IsDir() {
+			pools = append(pools, e)
+		}
 	}
 	return pools, nil
 }
@@ -45,24 +54,24 @@ func readPools(l state.Layout) ([]os.DirEntry, error) {
 // component that is not a directory) is unknown, and so is a lock this host cannot inspect: the sweep
 // keeps the container. lock.Inspect itself takes any Lstat error for "free"; that is its own
 // callers' business, and this sweep checks first rather than rely on it.
-func ticketState(l state.Layout, pools []os.DirEntry, id string) lock.State {
-	st := lock.StateFree
+func ticketState(l state.Layout, pools []os.DirEntry, id string) (lock.State, string) {
+	st, why := lock.StateFree, ""
 	for _, p := range pools {
 		path := filepath.Join(l.Tickets(p.Name()), id+".json")
 		if _, err := os.Lstat(path); err != nil {
 			if !errors.Is(err, fs.ErrNotExist) {
-				st = lock.StateUnknown
+				st, why = lock.StateUnknown, "its ticket cannot be checked: "+err.Error()
 			}
 			continue
 		}
 		switch lock.Inspect(path) {
 		case lock.StateHeld:
-			return lock.StateHeld
+			return lock.StateHeld, ""
 		case lock.StateUnknown:
-			st = lock.StateUnknown
+			st, why = lock.StateUnknown, "its ticket lock cannot be inspected on this host"
 		}
 	}
-	return st
+	return st, why
 }
 
 // list is every container (running or not) that carries this state dir's label, with its ticket's state.
@@ -86,8 +95,8 @@ func list(ctx context.Context, runtime string, l state.Layout, pools []os.DirEnt
 		if len(parts) != 5 || !fullIDRE.MatchString(parts[0]) || !ticketIDRE.MatchString(parts[3]) {
 			continue
 		}
-		found = append(found, Found{ID: parts[0], Name: parts[1], Pool: parts[2], Ticket: parts[3], Job: parts[4],
-			Live: ticketState(l, pools, parts[3])})
+		live, why := ticketState(l, pools, parts[3])
+		found = append(found, Found{ID: parts[0], Name: parts[1], Pool: parts[2], Ticket: parts[3], Job: parts[4], Live: live, Why: why})
 	}
 	return found, nil
 }
@@ -138,7 +147,10 @@ func sweepFiles(l state.Layout, pools []os.DirEntry) {
 		if !ok {
 			id, ok = strings.CutSuffix(e.Name(), ".env")
 		}
-		if ok && ticketIDRE.MatchString(id) && ticketState(l, pools, id) == lock.StateFree {
+		if !ok || !ticketIDRE.MatchString(id) {
+			continue
+		}
+		if st, _ := ticketState(l, pools, id); st == lock.StateFree {
 			_ = os.Remove(filepath.Join(l.ContainersDir(), e.Name()))
 		}
 	}

@@ -113,7 +113,9 @@ container, so bitc removes it itself with `docker rm -f <container id>`:
   container, a container of another state dir and one without the labels are never touched, and
   neither is one whose ticket cannot be checked: any error looking for the ticket file other than
   "it is not there" (a permission or I/O error, a path that is not a directory) keeps the container
-  and `bitc sweep` says so. A sweep error aborts the sweep: the state dir's `pools/` cannot be
+  and `bitc sweep` says so with the reason (`kept container <name> (holder unknown: its ticket
+  cannot be checked: <the error>)`, or `its ticket lock cannot be inspected on this host`). A stray
+  file in `pools/` is not a pool and is skipped. A sweep error aborts the sweep: the state dir's `pools/` cannot be
   read (nothing says which runs are live) or the listing fails, and nothing is deleted; a removal
   fails, and nothing more is deleted, no further container and no cidfile or env file (containers
   removed earlier in that sweep stay removed). `bitc sweep` prints `container sweep aborted: <why>`,

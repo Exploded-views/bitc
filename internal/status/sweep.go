@@ -87,7 +87,7 @@ func sweepContainers(e *config.Effective, l state.Layout, dryRun bool, out io.Wr
 		err = container.Sweep(context.Background(), path, l, env, dryRun,
 			func(f container.Found) { swept("container", f.Name, why) },
 			func(f container.Found) {
-				fmt.Fprintf(out, "kept container %s (holder unknown: /proc/locks unreadable)\n", f.Name)
+				fmt.Fprintf(out, "kept container %s (holder unknown: %s)\n", f.Name, f.Why)
 			})
 		if err != nil {
 			// the error stopped the sweep where it was: what it removed before it is in the swept lines above
