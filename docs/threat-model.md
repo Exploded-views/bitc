@@ -46,7 +46,9 @@ machine. That repo is trusted with its own results, but it still cannot reach ot
 
 A provider plugin is an executable pinned in the host file by absolute path and sha256. bitc checks
 the file before it runs (regular file, owner, no setuid, setgid or file capabilities, no group- or
-world-writable parent directory) and runs it with `no_new_privs`. A pinned plugin is **fully
+world-writable parent directory) and runs it with `no_new_privs`. macOS has no `no_new_privs`: there a plugin's process cannot be
+stopped from gaining privileges through setuid or setgid programs, which is accepted, known
+behaviour (the private copy bitc runs never carries such a bit). A pinned plugin is **fully
 trusted host code**: it runs as your account, receives the provider credential and every job's
 spec, and can read anything else the account can read, including the install secret that signs
 owner tags, the ledger and other providers' key files. bitc's own checks on markers, result MACs

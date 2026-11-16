@@ -38,7 +38,25 @@ started with the `job` object and to carry its logs and files back.
 in its own process group, killed if bitc dies. stdin and stdout are pipes; stderr goes to a 64 KiB
 ring buffer. bitc starts the plugin through its own `__plugin-exec` shim, which sets
 `PR_SET_NO_NEW_PRIVS` and execs the exact file descriptor that was hashed. The plugin sees nothing
-of this except that it can never gain privileges.
+of this on Linux, except that it can never gain privileges.
+
+On macOS there is no `PR_SET_NO_NEW_PRIVS` and no `execveat`, so the shim stays the plugin's
+parent: it runs a private copy of the hashed bytes (mode 0500, no setuid or setgid bit, named by
+its sha256, in a 0700 directory under `<state>/plugins/<type>/bin/`), re-hashes it just before
+the start, forwards `SIGTERM`, and exits with the plugin's status. If bitc dies, even by
+`SIGKILL`, the shim takes the plugin's process group down. A plugin that carries
+`com.apple.quarantine` is refused (`xattr -d com.apple.quarantine <path>`); thin and universal
+Mach-O files are accepted in place of ELF. **Known limit:** on macOS a plugin's process cannot be
+stopped from gaining privileges through setuid or setgid programs, as Linux does with
+`no_new_privs`; only run plugins you trust as you would any program run as your user.
+
+**What a plugin sees on macOS.** The plugin's parent is the shim, not bitc (`getppid()` is the
+shim, which is also the leader of the plugin's process group). `argv[0]` is the pinned path, but
+the executable itself is the private copy: `os.Executable`, `_NSGetExecutablePath` and
+`@executable_path` resolve to `<state>/plugins/<type>/bin/<sha256>`, so files next to the pinned
+path are not next to the running binary. Locate resources from `argv[0]` or `BITC_PLUGIN_STATE`,
+and ship a single self-contained Mach-O. Descriptors 0 to 3 are all the plugin has; fd 4 (bitc's
+lifeline) is closed in the plugin.
 
 **Environment**, built from empty:
 
@@ -757,7 +775,7 @@ while pinning.
 | `<t>` is a built-in type | `providers.<t>.plugin: "<t>" is a built-in provider` |
 | `<t>` not `^[a-z][a-z0-9]{0,15}$` | `providers.<t>: invalid provider type` |
 | `path` not absolute, or basename not `bitc-provider-<t>` | `providers.<t>.plugin.path: must be an absolute path ending in bitc-provider-<t>: "<v>"` |
-| missing, symlink, not regular, not executable, not ELF | `providers.<t>.plugin.path: <reason>: "<v>"` |
+| missing, symlink, not regular, not executable, not ELF (Mach-O on macOS), carries `com.apple.quarantine` (macOS) | `providers.<t>.plugin.path: <reason>: "<v>"` |
 | file or a parent group- or world-writable, or owned by another user | `providers.<t>.plugin.path: insecure: <which path>` |
 | setuid or setgid bit, or a `security.capability` xattr | `providers.<t>.plugin.path: insecure: setuid/setgid/capabilities: "<v>"` |
 | `sha256` not 64 lowercase hex | `providers.<t>.plugin.sha256: invalid: "<v>"` |

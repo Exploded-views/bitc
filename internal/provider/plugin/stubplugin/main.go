@@ -155,31 +155,24 @@ func main() {
 	}
 }
 
-// diag records what the process was given: no-new-privs, env, argv, open fds and the fd 3 secrets.
+// diag records what the process was given: no-new-privs (where the OS reports it), env, argv,
+// open fds and the fd 3 secrets. Each OS reads its own sources (sys_linux.go, sys_darwin.go).
 func diag() {
-	d := map[string]any{"env": os.Environ(), "args": os.Args, "tmpdir": os.Getenv("TMPDIR"), "pid": os.Getpid(), "pgid": syscall.Getpgrp()}
-	st, _ := os.ReadFile("/proc/self/status")
-	for _, l := range strings.Split(string(st), "\n") {
-		if v, ok := strings.CutPrefix(l, "NoNewPrivs:"); ok {
-			d["nonewprivs"] = strings.TrimSpace(v)
-		}
+	d := map[string]any{"env": os.Environ(), "args": os.Args, "tmpdir": os.Getenv("TMPDIR"), "pid": os.Getpid(),
+		"ppid": os.Getppid(), "pgid": syscall.Getpgrp(), "cmdline": strings.Join(os.Args, " ")}
+	if v := noNewPrivs(); v != "" {
+		d["nonewprivs"] = v
 	}
-	ents, _ := os.ReadDir("/proc/self/fd")
-	var fds []string
-	for _, e := range ents {
-		l, _ := os.Readlink("/proc/self/fd/" + e.Name())
-		fds = append(fds, e.Name()+" "+l)
-	}
+	fds := openFds()
 	sort.Strings(fds)
 	d["fds"] = fds
+	d["fd4atstart"] = fd4AtStart
 	if os.Getenv("BITC_SECRETS_FD") == "3" {
 		if b, err := io.ReadAll(os.NewFile(3, "secrets")); err == nil {
 			d["secrets"] = string(b)
 		}
 	}
-	d["exe"], _ = os.Readlink("/proc/self/exe")
-	d["cmdline"], _ = os.ReadFile("/proc/self/cmdline")
-	d["cmdline"] = strings.ReplaceAll(fmt.Sprint(string(d["cmdline"].([]byte))), "\x00", " ")
+	d["exe"] = exePath()
 	b, _ := json.Marshal(d)
 	_ = os.WriteFile(filepath.Join(state, "diag.json"), b, 0o600)
 }
@@ -189,7 +182,7 @@ func hang() { select {} }
 // holdStderr leaves a session-leading helper that keeps this process's stderr pipe open until
 // 150 ms after its parent is gone, so the adapter's Wait returns late (tmp-check).
 func holdStderr() {
-	c := exec.Command("/proc/self/exe", "sleeper")
+	c := exec.Command(exePath(), "sleeper")
 	c.Stderr = os.Stderr
 	c.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	_ = c.Start()

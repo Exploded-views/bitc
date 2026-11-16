@@ -9,8 +9,8 @@ import (
 var platformGOOS = runtime.GOOS
 
 // checkPlatform refuses, off Linux, the keys a non-Linux client build cannot honour: a pool's
-// memory admission (/proc/meminfo, cgroup v2) and every remote provider (their agent, sweep and
-// money rails are exercised on Linux only). A darwin build runs local pools (docs/spec.md 1).
+// memory admission (/proc/meminfo, cgroup v2) and every built-in remote provider (their agent, sweep and
+// money rails are exercised on Linux only). A darwin build runs local pools and exec plugin providers (docs/spec.md 1).
 func checkPlatform(p *problems, e *Effective, goos string) {
 	if goos == "linux" {
 		return
@@ -30,8 +30,10 @@ func checkPlatform(p *problems, e *Effective, goos string) {
 		}
 	}
 	types := append([]string(nil), e.platformRefused...) // not decoded off Linux (applyHost)
-	for t := range e.Providers {
-		types = append(types, t)
+	for t, pr := range e.Providers {
+		if pr.Plugin == nil { // a plugin provider runs on darwin
+			types = append(types, t)
+		}
 	}
 	sort.Strings(types)
 	for _, t := range types {

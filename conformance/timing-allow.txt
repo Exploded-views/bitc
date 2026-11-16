@@ -100,10 +100,10 @@ internal/proctest/proctest_test.go:TestZombieIsGone sleep poll interval of a loo
 internal/provider/fake/fake.go:Fake.Estimate sleep the fake or stub simulates provider timing on purpose (latency, a silent peer, idle and janitor clocks); behaviour under test, not a verdict margin
 internal/provider/fake/fake.go:Fake.Watch timer the fake or stub simulates provider timing on purpose (latency, a silent peer, idle and janitor clocks); behaviour under test, not a verdict margin
 internal/provider/plugin/rig_test.go:rig.until sleep poll interval of a loop that ends on a condition (or fails on its deadline); the interval decides no verdict
-internal/provider/plugin/spawn_linux_test.go:TestClosingStopsThePluginWithinItsGrace sleep poll interval of a loop that ends on a condition (or fails on its deadline); the interval decides no verdict
+internal/provider/plugin/spawn_test.go:TestClosingStopsThePluginWithinItsGrace sleep poll interval of a loop that ends on a condition (or fails on its deadline); the interval decides no verdict
 internal/provider/plugin/stubplugin/main.go:handle sleep the fake or stub simulates provider timing on purpose (latency, a silent peer, idle and janitor clocks); behaviour under test, not a verdict margin
 internal/provider/plugin/stubplugin/main.go:sleeper sleep the fake or stub simulates provider timing on purpose (latency, a silent peer, idle and janitor clocks); behaviour under test, not a verdict margin
-internal/provider/plugin/watch_linux_test.go:TestWatchStopsWhenTheContextEnds ctx fires against a peer that never answers (a hang, a held slot, a silent server), so it fires whatever the runner's speed
+internal/provider/plugin/watch_test.go:TestWatchStopsWhenTheContextEnds ctx fires against a peer that never answers (a hang, a held slot, a silent server), so it fires whatever the runner's speed
 internal/provider/runpod/runpodfake/fake.go:Fake.create sleep the fake or stub simulates provider timing on purpose (latency, a silent peer, idle and janitor clocks); behaviour under test, not a verdict margin
 internal/provider/runpod/runpodfake/fake.go:Fake.logs sleep the fake or stub simulates provider timing on purpose (latency, a silent peer, idle and janitor clocks); behaviour under test, not a verdict margin
 internal/provider/runpod/runpodfake/fake.go:Fake.start sleep the fake or stub simulates provider timing on purpose (latency, a silent peer, idle and janitor clocks); behaviour under test, not a verdict margin

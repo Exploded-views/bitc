@@ -55,7 +55,7 @@ func Main(args []string, std Std) (code int) {
 	return cmd(context.Background(), g, rest[1:], std)
 }
 
-// PlatformCheck is 69 off Linux and macOS (spec 1). macOS is a client build: local pools only,
+// PlatformCheck is 69 off Linux and macOS (spec 1). macOS is a client build: local pools and exec plugins,
 // the Linux-only features refused (config.checkPlatform, exit.LinuxOnly).
 func PlatformCheck(goos string) error {
 	if goos != "linux" && goos != "darwin" {

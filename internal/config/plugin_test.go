@@ -1,5 +1,3 @@
-// Linux-only: the fixture copies /proc/self/exe as the pinned ELF plugin (the macOS shim is PR6 of #4).
-
 package config
 
 import (
@@ -7,20 +5,33 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/Exploded-views/bitc/internal/provider/plugin/pin"
 )
 
-// plug is a pinned-plugin fixture: a copy of this test binary (an ELF file) named
+// notBinary is the reason the pin gives for a file that is not this OS's executable format.
+func notBinary() string {
+	if runtime.GOOS == "darwin" {
+		return "not a Mach-O file"
+	}
+	return "not an ELF file"
+}
+
+// plug is a pinned-plugin fixture: a copy of this test binary (an ELF or Mach-O file) named
 // bitc-provider-<typ> in a private directory.
 type plug struct{ path, sum string }
 
 func newPlug(t *testing.T, typ string) plug {
 	t.Helper()
 	dir := t.TempDir()
-	src, err := os.Open("/proc/self/exe")
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := os.Open(self)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +119,7 @@ func TestPluginPathAndPinChecks(t *testing.T) {
 		{"modal", "bitc-provider-modal", `providers.modal.plugin.path: must be an absolute path ending in bitc-provider-modal: "bitc-provider-modal"`},
 		{"modal", filepath.Join(dir, "other"), `providers.modal.plugin.path: must be an absolute path ending in bitc-provider-modal: "` + filepath.Join(dir, "other") + `"`},
 		{"nope", filepath.Join(dir, "bitc-provider-nope"), `providers.nope.plugin.path: missing: "` + filepath.Join(dir, "bitc-provider-nope") + `"`},
-		{"script", filepath.Join(dir, "bitc-provider-script"), `providers.script.plugin.path: not an ELF file: "` + filepath.Join(dir, "bitc-provider-script") + `"`},
+		{"script", filepath.Join(dir, "bitc-provider-script"), `providers.script.plugin.path: ` + notBinary() + `: "` + filepath.Join(dir, "bitc-provider-script") + `"`},
 		{"gw", gw, "providers.gw.plugin.path: insecure: " + gw},
 		{"suid", suid, `providers.suid.plugin.path: insecure: setuid/setgid/capabilities: "` + suid + `"`},
 	} {

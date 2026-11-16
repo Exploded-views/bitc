@@ -15,6 +15,13 @@ import (
 // pinFD is the descriptor the shim finds the pinned plugin on (fd 3 is the secrets pipe, A.3.3).
 const pinFD = 4
 
+// shimLaunch starts bitc's own binary as the shim (/proc/self/exe) with the secrets pipe as fd 3
+// and the open, hashed plugin as fd 4.
+func (p *Provider) shimLaunch(f, secR *os.File, _ dirs) (shimSpec, error) {
+	return shimSpec{exe: "/proc/self/exe", args: []string{"bitc", "__plugin-exec", p.core.Plugin.Path},
+		extra: []*os.File{secR, f}}, nil
+}
+
 // ExecShim is the body of `bitc __plugin-exec <path>` (providers delta A.2.4): Go's SysProcAttr
 // has no PR_SET_NO_NEW_PRIVS and no execveat, so the adapter starts bitc's own binary here with
 // the open, hashed plugin file as fd 4. The shim sets no-new-privs on this thread (inherited

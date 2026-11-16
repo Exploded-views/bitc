@@ -20,5 +20,5 @@
 - Your contention is between CI runs rather than processes on a machine. Use your CI system's
   concurrency controls.
 - You need Windows as the gate host, or macOS with memory admission or remote providers. bitc
-  is Linux first; its macOS build runs local pools only.
+  is Linux first; its macOS build runs local pools and exec plugins.
 - You need a cluster scheduler with resource accounting across many machines. Use one.

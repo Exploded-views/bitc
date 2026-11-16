@@ -9,6 +9,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Exec plugins run on macOS. `[providers.<type>]` with a `plugin` pin now loads on a macOS client
+  (the built-in `ssh`, `runpod` and `sprites` stay refused there). bitc runs a private, 0500,
+  content-addressed copy of the pinned plugin through a `__plugin-exec` shim that stays the
+  plugin's parent, forwards `SIGTERM` and takes the plugin's process group down if bitc is killed.
+  Thin and universal Mach-O plugins are accepted, and one that carries `com.apple.quarantine` is
+  refused with the `xattr -d com.apple.quarantine` fix. **Known limit:** macOS has no
+  `no_new_privs`, so a plugin's process cannot be stopped from gaining privileges through setuid
+  or setgid programs as it is on Linux; only run plugins you trust as you would any program run
+  as your user ([#26](https://github.com/Exploded-views/bitc/issues/26)).
 - Priority-lane aging: a normal run that has waited `priority.age_after` (host file; default `5m`,
   half the default pool `wait`) is ordered as high, oldest first among the high and aged tickets, so
   a steady stream of high-lane runs can no longer starve it. Set `age_after = "0"` to turn aging off
