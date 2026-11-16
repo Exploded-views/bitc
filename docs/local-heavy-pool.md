@@ -104,6 +104,13 @@ file for benchmarks and one slot file per run), name those files in the host fil
 the scripts exclude each other while callers move over:
 
 ```toml
+groups = { cpu = { units = 8 } }
+[pools.heavy]
+slots = 3
+groups = { cpu = 2 }                    # heavy and bench share cpu: see below
+[pools.bench]
+groups = { cpu = 8 }
+
 [compat]
 legacy_dir = "/home/me/.heavy"          # required by [compat], whatever it holds
 
@@ -122,6 +129,10 @@ A `heavy` run takes the gate shared (a shell `bench` holding it makes the run wa
 shared and slot file `n`. A pool with `exclusive = true`, like `bench` above, takes the gate and
 the lock exclusive and no slot file; the key alone decides, not the pool's groups or `--units`.
 Give every normal pool of one slot template as many `slots` as the shell pool has slot files.
+Give the exclusive pool the group its sharing pools use (`cpu` above): while `bench` waits on a
+shell holder it keeps its claim on that group, so newer bitc `heavy` runs queue behind it instead
+of starving it. A normal pool that shares none of the exclusive pool's groups is not held back,
+and the claim also holds newer non-flock users of those groups back for up to the bench's wait.
 Status and doctor do not show shell holders of these pools: the STARVED line names the busy file.
 Use plain files owned by the user who runs bitc. A shell run holder of slot 1 sends bitc to slot 2; a
 bare `flock -x heavy.lock` holder blocks every bitc slot, and a run that cannot wait ends

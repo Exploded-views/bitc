@@ -1590,9 +1590,13 @@ template should have as many `slots` as the shell pool has slot files.
   and at the pool's wait it ends `STARVED <pool> (legacy pool: <path> busy)` (75), the same as a
   busy spec 12 slot. A waiting bitc exclusive pool holds no gate while it waits, so a steady
   stream of shell runs can starve it to its wait (the shell bench holds the gate while it waits).
-  Only shell runs can: when an exclusive pool fails on the gate or the lock it keeps its claim on
-  its groups (`group_wait`, spec 6.2), so newer bitc consumers of those groups back off and bitc
-  runs cannot starve it.
+  When an exclusive pool fails on the gate or the lock it keeps its claim on the groups it lists
+  (`group_wait`, spec 6.2), so newer bitc consumers of those groups back off. A normal
+  `[compat.flock]` pool that shares none of the exclusive pool's groups is not held back and can
+  starve it (so can a stream of runs against an exclusive pool that lists no group): give the
+  exclusive pool the group its sharing pools use, as a bench takes `cpu` beside `heavy`. The claim
+  also holds back newer non-flock consumers of those groups while the exclusive pool waits on
+  shell holders, for up to its wait.
 - Status and doctor do not show shell holders of a `[compat.flock]` pool: `status` counts the pool
   from bitc's own holds, and the legacy-holder lists read only `<legacy_dir>/locks`. A long wait on
   such a pool is explained by the `STARVED ... (legacy pool: <path> busy)` line, not by status.
