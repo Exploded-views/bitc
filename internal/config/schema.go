@@ -59,6 +59,17 @@ type poolSchema struct {
 	OnSignal         *string                 `toml:"on_signal" bitc:"project,default=terminate"`
 	Hooks            *hooksSchema            `toml:"hooks" bitc:"project"`
 	Remote           *poolRemoteSchema       `toml:"remote" bitc:"repo"`
+	// Container runs the pool's local commands in a docker container (docs/containers.md). Host
+	// file only: an image and its mounts decide what the command can reach.
+	Container *containerSchema `toml:"container" bitc:"host"`
+}
+
+type containerSchema struct {
+	Image   *string  `toml:"image" bitc:"host,required"`
+	Runtime *string  `toml:"runtime" bitc:"host,default=docker"`
+	Mounts  []string `toml:"mounts" bitc:"host,default=[]"`
+	Cpus    any      `toml:"cpus" bitc:"host"`
+	Memory  *string  `toml:"memory" bitc:"host"`
 }
 
 type poolRemoteLimitsSchema struct {

@@ -24,6 +24,8 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
+
+	"github.com/Exploded-views/bitc/internal/exit"
 )
 
 type record struct {
@@ -170,11 +172,11 @@ func run(args []string) int {
 	rec.Pgid = cmd.Process.Pid
 	writeRec(rec)
 	if sigs != nil {
-		go func() {
+		exit.Go(func() {
 			for s := range sigs {
 				_ = syscall.Kill(-rec.Pgid, s.(syscall.Signal))
 			}
-		}()
+		})
 	}
 	err := cmd.Wait()
 	if cmd.ProcessState == nil {

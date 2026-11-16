@@ -9,6 +9,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Local pools can run their commands in a docker container (OrbStack on a Mac).
+  `pools.<p>.container = { image, runtime = "docker", mounts, cpus, memory }` (host file only)
+  keeps admission, slots, groups, FIFO and the time limit as they are, and runs the admitted
+  command as `docker run` with the work tree mounted at the same path as the working directory;
+  the exit status is the command's. Each container is named `bitc-<job>` and labelled
+  `bitc.job`, `bitc.pool`, `bitc.state` and `bitc.ticket`, and bitc force-removes it at the time
+  limit, on INT, TERM or HUP, on `bitc cancel`, and when bitc is SIGKILLed (a guard process on a
+  lifeline pipe, on Linux and macOS). `bitc sweep` and the next admission remove orphaned
+  containers by label. The container gets a minimal environment, not the host's. A missing docker
+  CLI, or docker failing before the container exists, is exit 69; a bad `container` table is 78.
+  See [docs/containers.md](docs/containers.md)
+  ([#60](https://github.com/Exploded-views/bitc/issues/60)).
 - Exec plugins run on macOS. `[providers.<type>]` with a `plugin` pin now loads on a macOS client
   (the built-in `ssh`, `runpod` and `sprites` stay refused there). bitc runs a private, 0500,
   content-addressed copy of the pinned plugin through a `__plugin-exec` shim that stays the

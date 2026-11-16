@@ -369,6 +369,9 @@ func mergePools(p *problems, e *Effective, host layer, repo *layer) {
 		}
 		pool.Timeout = positiveDur(p, host.file, key+".timeout", hp.Timeout)
 		pool.Memory = size(p, host.file, key+".memory", hp.Memory, 0)
+		if hp.Container != nil {
+			pool.Container = containerOf(p, host.file, key+".container", hp.Container)
+		}
 		for g, units := range hp.Groups {
 			gc := CanonName(g)
 			grp, ok := e.Groups[gc]
@@ -454,6 +457,9 @@ func mergePools(p *problems, e *Effective, host layer, repo *layer) {
 		addHooks(p, e, &pool.Hooks, host.file, key, "host", hp.Hooks)
 		if repo != nil {
 			addHooks(p, e, &pool.Hooks, repo.file, key, "repo", rp.Hooks)
+		}
+		if pool.Container != nil && len(pool.Hooks.Wrap) > 0 {
+			p.addf("%s: %s.container cannot be combined with %s.hooks.wrap (the container is the command's wrapper)", host.file, key, key)
 		}
 		if rp.Remote != nil {
 			pool.Remote = poolRemote(p, repo.file, key+".remote", rp.Remote)

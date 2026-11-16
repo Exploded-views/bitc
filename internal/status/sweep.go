@@ -13,6 +13,7 @@ import (
 
 	"github.com/Exploded-views/bitc/internal/admit"
 	"github.com/Exploded-views/bitc/internal/config"
+	"github.com/Exploded-views/bitc/internal/container"
 	"github.com/Exploded-views/bitc/internal/jobs"
 	"github.com/Exploded-views/bitc/internal/lock"
 	"github.com/Exploded-views/bitc/internal/redact"
@@ -47,10 +48,43 @@ func Sweep(e *config.Effective, l state.Layout, dryRun bool, out io.Writer) erro
 				_ = state.AppendHistory(l.History(), state.Event{Event: "reaped", Pool: pool, Job: job, Provider: "local"}, redact.New())
 			})
 	}
+	sweepContainers(e, l, dryRun, out, swept)
 	sweepRecords(l, e, dryRun, swept)
 	sweepStaging(e, l, dryRun, swept)
 	rotate(l, e, dryRun, swept)
 	return nil
+}
+
+// sweepContainers removes this state dir's orphaned containers by label (docs/containers.md), for
+// every container runtime a pool uses. A host with no container pool never looks for the CLI.
+func sweepContainers(e *config.Effective, l state.Layout, dryRun bool, out io.Writer, swept func(kind, id, why string)) {
+	env := os.Environ()
+	for _, rt := range config.Runtimes {
+		used := false
+		for _, p := range e.Pools {
+			used = used || (p.Container != nil && p.Container.Runtime == rt)
+		}
+		if !used {
+			continue
+		}
+		path, err := container.Lookup(rt, env)
+		if err != nil {
+			fmt.Fprintf(out, "kept containers (%s %v: its orphans, if any, stay until it is installed)\n", rt, err)
+			continue
+		}
+		why := "its run is gone"
+		if dryRun {
+			why += "; dry run"
+		}
+		err = container.Sweep(context.Background(), path, l, env, dryRun,
+			func(f container.Found) { swept("container", f.Name, why) },
+			func(f container.Found) {
+				fmt.Fprintf(out, "kept container %s (holder unknown: /proc/locks unreadable)\n", f.Name)
+			})
+		if err != nil {
+			fmt.Fprintf(out, "kept containers (%s: %v)\n", rt, err)
+		}
+	}
 }
 
 func sweepRecords(l state.Layout, e *config.Effective, dryRun bool, swept func(kind, id, why string)) {

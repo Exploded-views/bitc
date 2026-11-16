@@ -60,6 +60,11 @@ Generated from `internal/config/schema.go` by `go generate ./internal/config`. D
 | `pools.<pool>.remote.env` | repo | unset |
 | `pools.<pool>.remote.env_unset` | repo | unset |
 | `pools.<pool>.remote.arch` | repo | `["amd64"]` |
+| `pools.<pool>.container.image` | host | `required` |
+| `pools.<pool>.container.runtime` | host | `docker` |
+| `pools.<pool>.container.mounts` | host | `[]` |
+| `pools.<pool>.container.cpus` | host | unset |
+| `pools.<pool>.container.memory` | host | unset |
 | `groups.<group>.units` | host | `required` |
 | `priority.high_cwd_contains` | host | `[]` |
 | `priority.high_cwd` | host | `[]` |

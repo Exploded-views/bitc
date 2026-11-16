@@ -53,7 +53,7 @@ type FakeDocker struct {
 // FakeDocker puts the fake docker first on PATH for bitc and its children in this sandbox.
 func (h *H) FakeDocker() *FakeDocker {
 	h.T.Helper()
-	bin, err := BuildFakeDockerBinary(moduleRoot(h.T))
+	bin, err := BuildFakeDockerBinary(ModuleRoot(h.T))
 	if err != nil {
 		h.T.Fatal(err)
 	}
@@ -73,8 +73,8 @@ func (h *H) FakeDocker() *FakeDocker {
 	return f
 }
 
-// moduleRoot is the module root, found from the working directory (a test runs in its package).
-func moduleRoot(t interface{ Fatal(...any) }) string {
+// ModuleRoot is the module root, found from the working directory (a test runs in its package).
+func ModuleRoot(t interface{ Fatal(...any) }) string {
 	dir, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)

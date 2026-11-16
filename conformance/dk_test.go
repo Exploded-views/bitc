@@ -238,6 +238,12 @@ func TestDK6_OrphansAreSweptByLabel(t *testing.T) {
 	fd := h.FakeDocker()
 	h.HostConfig(dkPool)
 	state := dkHash(h)
+	// the live run goes first: the admission of a container pool sweeps, so orphans planted before it
+	// would be gone before the sweep command ran
+	holder := h.Hold(nil, "--name", "live", "box") // its ticket is locked
+	if !fd.Running("bitc-live") {
+		t.Fatal("the held run's container is not running")
+	}
 	deadTicket := "0-0000000000000000001-deadbeef"
 	h.Write(filepath.Join(h.State, "pools", "box", "tickets", deadTicket+".json"), `{"state":"running"}`, 0o600)
 	labels := func(job, ticket string) map[string]string {
@@ -247,10 +253,6 @@ func TestDK6_OrphansAreSweptByLabel(t *testing.T) {
 	fd.Plant("bitc-deadticket", labels("deadticket", deadTicket))                                                                        // a ticket nobody holds
 	fd.Plant("bitc-elsewhere", map[string]string{"bitc.job": "x", "bitc.pool": "box", "bitc.state": "0123456789ab", "bitc.ticket": "t"}) // another state dir's
 	fd.Plant("unrelated", map[string]string{"app": "db"})
-	holder := h.Hold(nil, "--name", "live", "box") // a live run: its ticket is locked
-	if !fd.Running("bitc-live") {
-		t.Fatal("the held run's container is not running")
-	}
 	r := h.Run("sweep", "--dry-run")
 	for _, name := range []string{"bitc-noticket", "bitc-deadticket"} {
 		if r.Code != 0 || !strings.Contains(r.Stdout, "swept container "+name+" (its run is gone; dry run)\n") || !fd.Exists(name) {
