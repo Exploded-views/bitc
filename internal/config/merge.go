@@ -14,6 +14,10 @@ import (
 )
 
 // dur, size, positive parse a value and record a problem naming file, key and quoted value.
+// defaultAgeAfter is priority.age_after unset: half the default pool wait (10m), so a normal run
+// ages into the high lane well before it would starve.
+const defaultAgeAfter = 5 * time.Minute
+
 func dur(p *problems, file, key string, s *string, def time.Duration) time.Duration {
 	if s == nil {
 		return def
@@ -128,8 +132,14 @@ func applyHost(p *problems, e *Effective, host layer, env map[string]string, cle
 		}
 		e.Groups[canon] = Group{Name: canon, Units: atLeast1(p, f, "groups."+g+".units", gs.Units, 1)}
 	}
+	e.Priority.AgeAfter = defaultAgeAfter
 	if s.Priority != nil {
-		e.Priority = Priority{HighCwdContains: s.Priority.HighCwdContains, HighCwd: s.Priority.HighCwd}
+		e.Priority = Priority{HighCwdContains: s.Priority.HighCwdContains, HighCwd: s.Priority.HighCwd, AgeAfter: defaultAgeAfter}
+		if a := s.Priority.AgeAfter; a != nil && *a == "0" { // the one bare number: aging off
+			e.Priority.AgeAfter = 0
+		} else {
+			e.Priority.AgeAfter = dur(p, f, "priority.age_after", a, defaultAgeAfter)
+		}
 		for _, g := range s.Priority.HighCwd {
 			if err := ValidGlob(g); err != nil {
 				p.addf("%s: priority.high_cwd %q: %v", f, g, err)

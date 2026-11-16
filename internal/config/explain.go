@@ -34,6 +34,7 @@ func Explain(e *Effective, key string) []string {
 	add("host.history_max", h.HistoryMax)
 	add("host.retention", h.Retention)
 	add("host.experimental_remote", h.ExperimentalRemote)
+	add("priority.age_after", e.Priority.AgeAfter)
 	add("detach.wait_timeout", e.Detach.WaitTimeout)
 	for _, g := range sortedKeys(e.Groups) {
 		add("groups."+g+".units", e.Groups[g].Units)

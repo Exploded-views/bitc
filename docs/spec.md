@@ -288,7 +288,7 @@ and a test fails when a tag, the reference and this table disagree.
 | `defaults.slots` / `defaults.wait` (pools inherit both) | `1` / `10m` | host / narrowable |
 | `pools.<p>.memory`, `groups` / `providers` | none / `["local"]` | host / narrowable |
 | `pools.<p>.on_signal`, `refuse`, hooks; hook `timeout`, `refuse_exit` | `terminate`, none, none; `60s`, `[64]` | project |
-| `detach.wait_timeout` / `priority.high_cwd_contains`, `high_cwd` | `9m` (fits a 10-minute tool cap) / `[]` | host |
+| `detach.wait_timeout` / `priority.high_cwd_contains`, `high_cwd` / `priority.age_after` | `9m` (fits a 10-minute tool cap) / `[]` / `5m` (`0` or `0s`: no aging; half the default pool wait) | host |
 | `remote_limits.worktrees`, `forward_env_allow`, `forward_env_force` / `on_failure` | `[]` (nothing goes remote) / `next` (`stop`: fail) | host |
 | `pools.<p>.remote_limits.size.<type>` / `.timeout` | unset = ineligible for that provider / `90m` | host / narrowable |
 | `providers.<t>.name_prefix`, `daily_usd`, `max_live`, `launch_wait`, `start_timeout` | `bitc`, required, `2`, `5m`, `20m` | host (core, 8.5) |
@@ -417,8 +417,10 @@ group, not a pool`.
    `running` ticket SIGKILL `-pgid` if its leader still matches `leader_start`, else every process
    of that pgid started since the hold; unlink; print `bitc: reaped orphaned <pool> job <job>
    (supervisor died)`); **priority** (a normal ticket waits while the pool has a live high ticket,
-   waiting or running; per pool, never per group); **queue** (eligible iff its `(class,
-   timestamp)` position < free slots); **slot** (lowest free `slot.<i>.lock`, i = 1..N); **groups**
+   waiting or running; per pool, never per group; a normal ticket that has waited `priority.age_after`
+   since its creation time, read from its name, is **aged** and skips this step); **queue** (eligible
+   iff its `(lane, timestamp)` position < free slots; the high lane is high and aged tickets, ordered
+   by ticket age, and a non-aged normal ticket is behind all of them); **slot** (lowest free `slot.<i>.lock`, i = 1..N); **groups**
    (`g` is busy if an older live ticket of any consumer pool lists it in `group_wait`, else take
    `units` free `groups/<g>/unit.<j>.lock`, j = 1..k; all or none, setting `group_wait` on failure,
    cleared on admission or another failure cause); **compat locks** (12); **memory** (pools with

@@ -7,6 +7,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Priority-lane aging: a normal run that has waited `priority.age_after` (host file; default `5m`,
+  half the default pool `wait`) is ordered as high, oldest first among the high and aged tickets, so
+  a steady stream of high-lane runs can no longer starve it. Set `age_after = "0"` to turn aging off
+  and keep the earlier order. `bitc status` marks such a waiter `aged` (`"aged": true` in `--json`)
+  ([#56](https://github.com/Exploded-views/bitc/issues/56)).
+
 ### Fixed
 
 - On Linux without a readable `/proc/locks` (no procfs, an LSM or seccomp denial, or gVisor),

@@ -160,6 +160,7 @@ type Group struct {
 }
 
 type Priority struct {
+	AgeAfter        time.Duration // a normal ticket this old is ordered as high; 0 turns aging off
 	HighCwdContains []string
 	HighCwd         []string
 }
