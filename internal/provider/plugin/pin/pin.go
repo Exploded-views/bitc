@@ -1,5 +1,5 @@
 // Package pin checks and opens a pinned provider plugin (providers delta A.2): an absolute path
-// and a sha256, a regular ELF file owned by the user or root, no group or world write on it or
+// and a sha256, a regular executable file (ELF on Linux, Mach-O on darwin) owned by the user or root, no group or world write on it or
 // any parent, no setuid or setgid bit, no file capabilities. Open returns the file descriptor
 // that was hashed, so the bytes checked are the bytes run.
 package pin
@@ -20,7 +20,7 @@ import (
 type Kind int
 
 const (
-	KindReason   Kind = iota // missing, symlink, not a regular file, not executable, not an ELF file
+	KindReason   Kind = iota // missing, symlink, not a regular file, not executable, not an ELF or Mach-O file
 	KindInsecure             // Detail names the path that is writable or owned by another user
 	KindPrivs                // setuid, setgid or a security.capability xattr
 )
@@ -66,7 +66,7 @@ func hasCapXattr(fd int) bool {
 
 func ownerOK(uid uint32) bool { return uid == uint32(os.Getuid()) || uid == 0 }
 
-// Check is the load-time test of A.2.3. It never executes or reads more than the ELF magic.
+// Check is the load-time test of A.2.3. It never executes or reads more than the magic.
 func Check(path string) error {
 	var lst unix.Stat_t
 	if err := unix.Lstat(path, &lst); err != nil {
@@ -95,8 +95,11 @@ func Check(path string) error {
 		return &Error{KindReason, "not executable"}
 	}
 	var magic [4]byte
-	if n, _ := unix.Pread(fd, magic[:], 0); n < 4 || string(magic[:]) != "\x7fELF" {
-		return &Error{KindReason, "not an ELF file"}
+	if n, _ := unix.Pread(fd, magic[:], 0); n < 4 || !isExecutableMagic(magic) {
+		return &Error{KindReason, notBinaryReason}
+	}
+	if err := quarantined(fd, path); err != nil {
+		return err
 	}
 	if !ownerOK(st.Uid) || st.Mode&0o022 != 0 {
 		return &Error{KindInsecure, path}
@@ -138,6 +141,10 @@ func Open(path, want string) (*os.File, error) {
 	if st.Mode&(unix.S_ISUID|unix.S_ISGID) != 0 || hasCapXattr(fd) {
 		f.Close()
 		return nil, &Error{KindPrivs, path}
+	}
+	if err := quarantined(fd, path); err != nil {
+		f.Close()
+		return nil, err
 	}
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {

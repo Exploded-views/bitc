@@ -40,6 +40,16 @@ ring buffer. bitc starts the plugin through its own `__plugin-exec` shim, which 
 `PR_SET_NO_NEW_PRIVS` and execs the exact file descriptor that was hashed. The plugin sees nothing
 of this except that it can never gain privileges.
 
+On macOS there is no `PR_SET_NO_NEW_PRIVS` and no `execveat`, so the shim stays the plugin's
+parent: it runs a private copy of the hashed bytes (mode 0500, no setuid or setgid bit, named by
+its sha256, in a 0700 directory under `<state>/plugins/<type>/bin/`), re-hashes it just before
+the start, forwards `SIGTERM`, and exits with the plugin's status. If bitc dies, even by
+`SIGKILL`, the shim takes the plugin's process group down. A plugin that carries
+`com.apple.quarantine` is refused (`xattr -d com.apple.quarantine <path>`); thin and universal
+Mach-O files are accepted in place of ELF. **Known limit:** on macOS a plugin's process cannot be
+stopped from gaining privileges through setuid or setgid programs, as Linux does with
+`no_new_privs`; only run plugins you trust as you would any program run as your user.
+
 **Environment**, built from empty:
 
 | Variable | Value |
@@ -757,7 +767,7 @@ while pinning.
 | `<t>` is a built-in type | `providers.<t>.plugin: "<t>" is a built-in provider` |
 | `<t>` not `^[a-z][a-z0-9]{0,15}$` | `providers.<t>: invalid provider type` |
 | `path` not absolute, or basename not `bitc-provider-<t>` | `providers.<t>.plugin.path: must be an absolute path ending in bitc-provider-<t>: "<v>"` |
-| missing, symlink, not regular, not executable, not ELF | `providers.<t>.plugin.path: <reason>: "<v>"` |
+| missing, symlink, not regular, not executable, not ELF (Mach-O on macOS), carries `com.apple.quarantine` (macOS) | `providers.<t>.plugin.path: <reason>: "<v>"` |
 | file or a parent group- or world-writable, or owned by another user | `providers.<t>.plugin.path: insecure: <which path>` |
 | setuid or setgid bit, or a `security.capability` xattr | `providers.<t>.plugin.path: insecure: setuid/setgid/capabilities: "<v>"` |
 | `sha256` not 64 lowercase hex | `providers.<t>.plugin.sha256: invalid: "<v>"` |

@@ -132,6 +132,9 @@ func (p *Provider) spawn() (*session, error) {
 	p.tmpGen++
 	gen := p.tmpGen
 	p.tmpMu.Unlock()
+	if err := p.setuidPolicy(); err != nil {
+		return nil, err
+	}
 	d, err := p.prepareDirs()
 	if err != nil {
 		return nil, err
@@ -174,11 +177,21 @@ func (p *Provider) spawn() (*session, error) {
 	s := &session{typ: p.typ, scale: p.eff.Scale, calls: map[uint64]*call{}, abandon: map[uint64]bool{}, dead: make(chan struct{}),
 		exited: make(chan struct{}), stdin: inW, stderr: &ring{}}
 	s.stderr.onLine = p.stderrLine
-	cmd := exec.Command("/proc/self/exe", "__plugin-exec", p.core.Plugin.Path)
-	cmd.Args = []string{"bitc", "__plugin-exec", p.core.Plugin.Path}
+	sh, err := p.shimLaunch(f, secR, d)
+	if err != nil {
+		inR.Close()
+		inW.Close()
+		outR.Close()
+		outW.Close()
+		secR.Close()
+		secW.Close()
+		return nil, err
+	}
+	cmd := exec.Command(sh.exe)
+	cmd.Args = sh.args
 	cmd.Env = p.pluginEnv(d)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = inR, outW, s.stderr
-	cmd.ExtraFiles = []*os.File{secR, f} // fd 3: secrets, fd 4: the pinned plugin (the shim execs it)
+	cmd.ExtraFiles = sh.extra // fd 3: secrets; fd 4: the pinned plugin (Linux) or the lifeline (darwin)
 	cmd.SysProcAttr = pluginAttr()
 	s.cmd = cmd
 	startErr := make(chan error, 1)
@@ -200,13 +213,16 @@ func (p *Provider) spawn() (*session, error) {
 			_ = os.RemoveAll(d.tmp)
 		}
 		p.tmpMu.Unlock()
+		sh.closeLifeline()
 		close(s.exited)
 	})
 	err = <-startErr
 	inR.Close()
 	outW.Close()
 	secR.Close()
+	sh.closeChildEnds()
 	if err != nil {
+		sh.closeLifeline()
 		inW.Close()
 		outR.Close()
 		secW.Close()
