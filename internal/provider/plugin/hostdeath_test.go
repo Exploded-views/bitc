@@ -91,16 +91,9 @@ func TestAPluginDiesWithItsSigkilledBitc(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = host.Wait()
-	deadline := time.Now().Add(30 * time.Second)
-	for {
-		pluginUp := syscall.Kill(d.Pid, 0) == nil
-		groupUp := syscall.Kill(-d.Pgid, 0) == nil
-		if !pluginUp && !groupUp {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("after SIGKILL of bitc the plugin %d (alive %v) / its group %d (alive %v) still runs", d.Pid, pluginUp, d.Pgid, groupUp)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	// rig.until polls the condition and fails the test on its 30 s safety net; the verdict is the
+	// condition, not a margin
+	r.until(fmt.Sprintf("plugin %d and its group %d gone after SIGKILL of bitc", d.Pid, d.Pgid), func() bool {
+		return syscall.Kill(d.Pid, 0) != nil && syscall.Kill(-d.Pgid, 0) != nil
+	})
 }
