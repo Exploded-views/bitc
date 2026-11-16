@@ -115,13 +115,14 @@ container, so bitc removes it itself with `docker rm -f <container id>`:
   "it is not there" (a permission or I/O error, a path that is not a directory) keeps the container
   and `bitc sweep` says so with the reason (`kept container <name> (holder unknown: its ticket
   cannot be checked: <the error>)`, or `its ticket lock cannot be inspected on this host`). A stray
-  file in `pools/` is not a pool and is skipped. A sweep error aborts the sweep: the state dir's `pools/` cannot be
-  read (nothing says which runs are live) or the listing fails, and nothing is deleted; a removal
+  regular file in `pools/` (a `.DS_Store`) is not a pool and is skipped; a symlink to a pool
+  directory is one. A sweep error aborts the sweep: the state dir's `pools/` cannot be read
+  (nothing says which runs are live) or the listing fails, and nothing is deleted; a removal
   fails, and nothing more is deleted, no further container and no cidfile or env file (containers
   removed earlier in that sweep stay removed). `bitc sweep` prints `container sweep aborted: <why>`,
   carries on with the rest of its work and exits 69 (unavailable: the docker side could not be
-  used; stop and report). An admission that swept goes on and runs its command (a debug line). The sweep also removes the
-  cidfile and env file of runs that are gone. The admission's orphan removal appears in the
+  used; stop and report). An admission that swept goes on and runs its command (a debug line). The
+  sweep also removes the cidfile and env file of runs that are gone. The admission's orphan removal appears in the
   history as a `container-reaped` event with the job from the `bitc.job` label (not `reaped`, which
   counts dead tickets).
 

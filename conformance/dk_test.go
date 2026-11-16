@@ -668,7 +668,11 @@ func TestDK14_TheGuardRemovesWithTheCallersEnvironment(t *testing.T) {
 	if len(fd.CallsOf("rm")) != 1 {
 		t.Fatalf("calls: %v", fd.Calls())
 	}
-	for i, got := range fd.DockerHosts() {
+	hosts := fd.DockerHosts()
+	if len(hosts) != len(fd.Calls()) { // else the loop below could pass with nothing logged
+		t.Fatalf("%d hosts logged for %d calls: %v", len(hosts), len(fd.Calls()), fd.Calls())
+	}
+	for i, got := range hosts {
 		if got != "unix:///caller.sock" {
 			t.Fatalf("docker call %d (the guard's rm is the last) ran with DOCKER_HOST=%q: %v", i, got, fd.Calls())
 		}

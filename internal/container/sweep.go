@@ -38,11 +38,13 @@ func readPools(l state.Layout) ([]os.DirEntry, error) {
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("cannot tell which runs are live: %w", err)
 	}
-	// bitc makes only directories here; a stray file (.DS_Store, an editor's backup) is not a pool, and
-	// must not turn every ticket check into "unknown"
+	// bitc makes only directories here; a stray regular file (.DS_Store, an editor's backup) is not a
+	// pool, and must not turn every ticket check into "unknown". Anything else, a symlink to a pool dir
+	// moved to another disk included, goes through the normal check: dropping it would read a live
+	// run's ticket as free, and whatever is not a directory ends as "unknown" (kept).
 	var pools []os.DirEntry
 	for _, e := range ents {
-		if e.IsDir() {
+		if !e.Type().IsRegular() {
 			pools = append(pools, e)
 		}
 	}

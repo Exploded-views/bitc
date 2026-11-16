@@ -64,8 +64,9 @@ systemctl --user list-timers bitc-sweep.timer
 ```
 
 Each torn-down item is one `swept ...` line on stdout; problems are `bitc: sweep: <provider>: ...`
-lines on stderr. Sweep exits 0 unless its own arguments are wrong (64) or the config is invalid
-(78), or a container sweep aborted (69, below), so a provider outage never fails the unit: read the journal for the stderr lines.
+lines on stderr. Sweep exits 0 unless its own arguments are wrong (64), the config is invalid (78)
+or a container sweep aborted (69, see Container pools above), so a provider outage never fails the
+unit: read the journal for the stderr lines.
 
 The one other 78 is a home on a network filesystem (NFS, CIFS, FUSE and the like): flock, and so every reservation, cannot be
 trusted there. Sweep then tears down only resources past their own expiry (with a verified owner
