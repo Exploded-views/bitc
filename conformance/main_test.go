@@ -32,8 +32,27 @@ func buildStubPlugin() (dir string, err error) {
 	return dir, nil
 }
 
+// buildFlockHold builds the shell-caller stand-in the FC rows use (testdata/flockhold).
+func buildFlockHold() (dir string, err error) {
+	if dir, err = os.MkdirTemp("", "bitc-flockhold-"); err != nil {
+		return "", err
+	}
+	flockHold = filepath.Join(dir, "flockhold")
+	build := exec.Command("go", "build", "-trimpath", "-o", flockHold, "./testdata/flockhold")
+	build.Env = append(os.Environ(), "CGO_ENABLED=0")
+	if out, err := build.CombinedOutput(); err != nil {
+		return dir, fmt.Errorf("build flockhold: %w\n%s", err, out)
+	}
+	return dir, nil
+}
+
 func TestMain(m *testing.M) {
 	flag.Parse()
+	holdDir, err := buildFlockHold()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
 	stubDir, err := buildStubPlugin()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -56,6 +75,7 @@ func TestMain(m *testing.M) {
 		}
 		harness.Bin = abs
 		code := m.Run()
+		os.RemoveAll(holdDir)
 		os.RemoveAll(stubDir)
 		os.RemoveAll(sshDir)
 		os.Exit(code)
@@ -74,6 +94,7 @@ func TestMain(m *testing.M) {
 	}
 	code := m.Run()
 	os.RemoveAll(dir)
+	os.RemoveAll(holdDir)
 	os.RemoveAll(stubDir)
 	os.RemoveAll(sshDir)
 	os.Exit(code)
