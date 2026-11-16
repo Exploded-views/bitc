@@ -112,14 +112,18 @@ lock = "/home/me/.heavy/heavy.lock"
 gate = "/home/me/.heavy/heavy.gate"
 slot = "/home/me/.heavy/heavy.slot{n}"  # slot file n: {n} is required
 [compat.flock.bench]                    # the bench pool names the same files
+exclusive = true                        # a bench: gate and lock exclusive, no slot file
 lock = "/home/me/.heavy/heavy.lock"
 gate = "/home/me/.heavy/heavy.gate"
 slot = "/home/me/.heavy/heavy.slot{n}"
 ```
 
 A `heavy` run takes the gate shared (a shell `bench` holding it makes the run wait), the lock
-shared and slot file `n`. A pool that takes every unit of a group, like `bench` above, takes the
-gate and the lock exclusive and no slot file. A shell run holder of slot 1 sends bitc to slot 2; a
+shared and slot file `n`. A pool with `exclusive = true`, like `bench` above, takes the gate and
+the lock exclusive and no slot file; the key alone decides, not the pool's groups or `--units`.
+Give every normal pool of one slot template as many `slots` as the shell pool has slot files.
+Status and doctor do not show shell holders of these pools: the STARVED line names the busy file.
+Use plain files owned by the user who runs bitc. A shell run holder of slot 1 sends bitc to slot 2; a
 bare `flock -x heavy.lock` holder blocks every bitc slot, and a run that cannot wait ends
 `STARVED heavy (legacy pool: /home/me/.heavy/heavy.lock busy)` (exit 75). A bitc holder makes
 `flock -n heavy.lock` fail. The option is time-boxed with `[compat]`: see spec 12.2 for its

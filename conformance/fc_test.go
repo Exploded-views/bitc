@@ -18,8 +18,8 @@ import (
 // built by TestMain: macOS has no flock(1), and one helper makes both OSes meet the same holder.
 var flockHold string
 
-// fcRig is a host with a pool "heavy" (two slots) and an exclusive pool "bench" (every unit of
-// the group cpu), both named in [compat.flock] over one lock file, one gate and slot files.
+// fcRig is a host with a pool "heavy" (two slots) and an exclusive pool "bench" (exclusive = true),
+// both named in [compat.flock] over one lock file, one gate and slot files.
 type fcRig struct {
 	h                 *harness.H
 	lock, gate, slotT string
@@ -45,6 +45,7 @@ func (r *fcRig) body(heavyKeys, benchKeys, extra string) string {
 	if benchKeys == "" {
 		benchKeys = heavyKeys
 	}
+	benchKeys += "exclusive = true\n"
 	return "groups = { cpu = { units = 2 } }\n" +
 		"[pools.heavy]\nslots = 2\nwait = \"1h\"\n" +
 		"[pools.bench]\nslots = 1\nwait = \"1h\"\ngroups = { cpu = 2 }\n" +
@@ -107,7 +108,8 @@ func free(t *testing.T, specs ...string) bool {
 
 func TestFC1_ShellRunHolderMakesSlotOneBusyBitcTakesSlotTwo(t *testing.T) {
 	r := fcHost(t)
-	shellHold(t, r.h, "s="+r.gate, "s="+r.lock, "x="+r.slot(1))
+	// the real run script takes the gate for an instant and lets it go before it takes the lock
+	shellHold(t, r.h, "s="+r.lock, "x="+r.slot(1))
 	hold := r.h.Hold(nil, "heavy")
 	if got := hold.Env["BITC_SLOT"]; got != "heavy.2" {
 		t.Fatalf("BITC_SLOT = %q, want heavy.2 (slot 1 is held by the shell caller)", got)
