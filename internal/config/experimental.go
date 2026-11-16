@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -21,18 +22,19 @@ const ExperimentalRemoteCleanup = "To clean up resources left by an earlier vers
 
 // checkExperimentalRemote refuses remote providers unless the host file opts in: any
 // [providers.<type>] table, or a pool naming a provider other than local, is one problem. Off
-// Linux the platform refusal of every provider (checkPlatform) stands instead. It only reads.
+// Linux a table the platform refuses (checkPlatform: RunPod) stands alone, without this line; the
+// ssh client and sprites are gated like on Linux. It only reads.
 func checkExperimentalRemote(p *problems, e *Effective, host fileSchema, goos string, cleanup bool) {
-	if goos != "linux" || e.Host.ExperimentalRemote {
+	if e.Host.ExperimentalRemote {
 		return
 	}
-	remote := len(host.Providers) > 0
+	remote := len(host.Providers) > len(platformRefusedTypes(host, goos))
 	for _, ps := range host.Pools {
 		if ps == nil {
 			continue
 		}
 		for _, t := range ps.Providers {
-			remote = remote || t != "local"
+			remote = remote || (t != "local" && !slices.Contains(e.platformRefused, t))
 		}
 	}
 	if !remote {

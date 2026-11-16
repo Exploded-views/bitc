@@ -27,8 +27,8 @@ conformance suite; any language or repo; config validated before any side effect
 (`flock(2)`); safe remote overflow (account-wide daily cap per provider account, leak-proof, no
 secrets in argv or logs);
 agent-grade contracts; small. **Non-goals (v1):** CI, sharding, build caching; multi-host
-scheduling; daemon or UI; Windows; macOS beyond a client build (local pools and exec plugins: memory
-admission, the built-in remote providers, the agent, the parent-death signal for local commands, the inotify wake-up and the
+scheduling; daemon or UI; Windows; macOS beyond a client build (local pools, exec plugins and the ssh provider as a client: memory
+admission, the RunPod provider, sprites (refused on every OS, #6), the agent, the parent-death signal for local commands, the inotify wake-up and the
 `/proc/locks` view stay Linux-only; issue #3; a macOS plugin cannot be stopped from gaining
 privileges through setuid or setgid programs, 8.5.1); cgroup limits, PSI admission;
 GPU pods; job DAGs or retries (callers retry on 75); sandboxing the account from itself (10).
@@ -158,7 +158,7 @@ record (a job a legacy launcher started, 12): legacy J8/J9 apply, so the last li
 | 66 `EX_NOINPUT` | `wait`/`logs`/`cancel`: no such job | check the name |
 | 69 `EX_UNAVAILABLE` | not Linux or macOS; a Linux-only feature in the macOS build; hook could not start, timed out, printed unparsable output or exited with an unlisted code; no provider left and the last was unusable (a remote-only pool's job not eligible for remote, 8.2); a remote job's own setup step failed by itself (15.9); `cancel` cannot read or update the job's `status.json`; a detached supervisor cannot mark its job running; internal error (a bitc bug) | do not retry blindly |
 | 75 `EX_TEMPFAIL` | starved; hook exited 75; remote infrastructure failure after start; no provider left after a transient failure | wait and retry |
-| 78 `EX_CONFIG` | invalid config file; host-only key in a repo file; `min_version` unmet; insecure, NFS (on Linux also CIFS, SMB2, SMB, 9p, AFS and any FUSE mount, local FUSE included; on macOS also smbfs, afpfs, webdav and any non-local mount) or newer-schema state or accounting dirs; a pool's `memory` or a `[providers.*]` table in the macOS build | fix config |
+| 78 `EX_CONFIG` | invalid config file; host-only key in a repo file; `min_version` unmet; insecure, NFS (on Linux also CIFS, SMB2, SMB, 9p, AFS and any FUSE mount, local FUSE included; on macOS also smbfs, afpfs, webdav and any non-local mount) or newer-schema state or accounting dirs; a pool's `memory` or, in the macOS build, a `[providers.*]` table other than `ssh`, a plugin or `sprites` (`runpod`, `fake` and unknown types; sprites is refused on every OS, #6) | fix config |
 | 124 | `wait`: job still running; or a local run ended by its time limit (`pools.<p>.timeout`, `run --timeout`, 6.4) | `wait`: call it again; a run: the command took too long, raise the limit or fix the command |
 
 A remote problem surfaces only as local fallback, 69 or 75 (8.2). An internal error or panic

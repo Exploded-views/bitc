@@ -19,6 +19,6 @@
 - You are fanning a list of inputs out over cores in one command. Use `parallel` or `xargs -P`.
 - Your contention is between CI runs rather than processes on a machine. Use your CI system's
   concurrency controls.
-- You need Windows as the gate host, or macOS with memory admission or remote providers. bitc
-  is Linux first; its macOS build runs local pools and exec plugins.
+- You need Windows as the gate host, or macOS with memory admission or the RunPod provider. bitc
+  is Linux first; its macOS build runs local pools, exec plugins and the ssh provider as a client.
 - You need a cluster scheduler with resource accounting across many machines. Use one.

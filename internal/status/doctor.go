@@ -30,8 +30,8 @@ func Doctor(e *config.Effective, l state.Layout, out io.Writer) (failed bool) {
 	case "linux":
 		line("ok", "linux", runtime.GOOS+"/"+runtime.GOARCH)
 	case "darwin":
-		line("warn", "linux", runtime.GOOS+"/"+runtime.GOARCH+" client build: local pools and exec plugins only; "+
-			"memory admission, the built-in remote providers and the remote agent need Linux")
+		line("warn", "linux", runtime.GOOS+"/"+runtime.GOARCH+" client build: local pools, exec plugins and the ssh provider as a client; "+
+			"memory admission, the RunPod provider and the remote agent need Linux")
 	default:
 		line("fail", "linux", "bitc needs Linux, this is "+runtime.GOOS)
 	}

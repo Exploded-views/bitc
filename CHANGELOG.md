@@ -9,8 +9,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- macOS as a client to the `ssh` provider. `[providers.ssh]` (and pools naming it) now loads on a
+  macOS build, still behind `[host] experimental_remote = true`, and the client side runs there:
+  orchestration, the pinned `ssh` transport, slot locks, `bitc sweep` and `bitc doctor --remote`.
+  The remote agent stays Linux-only and runs on your Linux host. A macOS bitc cannot be the agent,
+  so the `release` source downloads the bare `bitc_<version>_linux_<arch>` asset and checks it
+  against `checksums.txt`, `build` cross-builds it with `GOOS=linux`, and `url` uses your files.
+  RunPod stays Linux-only (`providers.runpod: RunPod runs on Linux only for now`, exit 78), memory
+  admission stays Linux-only, and Sprites stays refused on every OS until its egress fix
+  ([#6](https://github.com/Exploded-views/bitc/issues/6)), with the same message as on Linux
+  ([#4](https://github.com/Exploded-views/bitc/issues/4)).
 - Exec plugins run on macOS. `[providers.<type>]` with a `plugin` pin now loads on a macOS client
-  (the built-in `ssh`, `runpod` and `sprites` stay refused there). bitc runs a private, 0500,
+  (`runpod` stays refused there and `sprites` everywhere; `ssh` runs on macOS, #4). A plugin
+  provider needs `[host] experimental_remote = true` on macOS, as on Linux. bitc runs a private, 0500,
   content-addressed copy of the pinned plugin through a `__plugin-exec` shim that stays the
   plugin's parent, forwards `SIGTERM` and takes the plugin's process group down if bitc is killed.
   Thin and universal Mach-O plugins are accepted, and one that carries `com.apple.quarantine` is
