@@ -20,6 +20,10 @@ type CompatLocks interface {
 	TryUnit(group string, unit int, supervisorPid int) (release func(), ok bool, err error)
 	// HasFlock reports whether [compat.flock] names pool (spec 12.2).
 	HasFlock(pool string) bool
+	// FlockExclusive reports the pool's [compat.flock.<pool>] exclusive key (default false).
+	FlockExclusive(pool string) bool
+	// FlockSlotFile is the path of the pool's slot file i.
+	FlockSlotFile(pool string, slot int) string
 	// TryFlock takes the shared pool's gate and lock without blocking: gate shared, then lock
 	// shared (the gate is let go once the lock is held), or gate and lock exclusive. busy names the
 	// file that was not free.
@@ -85,9 +89,16 @@ func (x *compat) TrySlot(pool string, slot int) (func(), bool, error) {
 }
 
 // FlockSlotPath is the slot file i of a [compat.flock] pool: the one place the template lives,
-// shared by admission and status.
+// used by admission. Status does not call it: status and doctor do not show shell holders of a
+// flock pool (spec 12.2).
 func FlockSlotPath(fl config.Flock, slot int) string {
 	return strings.ReplaceAll(fl.Slot, "{n}", strconv.Itoa(slot))
+}
+
+func (x *compat) FlockExclusive(pool string) bool { return x.c.Flock[pool].Exclusive }
+
+func (x *compat) FlockSlotFile(pool string, slot int) string {
+	return FlockSlotPath(x.c.Flock[pool], slot)
 }
 
 func (x *compat) HasFlock(pool string) bool {
