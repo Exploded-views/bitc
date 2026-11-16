@@ -13,12 +13,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (the built-in `ssh`, `runpod` and `sprites` stay refused there). bitc runs a private, 0500,
   content-addressed copy of the pinned plugin through a `__plugin-exec` shim that stays the
   plugin's parent, forwards `SIGTERM`, `SIGINT` and `SIGHUP`, and takes the plugin's process group
-  down if bitc is killed.
-  Thin and universal Mach-O plugins are accepted, and one that carries `com.apple.quarantine` is
-  refused with the `xattr -d com.apple.quarantine` fix. **Known limit:** macOS has no
-  `no_new_privs`, so a plugin's process cannot be stopped from gaining privileges through setuid
-  or setgid programs as it is on Linux; only run plugins you trust as you would any program run
-  as your user ([#26](https://github.com/Exploded-views/bitc/issues/26)).
+  down if bitc is killed. Thin and universal Mach-O plugins are accepted, and one that carries
+  `com.apple.quarantine` is refused with the `xattr -d com.apple.quarantine` fix. **Known limit:**
+  macOS has no `no_new_privs`, so a plugin's process cannot be stopped from gaining privileges
+  through setuid or setgid programs as it is on Linux; only run plugins you trust as you would any
+  program run as your user ([#26](https://github.com/Exploded-views/bitc/issues/26)).
 
 ### Changed
 
@@ -45,9 +44,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - macOS builds still refuse the built-in remote providers (`ssh`, `runpod` and `sprites`, exit
   78); only exec plugins run there. macOS as a client to the built-in remote providers
   ([#4](https://github.com/Exploded-views/bitc/issues/4)) is now planned for 0.1.6.
-- On macOS, bitc never removes the private plugin copies in the state dir, so a copy of each
-  plugin version you have pinned stays there until you delete it. A bitc that is already running
-  when its binary is replaced in place starts the new binary as its plugin shim.
+- On macOS, bitc never removes the private plugin copies under `<state>/plugins/<type>/bin/`, so
+  a copy of each plugin version bitc has run stays there until you delete it. A bitc that is
+  already running when its binary is replaced in place starts the new binary as its plugin shim;
+  restart long-running bitc processes after an upgrade.
 - Sprites stays refused until the catch-all egress deny lands
   ([#6](https://github.com/Exploded-views/bitc/issues/6)).
 - A run from a working directory in the high priority lane (`priority.high_cwd` or
