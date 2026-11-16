@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -160,4 +161,58 @@ func TestOpenRefusesBitsSetAfterLoadAndSymlinks(t *testing.T) {
 		f.Close()
 		t.Fatal("Open followed a symlink")
 	}
+}
+
+func TestErrorTextsByKind(t *testing.T) {
+	for _, c := range []struct {
+		e    Error
+		want string
+	}{
+		{Error{KindReason, "not executable"}, "not executable"},
+		{Error{KindInsecure, "/p/x"}, "insecure: /p/x"},
+		{Error{KindPrivs, "/p/x"}, "insecure: setuid/setgid/capabilities"},
+	} {
+		if got := c.e.Error(); got != c.want {
+			t.Errorf("kind %d: %q, want %q", c.e.Kind, got, c.want)
+		}
+	}
+}
+
+func TestShortKeepsADigestOfTwelveOrFewerCharacters(t *testing.T) {
+	if Short("abc") != "abc" || Short("0123456789abcdef") != "0123456789ab" {
+		t.Fatalf("%q %q", Short("abc"), Short("0123456789abcdef"))
+	}
+}
+
+// Open and SumFile say what is wrong with a path that is missing or not a file.
+func TestOpenAndSumFileRefuseAMissingPathAndADirectory(t *testing.T) {
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "nope")
+	if f, err := Open(missing, "00"); err == nil || !errors.Is(err, os.ErrNotExist) {
+		if f != nil {
+			f.Close()
+		}
+		t.Fatalf("Open of a missing path: %v", err)
+	}
+	if f, err := Open(dir, "00"); err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		if f != nil {
+			f.Close()
+		}
+		t.Fatalf("Open of a directory: %v", err)
+	}
+	if _, err := SumFile(missing); err == nil {
+		t.Fatal("SumFile of a missing path succeeded")
+	}
+	if _, err := SumFile(dir); err == nil {
+		t.Fatal("SumFile of a directory succeeded")
+	}
+}
+
+// A file the user cannot read is refused by Check as "cannot open", not as a bad executable.
+func TestCheckRefusesAnUnreadableFile(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads any file")
+	}
+	p := execCopy(t, t.TempDir(), "bitc-provider-x", 0o311)
+	wantKind(t, Check(p), KindReason, "cannot open")
 }

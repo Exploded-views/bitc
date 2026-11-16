@@ -162,16 +162,12 @@ func (p *Provider) spawn() (*session, error) {
 	}
 	outR, outW, err := os.Pipe()
 	if err != nil {
-		inR.Close()
-		inW.Close()
+		closeAll(inR, inW)
 		return nil, &provider.ErrUnavailable{Why: err.Error(), Local: true}
 	}
 	secR, secW, err := os.Pipe()
 	if err != nil {
-		inR.Close()
-		inW.Close()
-		outR.Close()
-		outW.Close()
+		closeAll(inR, inW, outR, outW)
 		return nil, &provider.ErrUnavailable{Why: err.Error(), Local: true}
 	}
 	s := &session{typ: p.typ, scale: p.eff.Scale, calls: map[uint64]*call{}, abandon: map[uint64]bool{}, dead: make(chan struct{}),
@@ -179,12 +175,7 @@ func (p *Provider) spawn() (*session, error) {
 	s.stderr.onLine = p.stderrLine
 	sh, err := p.shimLaunch(f, secR, d)
 	if err != nil {
-		inR.Close()
-		inW.Close()
-		outR.Close()
-		outW.Close()
-		secR.Close()
-		secW.Close()
+		closeAll(inR, inW, outR, outW, secR, secW)
 		return nil, err
 	}
 	cmd := exec.Command(sh.exe)
@@ -235,6 +226,13 @@ func (p *Provider) spawn() (*session, error) {
 	})
 	exit.Go(func() { s.readLoop(io.Reader(outR)); outR.Close() })
 	return s, nil
+}
+
+// closeAll closes every file, ignoring errors.
+func closeAll(fs ...*os.File) {
+	for _, f := range fs {
+		_ = f.Close()
+	}
 }
 
 // pluginEnv is the environment built from empty (A.3.2).
