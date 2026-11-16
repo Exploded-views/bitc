@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/Exploded-views/bitc/internal/exit"
 	"github.com/Exploded-views/bitc/internal/provider"
 	"github.com/Exploded-views/bitc/internal/provider/plugin/pin"
 )
@@ -142,20 +143,20 @@ func ExecShim(args []string) int {
 		fmt.Fprintln(os.Stderr, "bitc: __plugin-exec: start:", err)
 		return 69
 	}
-	go func() {
+	exit.Go(func() {
 		for sg := range sigs {
 			_ = cmd.Process.Signal(sg)
 		}
-	}()
+	})
 	if life != nil {
-		go func() {
+		exit.Go(func() {
 			_, _ = io.Copy(io.Discard, life) // returns at EOF: bitc closed or died
 			if syscall.Getpgrp() == os.Getpid() {
 				_ = syscall.Kill(-os.Getpid(), syscall.SIGKILL)
 			}
 			_ = cmd.Process.Kill()
 			os.Exit(137)
-		}()
+		})
 	}
 	err := cmd.Wait()
 	var ee *exec.ExitError
