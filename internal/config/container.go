@@ -111,8 +111,8 @@ func parseMount(s string) (Mount, string) {
 		switch {
 		case !strings.HasPrefix(p, "/"):
 			return Mount{}, "needs absolute paths on both sides"
-		case strings.ContainsAny(p, ",\n"):
-			return Mount{}, "has a path with a comma or a newline"
+		case strings.ContainsAny(p, ",\"\n"):
+			return Mount{}, "has a path with a comma, a double quote or a newline (docker reads --mount as CSV)"
 		}
 	}
 	return m, ""

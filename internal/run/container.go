@@ -65,7 +65,8 @@ func containerEnv(in EnvInput, kv []KV) ([]string, error) {
 	return env, nil
 }
 
-// workTreeMount is the work tree (the run's cwd when it is outside the work tree) mounted at the same path.
+// workTreeMount is the work tree mounted at the same path; with no work tree, the cwd. (The work
+// tree is derived from the cwd, so the cwd is inside it; the prefix test is a guard, not a case.)
 func workTreeMount(eff *config.Effective) config.Mount {
 	src := eff.Worktree
 	if src == "" || (eff.Cwd != src && !strings.HasPrefix(eff.Cwd, strings.TrimSuffix(src, "/")+"/")) {
@@ -74,10 +75,24 @@ func workTreeMount(eff *config.Effective) config.Mount {
 	return config.Mount{Source: src, Target: src}
 }
 
+// dockerReads are the variables the docker CLI reads for itself: PATH (credential helpers), HOME
+// and XDG_* (its config), DOCKER_* (the daemon, the context), proxies, the ssh agent. A container
+// value for one of them cannot replace the CLI's own, so it goes on argv as NAME=VALUE, the one
+// case a value is visible to ps.
+func dockerReads(k string) bool {
+	u := strings.ToUpper(k)
+	switch u {
+	case "PATH", "HOME", "USER", "TMPDIR", "SSH_AUTH_SOCK":
+		return true
+	}
+	return strings.HasPrefix(u, "DOCKER_") || strings.HasPrefix(u, "XDG_") || strings.HasSuffix(u, "_PROXY")
+}
+
 // containerRun is the docker side of one containerized run.
 type containerRun struct {
 	spec    container.Spec
-	cliEnv  []string // the docker CLI's own environment: the host's
+	cliEnv  []string // the docker run CLI's environment: the host's, plus the container's values (passed by name)
+	hostEnv []string // the host's: what the removals and the guard run with
 	guard   *container.Guard
 	pending sync.WaitGroup
 	once    sync.Once
@@ -103,8 +118,8 @@ func newContainerRun(inv Invocation, p *Prepared, hold *admit.Hold, rt string, i
 		return nil, nil, err
 	}
 	wt := workTreeMount(eff)
-	if strings.ContainsAny(wt.Source, ",\n") {
-		return nil, nil, exit.Configf("%s: the work tree path %q has a comma or a newline, which docker's --mount cannot take", pool.Name, wt.Source)
+	if strings.ContainsAny(wt.Source, ",\"\n") {
+		return nil, nil, exit.Configf("%s: the work tree path %q has a comma, a double quote or a newline, which docker's --mount cannot take", pool.Name, wt.Source)
 	}
 	id := container.TicketID(hold.Ticket)
 	cid := filepath.Join(p.Layout.ContainersDir(), id+".cid")
@@ -112,14 +127,26 @@ func newContainerRun(inv Invocation, p *Prepared, hold *admit.Hold, rt string, i
 		return nil, nil, exit.Unavailablef("%s: cannot create %s: %v", pool.Name, p.Layout.ContainersDir(), err)
 	}
 	_ = os.Remove(cid) // docker refuses an existing --cidfile
+	// The values go to docker in its own environment, `-e NAME` on argv: argv is readable by every
+	// local user for the whole run, a process's environment by its owner only.
+	runEnv, byName := append([]string(nil), cliEnv...), make([]string, 0, len(cenv))
+	for _, kv := range cenv {
+		k, _, _ := strings.Cut(kv, "=")
+		if dockerReads(k) {
+			byName = append(byName, kv)
+			continue
+		}
+		runEnv = append(withoutKeys(runEnv, k), kv)
+		byName = append(byName, k)
+	}
 	c := pool.Container
-	cr := &containerRun{cliEnv: cliEnv, spec: container.Spec{
+	cr := &containerRun{cliEnv: runEnv, hostEnv: cliEnv, spec: container.Spec{
 		Runtime: rt, Image: c.Image, Job: p.Job, Pool: pool.Name, State: container.StateHash(p.Layout.Root), Ticket: id, CID: cid,
-		Mounts: append([]config.Mount{wt}, c.Mounts...), Dir: eff.Cwd, CPUs: c.CPUs, Memory: c.Memory, Env: cenv,
+		Mounts: append([]config.Mount{wt}, c.Mounts...), Dir: eff.Cwd, CPUs: c.CPUs, Memory: c.Memory, Env: byName,
 		TTY: isTTY(inv.Stdin), Argv: p.Args.Argv}}
 	exe, args, err := guardCommand()
 	if err == nil {
-		cr.guard, err = container.StartGuard(exe, args, rt, container.Name(p.Job), cliEnv)
+		cr.guard, err = container.StartGuard(exe, args, rt, container.Name(id), cliEnv)
 	}
 	if err != nil {
 		fmt.Fprintf(stderr, "bitc: %s: cannot start the container guard (%v); if bitc is killed the container stays until the next run or bitc sweep removes it\n", pool.Name, err)
@@ -132,7 +159,7 @@ func (cr *containerRun) kill() {
 	cr.pending.Add(1)
 	exit.Go(func() {
 		defer cr.pending.Done()
-		_ = container.Remove(context.Background(), cr.spec.Runtime, container.Name(cr.spec.Job), cr.cliEnv)
+		_ = container.Remove(context.Background(), cr.spec.Runtime, container.Name(cr.spec.Ticket), cr.hostEnv)
 	})
 }
 
@@ -143,7 +170,7 @@ func (cr *containerRun) kill() {
 func (cr *containerRun) finish() bool {
 	cr.once.Do(func() {
 		cr.pending.Wait()
-		_ = container.Remove(context.Background(), cr.spec.Runtime, container.Name(cr.spec.Job), cr.cliEnv)
+		_ = container.Remove(context.Background(), cr.spec.Runtime, container.Name(cr.spec.Ticket), cr.hostEnv)
 		b, err := os.ReadFile(cr.spec.CID)
 		cr.created = err == nil && len(b) > 0
 		_ = os.Remove(cr.spec.CID)
@@ -160,7 +187,8 @@ func (cr *containerRun) finish() bool {
 func reapOrphans(ctx context.Context, p *Prepared, rt string, env []string, stderr io.Writer, hist func(state.Event)) {
 	err := container.Sweep(ctx, rt, p.Layout, env, false, func(f container.Found) {
 		fmt.Fprintf(stderr, "bitc: removed orphaned container %s (its run is gone)\n", f.Name)
-		hist(state.Event{Event: "reaped", Pool: f.Pool, Job: strings.TrimPrefix(f.Name, "bitc-")})
+		// not "reaped": that counts dead tickets; the job is the bitc.job label (the name is the ticket's)
+		hist(state.Event{Event: "container-reaped", Pool: f.Pool, Job: f.Job})
 	}, func(container.Found) {})
 	if err != nil {
 		Debugf(p, stderr, "%s: container sweep: %v", p.Pool.Name, err)

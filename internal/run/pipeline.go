@@ -368,14 +368,15 @@ func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Wri
 		return out
 	}
 	var onKill func()
+	execEnv := env // the docker CLI's environment also carries the container's env values (post_run keeps the host's)
 	if cr != nil {
-		onKill = cr.kill
+		onKill, execEnv = cr.kill, cr.cliEnv
 	}
 	waitMS := hold.WaitMS
 	hist(state.Event{Event: "start", Slot: hold.Slot, Units: hold.Counts, Nested: hold.Nested, WaitMS: &waitMS})
 	t0 := time.Now()
 	res, err := Exec(parent, ExecSpec{
-		Argv: argv, Env: env, Dir: inv.Cwd, Stdin: inv.Stdin, Stdout: inv.Stdout, Stderr: inv.Stderr,
+		Argv: argv, Env: execEnv, Dir: inv.Cwd, Stdin: inv.Stdin, Stdout: inv.Stdout, Stderr: inv.Stderr,
 		OnSignal: pool.OnSignal, Grace: eff.Scale(eff.Host.Grace), Timeout: eff.Scale(pool.Timeout), MaxSignalWait: eff.Scale(eff.Host.MaxSignalWait),
 		Started:  func(pid, pgid int, start uint64) { _ = hold.SetProcess(pid, pgid, start) },
 		Pending:  gap,          // Exec stops it once its own handler is registered

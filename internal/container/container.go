@@ -30,8 +30,10 @@ const (
 // removeLimit bounds one `docker rm -f` or `docker ps`, so a hung daemon cannot hold bitc.
 const removeLimit = 30 * time.Second
 
-// Name is the container's name: deterministic from the job.
-func Name(job string) string { return "bitc-" + job }
+// Name is the container's name, unique per run: bitc-<ticket id>. The job name is only a label
+// (bitc.job): --name is the caller's and may be reused, even by runs going at the same time, and a
+// removal by a name two runs share would remove the other run's container.
+func Name(ticket string) string { return "bitc-" + ticket }
 
 // StateHash is the bitc.state label: the first 12 hex digits of the sha256 of the state dir path.
 func StateHash(stateDir string) string {
@@ -81,7 +83,7 @@ type Spec struct {
 	Dir     string // --workdir
 	CPUs    string // "" = no limit
 	Memory  config.Size
-	Env     []string // NAME=VALUE, in the order they are passed
+	Env     []string // passed as `-e <entry>`: NAME (docker takes the value from its own environment) or NAME=VALUE
 	TTY     bool
 	Argv    []string // the command
 }
@@ -92,7 +94,7 @@ func RunArgv(s Spec) []string {
 	if s.TTY {
 		tty = "-it"
 	}
-	a := []string{s.Runtime, "run", "--rm", "--init", tty, "--name", Name(s.Job),
+	a := []string{s.Runtime, "run", "--rm", "--init", tty, "--name", Name(s.Ticket),
 		"--label", LabelJob + "=" + s.Job, "--label", LabelPool + "=" + s.Pool,
 		"--label", LabelState + "=" + s.State, "--label", LabelTicket + "=" + s.Ticket,
 		"--cidfile", s.CID}

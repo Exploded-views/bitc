@@ -13,11 +13,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `pools.<p>.container = { image, runtime = "docker", mounts, cpus, memory }` (host file only)
   keeps admission, slots, groups, FIFO and the time limit as they are, and runs the admitted
   command as `docker run` with the work tree mounted at the same path as the working directory;
-  the exit status is the command's. Each container is named `bitc-<job>` and labelled
-  `bitc.job`, `bitc.pool`, `bitc.state` and `bitc.ticket`, and bitc force-removes it at the time
+  the exit status is the command's. Each container is named `bitc-<ticket id>` (unique per run,
+  so runs that share a `--name` never remove each other's) and labelled `bitc.job`, `bitc.pool`,
+  `bitc.state` and `bitc.ticket`, and bitc force-removes it at the time
   limit, on INT, TERM or HUP, on `bitc cancel`, and when bitc is SIGKILLed (a guard process on a
   lifeline pipe, on Linux and macOS). `bitc sweep` and the next admission remove orphaned
-  containers by label. The container gets a minimal environment, not the host's. A missing docker
+  containers by label. The container gets a minimal environment, not the host's, and its values
+  stay off docker's command line (`-e NAME`, the values in docker's own environment). A missing docker
   CLI, or docker failing before the container exists, is exit 69; a bad `container` table is 78.
   See [docs/containers.md](docs/containers.md)
   ([#60](https://github.com/Exploded-views/bitc/issues/60)).

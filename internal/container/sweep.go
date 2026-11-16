@@ -3,6 +3,7 @@ package container
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,12 +20,13 @@ var ticketIDRE = regexp.MustCompile(`^[01]-[0-9]{19}-[0-9a-f]{8}$`)
 type Found struct {
 	Name   string
 	Pool   string
+	Job    string // the bitc.job label
 	Ticket string
 	Live   lock.State // StateFree: the ticket is gone or nobody holds it (an orphan); StateHeld: a run owns it; StateUnknown: this host cannot tell
 }
 
-// listFormat prints name|pool|ticket per container.
-const listFormat = `{{.Names}}|{{.Label "` + LabelPool + `"}}|{{.Label "` + LabelTicket + `"}}`
+// listFormat prints name|pool|ticket|job per container.
+const listFormat = `{{.Names}}|{{.Label "` + LabelPool + `"}}|{{.Label "` + LabelTicket + `"}}|{{.Label "` + LabelJob + `"}}`
 
 // List is every container (running or not) that carries this state dir's label, with its ticket's state.
 func List(ctx context.Context, runtime string, l state.Layout, env []string) ([]Found, error) {
@@ -44,18 +46,22 @@ func List(ctx context.Context, runtime string, l state.Layout, env []string) ([]
 	for _, line := range strings.Split(string(out), "\n") {
 		parts := strings.Split(strings.TrimSpace(line), "|")
 		// a label that is not a ticket id was not written by bitc: it is not this sweep's to judge
-		if len(parts) != 3 || parts[0] == "" || !ticketIDRE.MatchString(parts[2]) {
+		if len(parts) != 4 || parts[0] == "" || !ticketIDRE.MatchString(parts[2]) {
 			continue
 		}
-		found = append(found, Found{Name: parts[0], Pool: parts[1], Ticket: parts[2], Live: TicketState(l, parts[2])})
+		found = append(found, Found{Name: parts[0], Pool: parts[1], Ticket: parts[2], Job: parts[3], Live: TicketState(l, parts[2])})
 	}
 	return found, nil
 }
 
 // TicketState is the state of the lock on the ticket file with this id, in whichever pool holds it.
-// A missing ticket is free.
+// A missing ticket is free; a pools dir that cannot be read (anything but "it is not there") says
+// nothing, so it is unknown: the sweep never removes on a guess.
 func TicketState(l state.Layout, id string) lock.State {
-	pools, _ := os.ReadDir(filepath.Join(l.Root, "pools"))
+	pools, err := os.ReadDir(filepath.Join(l.Root, "pools"))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return lock.StateUnknown
+	}
 	st := lock.StateFree
 	for _, p := range pools {
 		switch lock.Inspect(filepath.Join(l.Tickets(p.Name()), id+".json")) {

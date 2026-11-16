@@ -476,15 +476,20 @@ of the caller's env.
   limit (8.2: `remote_limits.timeout`).
 - **Container** (`pools.<p>.container = { image, runtime = "docker", mounts, cpus, memory }`, host
   file only; docs/containers.md): the admitted command runs as `docker run --rm --init -i
-  --name bitc-<job> --label bitc.job=<job> --label bitc.pool=<p> --label bitc.state=<hash> --label
+  --name bitc-<ticket> --label bitc.job=<job> --label bitc.pool=<p> --label bitc.state=<hash> --label
   bitc.ticket=<ticket> --cidfile <state>/containers/<ticket>.cid --mount <work tree> ... --workdir
-  <cwd> [--cpus N] [--memory BYTES] -e NAME=VALUE ... <image> <argv>` as the run's child, so
+  <cwd> [--cpus N] [--memory BYTES] -e NAME ... <image> <argv>` as the run's child, so
   admission, slots, groups, FIFO, the time limit, signals and the exit status are those of any
-  local run: the status is the command's. The work tree (the cwd when outside it) is mounted
+  local run: the status is the command's. The name is unique per run (the ticket id; `--name` is
+  the caller's and may be shared by runs going at once, so the job is only the `bitc.job` label), and every
+  removal is by that name. The work tree (with no work tree, the cwd) is mounted
   at the same path and is the working directory; `-i` gives the command bitc's stdin (`-it` on a
-  TTY); the environment is the minimal one of 6.3. `--timeout`, `pools.<p>.timeout`, `cancel` and
-  INT/TERM/HUP end the run as above and then bitc runs `docker rm -f bitc-<job>`, also when it
-  sends SIGKILL after `grace`, because killing the docker CLI does not stop its container. A
+  TTY); the environment is the minimal one of 6.3, its values in the docker CLI's own environment
+  and only the names on argv (a variable docker itself reads, such as `PATH`, `HOME` or `DOCKER_*`,
+  stays `NAME=VALUE`). `--timeout`, `pools.<p>.timeout`, `cancel` and
+  INT/TERM/HUP end the run as above and then bitc runs `docker rm -f bitc-<ticket>`, also when it
+  sends SIGKILL after `grace`, because killing the docker CLI does not stop its container (without
+  a TTY the CLI proxies the TERM to the container; with one it does not). A
   guard process (`bitc __container-guard`, its own session, `fd 3` the read end of a pipe bitc
   holds, the way the macOS plugin shim finds bitc dead) removes the container when that pipe
   closes without bitc having said `done`: a SIGKILLed bitc on Linux and macOS. A container whose
@@ -495,7 +500,10 @@ of the caller's env.
   runtime CLI missing from PATH is 69 before admission (`bitc: <pool>: container runtime "docker"
   not found on PATH ...`); `docker run` exiting 125 without having written its `--cidfile` is a
   failure before the command started: `bitc: <pool>: docker could not start the container ...`,
-  69, `outcome = "unavailable"`. A 125, 126 or 127 once the container exists is the command's.
+  69, `outcome = "unavailable"`. A 125, 126 or 127 once the container exists is the command's
+  (a 125 can still be docker's own start failure; it is not told apart). A pools dir that cannot
+  be read makes every container's holder unknown: none is removed. An orphan removed by an
+  admission is a `container-reaped` history event, the job from the `bitc.job` label.
   `container` with a `wrap` hook, an unknown runtime, a bad `image`, `cpus`, `memory` or `mounts`
   entry is 78.
 - **End of hold:** `post_run`; group stragglers SIGTERM then SIGKILL after `grace`; unlock all,

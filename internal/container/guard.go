@@ -35,7 +35,7 @@ func StartGuard(exe string, exeArgs []string, runtime, name string, env []string
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.Command(exe, append(append([]string{}, exeArgs...), runtime, name)...) //nolint:gosec // exe is bitc's own binary; the arguments are the runtime path bitc found and a name it built
+	cmd := exec.Command(exe, append(append([]string{}, exeArgs...), runtime, name)...) //nolint:gosec // G702: exe is bitc's own binary; the arguments are the runtime path bitc found and a name it built
 	cmd.Env = env
 	cmd.ExtraFiles = []*os.File{r} // fd 3; stdin, stdout and stderr are the null device
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
