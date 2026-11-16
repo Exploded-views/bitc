@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.5] - 2026-11-16
 
 ### Added
 
@@ -18,6 +18,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `no_new_privs`, so a plugin's process cannot be stopped from gaining privileges through setuid
   or setgid programs as it is on Linux; only run plugins you trust as you would any program run
   as your user ([#26](https://github.com/Exploded-views/bitc/issues/26)).
+
+### Changed
+
+- `golang.org/x/sys` is updated from 0.49.0 to 0.50.0.
 
 ### Fixed
 
@@ -34,6 +38,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Builds and CI use Go 1.27.4, which fixes the standard-library `net/http` advisory
   GO-2026-6859 that `govulncheck` reports in Go 1.27.3.
+
+### Known issues
+
+- macOS builds still refuse the built-in remote providers (`ssh`, `runpod` and `sprites`, exit
+  78); only exec plugins run there. macOS as a client to the built-in remote providers
+  ([#4](https://github.com/Exploded-views/bitc/issues/4)) is now planned for 0.1.6.
+- Sprites stays refused until the catch-all egress deny lands
+  ([#6](https://github.com/Exploded-views/bitc/issues/6)).
+- A run from a working directory in the high priority lane (`priority.high_cwd` or
+  `priority.high_cwd_contains`) can still starve normal runs in the same pool while high runs keep
+  overlapping; aging is now planned for 0.1.6.
 
 ## [0.1.4] - 2026-11-04
 
