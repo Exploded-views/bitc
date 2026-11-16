@@ -432,12 +432,78 @@ func TestSweepSkipsNonDirectoryEntriesOfPools(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	f.plant("bitc-a", map[string]string{LabelPool: "p", LabelState: StateHash(l.Root), LabelTicket: "0-0000000000000000001-aaaaaaaa", LabelJob: "j"})
+	const id = "0-0000000000000000001-aaaaaaaa"
+	f.plant("bitc-a", map[string]string{LabelPool: "p", LabelState: StateHash(l.Root), LabelTicket: id, LabelJob: "j"})
+	if err := os.MkdirAll(l.ContainersDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	files := []string{filepath.Join(l.ContainersDir(), id+".cid"), filepath.Join(l.ContainersDir(), id+".env")}
+	for _, p := range files {
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	var removed, kept []string
 	rec := func(into *[]string) func(Found) { return func(x Found) { *into = append(*into, x.Name) } }
 	if err := Sweep(context.Background(), f.path, l, f.env, false, rec(&removed), rec(&kept)); err != nil ||
 		len(removed) != 1 || len(kept) != 0 || f.exists("bitc-a") {
 		t.Fatalf("err %v removed %v kept %v", err, removed, kept)
+	}
+	for _, p := range files { // the dead run's files go too: sweepFiles reads the same pools
+		if _, err := os.Stat(p); err == nil {
+			t.Fatalf("%s is still there", p)
+		}
+	}
+}
+
+// A pool dir that is a symlink to a directory (a pool moved to another disk) is still a pool: a
+// held ticket in it keeps its run's container and files. Dropping it would read the ticket as free
+// and remove a live run's container.
+func TestSweepFollowsASymlinkedPoolDir(t *testing.T) {
+	f := newFake(t)
+	l, err := state.Open(filepath.Join(t.TempDir(), "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	away := filepath.Join(t.TempDir(), "away")
+	if err := os.MkdirAll(filepath.Join(away, "tickets"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(l.Root, "pools"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(away, l.PoolDir("box")); err != nil {
+		t.Fatal(err)
+	}
+	const id = "0-0000000000000000001-aaaaaaaa"
+	path := filepath.Join(l.Tickets("box"), id+".json")
+	if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	held, err := lock.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	if ok, err := held.TryLock(); !ok || err != nil {
+		t.Fatalf("cannot hold the ticket: %v", err)
+	}
+	f.plant("bitc-live", map[string]string{LabelPool: "box", LabelState: StateHash(l.Root), LabelTicket: id, LabelJob: "j"})
+	if err := os.MkdirAll(l.ContainersDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cid := filepath.Join(l.ContainersDir(), id+".cid")
+	if err := os.WriteFile(cid, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var removed, kept []string
+	rec := func(into *[]string) func(Found) { return func(x Found) { *into = append(*into, x.Name) } }
+	if err := Sweep(context.Background(), f.path, l, f.env, false, rec(&removed), rec(&kept)); err != nil ||
+		len(removed) != 0 || len(kept) != 0 || !f.exists("bitc-live") || f.rmCalls() != 0 {
+		t.Fatalf("err %v removed %v kept %v: a live run's container in a symlinked pool", err, removed, kept)
+	}
+	if _, err := os.Stat(cid); err != nil {
+		t.Fatalf("a live run's cidfile was removed: %v", err)
 	}
 }
 
