@@ -13,11 +13,11 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// dur, size, positive parse a value and record a problem naming file, key and quoted value.
 // defaultAgeAfter is priority.age_after unset: half the default pool wait (10m), so a normal run
 // ages into the high lane well before it would starve.
 const defaultAgeAfter = 5 * time.Minute
 
+// dur, size, positive parse a value and record a problem naming file, key and quoted value.
 func dur(p *problems, file, key string, s *string, def time.Duration) time.Duration {
 	if s == nil {
 		return def

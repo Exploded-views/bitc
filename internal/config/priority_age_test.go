@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -26,6 +27,9 @@ func TestPriorityAgeAfter(t *testing.T) {
 func TestPriorityAgeAfterBadValueIs78(t *testing.T) {
 	for _, v := range []string{`"soon"`, `"-5m"`, `"10"`, `5`} {
 		_, err := newFixture(t, "version = 1\n[priority]\nage_after = "+v+"\n", "").load()
-		expect78(t, err, "priority.age_after")
+		expect78(t, err, "priority.age_after", "must be a duration")
+		if strings.Contains(err.Error(), "unknown key") {
+			t.Errorf("%s: unknown-key error, not the value check: %v", v, err)
+		}
 	}
 }

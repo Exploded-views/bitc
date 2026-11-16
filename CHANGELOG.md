@@ -12,7 +12,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Priority-lane aging: a normal run that has waited `priority.age_after` (host file; default `5m`,
   half the default pool `wait`) is ordered as high, oldest first among the high and aged tickets, so
   a steady stream of high-lane runs can no longer starve it. Set `age_after = "0"` to turn aging off
-  and keep the earlier order. `bitc status` marks such a waiter `aged` (`"aged": true` in `--json`)
+  and keep the earlier order. Aging never takes effect for a caller whose wait (pool `wait`, a
+  project narrowing it, or `--wait`) is at or below `age_after`, since it exits 75 first; raise the
+  wait or lower `age_after` for such pools. `bitc status` marks such a waiter `aged` (`"aged": true` in `--json`)
   ([#56](https://github.com/Exploded-views/bitc/issues/56)).
 
 ### Fixed

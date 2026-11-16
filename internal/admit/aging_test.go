@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,6 +35,8 @@ func TestAgedNeedsClassNormalAndEnoughAge(t *testing.T) {
 		{"normal, aging off", tf(1, t0), t0.Add(24 * time.Hour), 0, false},
 		{"high is never 'aged'", tf(0, t0), t0.Add(24 * time.Hour), after, false},
 		{"clock stepped back: negative age", tf(1, t0), t0.Add(-time.Hour), after, false},
+		{"name without a parsable time", TicketFile{Name: "1-xxxxxxxxxxxxxxxxxxx-0badf00d.json", T: Ticket{Class: 1}}, t0, after, false},
+		{"name too short", TicketFile{Name: "1-", T: Ticket{Class: 1}}, t0, after, false},
 	} {
 		if got := Aged(c.tk, c.now, c.aft); got != c.want {
 			t.Errorf("%s: Aged = %v, want %v", c.name, got, c.want)
@@ -132,10 +135,21 @@ func TestAgedNormalWaitsForAnEarlierHigh(t *testing.T) {
 	}
 }
 
+// The earlier waiter is a normal ticket that is itself aged, and a high one is later than both:
+// with aging the two normal tickets go first, so the newcomer is held by the queue; without it
+// the high ticket holds it by the priority lane.
 func TestAgedNormalWaitsForAnEarlierAgedNormal(t *testing.T) {
-	earlier := func(l state.Layout) { plant(t, l, "lint", 1, time.Now().Add(-time.Hour), "waiting") }
-	if err := acquireAt(t, 1, 10*time.Minute, 11*time.Minute, earlier); exit.Code(err) != 75 {
+	plants := func(l state.Layout) {
+		plant(t, l, "lint", 1, time.Now().Add(-time.Hour), "waiting")
+		plant(t, l, "lint", 0, time.Now().Add(time.Hour), "waiting")
+	}
+	err := acquireAt(t, 1, 10*time.Minute, 11*time.Minute, plants)
+	if exit.Code(err) != 75 || !strings.HasPrefix(err.Error(), "STARVED lint (queue") {
 		t.Fatalf("FIFO among aged runs: %v", err)
+	}
+	err = acquireAt(t, 1, 0, 11*time.Minute, plants)
+	if exit.Code(err) != 75 || err.Error() != "STARVED lint (priority lane)" {
+		t.Fatalf("aging off: the high ticket holds it: %v", err)
 	}
 }
 

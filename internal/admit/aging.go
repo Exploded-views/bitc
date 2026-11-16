@@ -7,20 +7,21 @@ import (
 
 // ticketNS is the creation time recorded in a ticket's name (unix ns), which is fixed for the
 // ticket's life: every caller reads the same value from the same file name, and no process keeps
-// its own clock for it.
-func ticketNS(name string) int64 {
+// its own clock for it. ok is false for a name that does not carry one.
+func ticketNS(name string) (ns int64, ok bool) {
 	if len(name) < 21 {
-		return 0
+		return 0, false
 	}
-	n, _ := strconv.ParseInt(name[2:21], 10, 64)
-	return n
+	n, err := strconv.ParseInt(name[2:21], 10, 64)
+	return n, err == nil
 }
 
 // Aged reports whether t is a normal-lane ticket that has waited at least after (priority.age_after;
 // 0 turns aging off) and so is ordered as a high one. A ticket stamped in the future of now, as
-// after a backward clock step, is not aged: the old order stands until time catches up.
+// after a backward clock step, or whose name carries no time, is not aged: the old order stands until time catches up.
 func Aged(t TicketFile, now time.Time, after time.Duration) bool {
-	return after > 0 && t.T.Class == 1 && now.UnixNano()-ticketNS(t.Name) >= int64(after)
+	ns, ok := ticketNS(t.Name)
+	return after > 0 && t.T.Class == 1 && ok && now.UnixNano()-ns >= int64(after)
 }
 
 func lane(t TicketFile, now time.Time, after time.Duration) int {

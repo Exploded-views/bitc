@@ -34,7 +34,10 @@ A work tree whose path matches `priority.high_cwd` or `priority.high_cwd_contain
 jumps to the high lane. A normal run does not wait behind high ones for ever: once it has waited
 `priority.age_after` (host file, default `5m`; `"0"` turns aging off) it is ordered as high, by
 ticket age, so high runs that arrived after it no longer overtake it; `bitc status` marks it
-`aged`. When a caller is admitted it holds the slot (a **hold**) until its
+`aged`. Aging only helps a caller whose wait (the pool's `wait`, a project narrowing it, or
+`--wait`) is longer than `age_after`: a caller with a shorter wait exits 75 before it can age, so
+for such pools raise the wait or lower `age_after`. `age_after` is one fixed host setting, not
+scaled to any caller's wait. When a caller is admitted it holds the slot (a **hold**) until its
 command ends. There is no daemon: the kernel's `flock(2)` locks do the work, so a caller that is
 killed releases everything it held, and the next caller reaps what it left.
 

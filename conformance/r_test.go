@@ -219,7 +219,8 @@ func TestR7_NormalRunAgesIntoTheHighLane(t *testing.T) {
 func TestR7_BadAgeAfterIs78(t *testing.T) {
 	h := harness.New(t)
 	h.HostConfig("[priority]\nage_after = \"soon\"\n[pools.lint]\nwait = \"30s\"\n")
-	if r := h.Run("run", "lint", "--", "true"); r.Code != 78 || !strings.Contains(r.Stderr, "priority.age_after") {
+	if r := h.Run("run", "lint", "--", "true"); r.Code != 78 || !strings.Contains(r.Stderr, "priority.age_after") ||
+		!strings.Contains(r.Stderr, `"soon"`) || !strings.Contains(r.Stderr, "must be a duration") || strings.Contains(r.Stderr, "unknown key") {
 		t.Fatalf("%+v", r)
 	}
 }

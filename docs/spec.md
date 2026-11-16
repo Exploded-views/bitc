@@ -133,7 +133,8 @@ record (a job a legacy launcher started, 12): legacy J8/J9 apply, so the last li
   Ages: a pool with waiters prints `(wait <configured>, oldest <age>)` after its count, and each
   waiter line ends `since <ts> (<age>)`, ages in the duration form of 5.2 (`1h22m`, whole
   seconds). `--json` adds per pool `wait` (the configured wait) and, only with waiters,
-  `oldest_wait_s`, and per waiter `waited_s` (integer seconds). Every age is measured to the
+  `oldest_wait_s`, and per waiter `waited_s` (integer seconds). A normal waiter that has aged into
+  the high lane (6.2, `priority.age_after`) reads `normal aged` in its line and `"aged": true` in `--json`. Every age is measured to the
   report's own `time`, so text and JSON agree.
 - **sweep**: exit 0 unless 64/78 (78 also for a network-filesystem home, 8.3); prints `swept <kind> <id> (<why>)`. `--dry-run` never lists a ticket whose holder is `unknown` as swept; it prints `kept ticket <pool>/<name> (holder unknown: /proc/locks unreadable)`. Local: dead tickets and their
   process groups, dead supervisors' records (`lost`), stale staging dirs, rotation, `retention`.
@@ -219,7 +220,7 @@ is not an error.
 | Kind | Accepted | Rejected (message names file, key, quoted value) |
 | --- | --- | --- |
 | integer | TOML integer in range; env/flags `0` or `[1-9][0-9]*` | leading zero, sign, unit, fraction |
-| duration | `<int><unit>`, units `ms s m h d`, combinable (`1h30m`) | bare number, negative, `0.5h`, leading zero |
+| duration | `<int><unit>`, units `ms s m h d`, combinable (`1h30m`) | bare number (except `priority.age_after = "0"`, aging off), negative, `0.5h`, leading zero |
 | size | `<int><unit>`, units `KiB MiB GiB TiB` | `MB`/`GB`, bare number, leading zero |
 | money | number ≥ 0, ≤ 4 decimals; stored as integer micro-dollars | negative, NaN, inf, string |
 | enum; argv | exact listed value (no case folding); array of strings | anything else |
@@ -288,7 +289,7 @@ and a test fails when a tag, the reference and this table disagree.
 | `defaults.slots` / `defaults.wait` (pools inherit both) | `1` / `10m` | host / narrowable |
 | `pools.<p>.memory`, `groups` / `providers` | none / `["local"]` | host / narrowable |
 | `pools.<p>.on_signal`, `refuse`, hooks; hook `timeout`, `refuse_exit` | `terminate`, none, none; `60s`, `[64]` | project |
-| `detach.wait_timeout` / `priority.high_cwd_contains`, `high_cwd` / `priority.age_after` | `9m` (fits a 10-minute tool cap) / `[]` / `5m` (`0` or `0s`: no aging; half the default pool wait) | host |
+| `detach.wait_timeout` / `priority.high_cwd_contains`, `high_cwd` / `priority.age_after` | `9m` (fits a 10-minute tool cap) / `[]` / `5m` (`0` or `0s`: no aging; half the default pool wait; aging never takes effect for a caller whose wait, from the pool, a narrowing project file or `--wait`, is at or below it, because that caller exits 75 first: raise the wait or lower `age_after`; it is never scaled to a wait) | host |
 | `remote_limits.worktrees`, `forward_env_allow`, `forward_env_force` / `on_failure` | `[]` (nothing goes remote) / `next` (`stop`: fail) | host |
 | `pools.<p>.remote_limits.size.<type>` / `.timeout` | unset = ineligible for that provider / `90m` | host / narrowable |
 | `providers.<t>.name_prefix`, `daily_usd`, `max_live`, `launch_wait`, `start_timeout` | `bitc`, required, `2`, `5m`, `20m` | host (core, 8.5) |
@@ -1496,7 +1497,7 @@ stem>" }`) makes the two pools exclude each other while callers move one at a ti
   needs `locks/<stem>.<j>.lock`. Both are taken in the same all-or-none step (`legacy pool: <what>
   busy`); bitc writes its supervisor pid into group locks and exports `hold_env=<stem>.<j>` so
   nested legacy calls verify, and treats a verified legacy claim as nested.
-- High tickets are mirrored as `locks/<pool>.prio.<pid>`, and live legacy markers are honoured.
+- High tickets are mirrored as `locks/<pool>.prio.<pid>`, and live legacy markers are honoured. A normal ticket that has aged (`priority.age_after`, 6.2) skips the legacy high marker as it skips the ticket check: a legacy high caller has no ticket and so no age to order by.
 - Remote (only if M2 lands while compat is set): `List` includes the compat prefix; compat
   resources are counted (8.3), never destroyed. bitc also takes `<legacy_dir>/locks/runpod-launch.lock`
   (after its own, within `launch_wait`) and appends `<pid> <name> <usd> <expiry>` to
