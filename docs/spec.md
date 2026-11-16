@@ -505,10 +505,15 @@ of the caller's env.
   not found on PATH ...`); `docker run` exiting 125 without having written its `--cidfile` is a
   failure before the command started: `bitc: <pool>: docker could not start the container ...`,
   69, `outcome = "unavailable"`. A 125, 126 or 127 once the container exists is the command's
-  (a 125 can still be docker's own start failure; it is not told apart). A sweep error (the pools
-  dir cannot be read, the listing or a removal fails) aborts the sweep and deletes nothing, not
-  even a cidfile or env file; `bitc sweep` says `container sweep aborted: <why>` and an admission
-  goes on. An orphan removed by an
+  (a 125 can still be docker's own start failure; it is not told apart). Only a full 64-hex id
+  counts (the listing is `docker ps -a --no-trunc`); a ticket path that cannot be checked for any
+  reason but ENOENT keeps its container. The docker CLI, its removals, the guard and `bitc sweep`
+  run with bitc's own environment (one daemon); the pool env and hook output are the container's
+  only. A container env value with a line break, a NUL, invalid UTF-8 or 64 KiB or more is 78
+  naming the key. A sweep error (the pools dir cannot be read or the listing fails) aborts the
+  sweep and deletes nothing; a removal that fails stops it there: containers removed before it stay
+  removed, nothing more is deleted, not even a cidfile or env file. `bitc sweep` says `container
+  sweep aborted: <why>`, finishes the rest of its work and exits 69; an admission goes on. An orphan removed by an
   admission is a `container-reaped` history event, the job from the `bitc.job` label.
   `container` with a `wrap` hook, an unknown runtime, a bad `image`, `cpus`, `memory` or `mounts`
   entry is 78.

@@ -41,11 +41,21 @@ func readPools(l state.Layout) ([]os.DirEntry, error) {
 }
 
 // ticketState is the state of the lock on the ticket file with this id, in whichever pool holds it.
-// A missing ticket is free.
+// A ticket that is not there (ENOENT) is free. Any other error looking for it (EACCES, EIO, a path
+// component that is not a directory) is unknown, and so is a lock this host cannot inspect: the sweep
+// keeps the container. lock.Inspect itself takes any Lstat error for "free"; that is its own
+// callers' business, and this sweep checks first rather than rely on it.
 func ticketState(l state.Layout, pools []os.DirEntry, id string) lock.State {
 	st := lock.StateFree
 	for _, p := range pools {
-		switch lock.Inspect(filepath.Join(l.Tickets(p.Name()), id+".json")) {
+		path := filepath.Join(l.Tickets(p.Name()), id+".json")
+		if _, err := os.Lstat(path); err != nil {
+			if !errors.Is(err, fs.ErrNotExist) {
+				st = lock.StateUnknown
+			}
+			continue
+		}
+		switch lock.Inspect(path) {
 		case lock.StateHeld:
 			return lock.StateHeld
 		case lock.StateUnknown:
@@ -59,7 +69,7 @@ func ticketState(l state.Layout, pools []os.DirEntry, id string) lock.State {
 func list(ctx context.Context, runtime string, l state.Layout, pools []os.DirEntry, env []string) ([]Found, error) {
 	ctx, cancel := context.WithTimeout(ctx, removeLimit)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, runtime, "ps", "-a", "--filter", "label="+LabelState+"="+StateHash(l.Root), "--format", listFormat)
+	cmd := exec.CommandContext(ctx, runtime, "ps", "-a", "--no-trunc", "--filter", "label="+LabelState+"="+StateHash(l.Root), "--format", listFormat)
 	cmd.Env = env
 	out, err := cmd.Output()
 	if err != nil {
@@ -73,7 +83,7 @@ func list(ctx context.Context, runtime string, l state.Layout, pools []os.DirEnt
 	for _, line := range strings.Split(string(out), "\n") {
 		parts := strings.Split(strings.TrimSpace(line), "|")
 		// a label that is not a ticket id was not written by bitc: it is not this sweep's to judge
-		if len(parts) != 5 || parts[0] == "" || !ticketIDRE.MatchString(parts[3]) {
+		if len(parts) != 5 || !fullIDRE.MatchString(parts[0]) || !ticketIDRE.MatchString(parts[3]) {
 			continue
 		}
 		found = append(found, Found{ID: parts[0], Name: parts[1], Pool: parts[2], Ticket: parts[3], Job: parts[4],
@@ -88,8 +98,9 @@ func list(ctx context.Context, runtime string, l state.Layout, pools []os.DirEnt
 // this host cannot tell (never removed on a guess, #24). A live run's container is never reported.
 //
 // Any error aborts the sweep: the tickets cannot be read, the listing fails, a removal fails. It
-// returns the error and does nothing past it, and the files of dead runs are touched only after
-// every removal succeeded: a sweep that cannot see what it is doing deletes nothing.
+// returns the error and removes nothing more: containers it removed before a failing removal stay
+// removed, and the files of dead runs are touched only after every removal succeeded. A sweep that
+// cannot see what it is doing (the tickets, the listing) deletes nothing at all.
 func Sweep(ctx context.Context, runtime string, l state.Layout, env []string, dry bool, removed, kept func(Found)) error {
 	pools, err := readPools(l)
 	if err != nil {

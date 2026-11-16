@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -150,14 +151,22 @@ func WriteEnvFile(path string, env []string) error {
 	return err
 }
 
-// ReadID is the container id docker wrote to the cidfile: "" if there is no file or nothing in it,
-// which means docker never created a container for this run.
+// fullIDRE is a full container id: 64 lowercase hex digits.
+var fullIDRE = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// ReadID is the container id docker wrote to the cidfile, and only a full one (64 hex digits): ""
+// if there is no file, nothing in it, or anything else. No id means docker never created a
+// container for this run, and nothing is removed: a short id would be resolved by the daemon as a
+// name first and a prefix of another container's id next, which is not "this run's container".
 func ReadID(cidfile string) string {
 	b, err := os.ReadFile(cidfile) //nolint:gosec // G703: a path bitc built in its own state dir
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(string(b))
+	if id := strings.TrimSpace(string(b)); fullIDRE.MatchString(id) {
+		return id
+	}
+	return ""
 }
 
 // RemoveArgv is the forced removal of the container with this id.

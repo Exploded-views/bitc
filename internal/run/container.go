@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/Exploded-views/bitc/internal/admit"
 	"github.com/Exploded-views/bitc/internal/config"
@@ -78,7 +79,7 @@ func workTreeMount(eff *config.Effective) config.Mount {
 // containerRun is the docker side of one containerized run.
 type containerRun struct {
 	spec    container.Spec
-	env     []string // the host's environment: what the docker CLI, the removals and the guard run with
+	env     []string // the environment bitc was given: what the docker CLI, the removals, the guard and the sweep all run with (one daemon); the pool's env and hook output are the container's, not docker's
 	guard   *container.Guard
 	pending sync.WaitGroup
 	once    sync.Once
@@ -103,9 +104,15 @@ func newContainerRun(inv Invocation, p *Prepared, hold *admit.Hold, rt string, i
 	if err != nil {
 		return nil, nil, err
 	}
-	for _, e := range cenv { // one NAME=VALUE per line of the env file: a value cannot hold a line break
-		if k, _, _ := strings.Cut(e, "="); strings.ContainsAny(e, "\n\r\x00") {
+	for _, e := range cenv { // one NAME=VALUE per line of docker's env file, which it reads as UTF-8 lines under 64 KiB
+		k, _, _ := strings.Cut(e, "=")
+		switch {
+		case strings.ContainsAny(e, "\n\r\x00"):
 			return nil, nil, exit.Configf("%s: the container env %s has a line break or a NUL in its value, which docker's env file cannot hold", pool.Name, k)
+		case !utf8.ValidString(e):
+			return nil, nil, exit.Configf("%s: the container env %s is not valid UTF-8, which docker's env file requires", pool.Name, k)
+		case len(e) >= 64*1024:
+			return nil, nil, exit.Configf("%s: the container env %s is 64 KiB or more, over the line length docker's env file allows", pool.Name, k)
 		}
 	}
 	wt := workTreeMount(eff)

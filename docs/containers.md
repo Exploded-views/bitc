@@ -58,9 +58,13 @@ cannot also have a `wrap` hook: the container is the wrapper, and combining them
   read with `ps`: bitc writes the environment to `<state dir>/containers/<ticket id>.env`, a file
   of mode 0600 in the 0700 state dir, passes `--env-file` and removes the file when the run ends
   (a normal end, the time limit, a signal, `cancel`) and, if bitc is SIGKILLed, the guard does. A
-  value with a line break cannot be one line of that file: it is a config error (78) naming the
-  variable. `docker inspect` shows a container's environment to anyone who can use the docker
-  socket, whatever bitc does.
+  value that cannot be one line of that file (a line break or a NUL, invalid UTF-8, a line of 64 KiB
+  or more: docker's parser refuses the last two) is a config error (78) naming the variable, before
+  docker sees it. The file is the container's environment and only that: the docker CLI, its
+  removals, the guard and `bitc sweep` all run with the environment bitc itself was given
+  (`DOCKER_HOST`, `DOCKER_CONFIG`, `PATH`...), so they reach one daemon. A pool's `env` or an `env`
+  hook's output of `DOCKER_HOST` is the container's variable and never docker's. `docker inspect`
+  shows a container's environment to anyone who can use the docker socket, whatever bitc does.
 - **Not carried over.** The host's environment, the process group (the container has its own),
   and the caller's user: the command runs as the image's user, so files it creates in the work
   tree belong to that user on a Linux host (OrbStack on a Mac maps them to you).
@@ -71,8 +75,10 @@ Each run's container is named from its ticket, `bitc-<ticket id>` (for example
 `bitc-1-1794824899741835000-f5e7a842`), and labelled. The name is unique per run, because the job
 name (`--name`) is the caller's, can be reused and can be shared by runs going at the same time.
 Nothing is ever removed by name: a removal goes by the container id docker wrote to the run's
-`--cidfile`, and the sweep by the id the listing gave. A run that never got an id created no
-container, so it removes none. The job stays a label, and `docker ps --filter label=bitc.job=<job>`
+`--cidfile`, and the sweep by the id the listing gave (`docker ps --no-trunc`). Only a full id (64
+hex digits) counts: a shorter one could be resolved by the daemon as a name or as a prefix of
+another container's id, so anything else in the cidfile is no id. A run that never got an id
+created no container, so it removes none. The job stays a label, and `docker ps --filter label=bitc.job=<job>`
 finds it:
 
 | Label | Value |
@@ -104,11 +110,15 @@ container, so bitc removes it itself with `docker rm -f <container id>`:
   guard was killed): a container with this state dir's `bitc.state` label whose `bitc.ticket` is a
   ticket nobody holds is removed by the next admission to any container pool and by `bitc sweep`
   (`swept container bitc-x (its run is gone)`; `--dry-run` only lists them). A live run's
-  container, a container of another state dir and one without the labels are never touched. A
-  sweep error aborts the sweep and deletes nothing, not a container and not a file: the state dir's
-  `pools/` cannot be read (nothing says which runs are live), the listing fails, a removal fails.
-  `bitc sweep` prints `container sweep aborted: <why>` and carries on with the rest of its work;
-  an admission that swept goes on and runs its command (a debug line). The sweep also removes the
+  container, a container of another state dir and one without the labels are never touched, and
+  neither is one whose ticket cannot be checked: any error looking for the ticket file other than
+  "it is not there" (a permission or I/O error, a path that is not a directory) keeps the container
+  and `bitc sweep` says so. A sweep error aborts the sweep: the state dir's `pools/` cannot be
+  read (nothing says which runs are live) or the listing fails, and nothing is deleted; a removal
+  fails, and nothing more is deleted, no further container and no cidfile or env file (containers
+  removed earlier in that sweep stay removed). `bitc sweep` prints `container sweep aborted: <why>`,
+  carries on with the rest of its work and exits 69 (unavailable: the docker side could not be
+  used; stop and report). An admission that swept goes on and runs its command (a debug line). The sweep also removes the
   cidfile and env file of runs that are gone. The admission's orphan removal appears in the
   history as a `container-reaped` event with the job from the `bitc.job` label (not `reaped`, which
   counts dead tickets).

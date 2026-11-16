@@ -14,6 +14,7 @@ import (
 	"github.com/Exploded-views/bitc/internal/admit"
 	"github.com/Exploded-views/bitc/internal/config"
 	"github.com/Exploded-views/bitc/internal/container"
+	"github.com/Exploded-views/bitc/internal/exit"
 	"github.com/Exploded-views/bitc/internal/jobs"
 	"github.com/Exploded-views/bitc/internal/lock"
 	"github.com/Exploded-views/bitc/internal/redact"
@@ -24,7 +25,9 @@ import (
 var RemoteSweep func(ctx context.Context, e *config.Effective, dryRun bool, provider string, foreign bool, out io.Writer) error
 
 // Sweep cleans local state (spec 3.3): dead tickets and their process groups, dead
-// supervisors' records (lost), history rotation, retention and stale artifact staging dirs. It never fails on one bad item.
+// supervisors' records (lost), history rotation, retention and stale artifact staging dirs. It never fails on one bad item:
+// it does all of it and returns nil, except that an aborted container sweep (docs/containers.md)
+// is reported as an unavailable error (exit 69) once the rest is done; its line is already printed.
 func Sweep(e *config.Effective, l state.Layout, dryRun bool, out io.Writer) error {
 	swept := func(kind, id, why string) { fmt.Fprintf(out, "swept %s %s (%s)\n", kind, id, why) }
 	pools, _ := os.ReadDir(filepath.Join(l.Root, "pools"))
@@ -48,17 +51,21 @@ func Sweep(e *config.Effective, l state.Layout, dryRun bool, out io.Writer) erro
 				_ = state.AppendHistory(l.History(), state.Event{Event: "reaped", Pool: pool, Job: job, Provider: "local"}, redact.New())
 			})
 	}
-	sweepContainers(e, l, dryRun, out, swept)
+	aborted := sweepContainers(e, l, dryRun, out, swept)
 	sweepRecords(l, e, dryRun, swept)
 	sweepStaging(e, l, dryRun, swept)
 	rotate(l, e, dryRun, swept)
+	if aborted {
+		return exit.Unavailablef("container sweep aborted")
+	}
 	return nil
 }
 
 // sweepContainers removes this state dir's orphaned containers by label (docs/containers.md), for
 // every container runtime a pool uses. A host with no container pool never looks for the CLI.
-func sweepContainers(e *config.Effective, l state.Layout, dryRun bool, out io.Writer, swept func(kind, id, why string)) {
-	env := os.Environ()
+// It reports whether a sweep aborted (an error: nothing more is removed).
+func sweepContainers(e *config.Effective, l state.Layout, dryRun bool, out io.Writer, swept func(kind, id, why string)) (aborted bool) {
+	env := os.Environ() // the environment bitc was given: the one the runs' docker calls have
 	for _, rt := range config.Runtimes {
 		used := false
 		for _, p := range e.Pools {
@@ -70,6 +77,7 @@ func sweepContainers(e *config.Effective, l state.Layout, dryRun bool, out io.Wr
 		path, err := container.Lookup(rt, env)
 		if err != nil {
 			fmt.Fprintf(out, "container sweep aborted: %s %v; nothing was removed\n", rt, err)
+			aborted = true
 			continue
 		}
 		why := "its run is gone"
@@ -84,8 +92,10 @@ func sweepContainers(e *config.Effective, l state.Layout, dryRun bool, out io.Wr
 		if err != nil {
 			// the error stopped the sweep where it was: what it removed before it is in the swept lines above
 			fmt.Fprintf(out, "container sweep aborted: %s: %v\n", rt, err)
+			aborted = true
 		}
 	}
+	return aborted
 }
 
 func sweepRecords(l state.Layout, e *config.Effective, dryRun bool, swept func(kind, id, why string)) {

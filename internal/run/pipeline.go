@@ -353,7 +353,7 @@ func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Wri
 	var argv []string // 10: the command, wrapped, or the docker run that carries it
 	var cr *containerRun
 	if pool.Container != nil {
-		cr, argv, err = newContainerRun(inv, p, hold, rt, in, hookKV, env, stderr)
+		cr, argv, err = newContainerRun(inv, p, hold, rt, in, hookKV, inv.Env, stderr)
 	} else {
 		argv, err = WrapArgv(eff, pool, vars, p.Args.Argv)
 	}
@@ -368,14 +368,18 @@ func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Wri
 		return out
 	}
 	var onKill func()
+	execEnv := env
 	if cr != nil {
-		onKill = cr.kill
+		// the docker CLI runs with the environment bitc was given, as its removals, its guard and
+		// the sweep do, so they all reach one daemon: the pool's env and the env hook's output are
+		// the container's (the env file), never docker's
+		onKill, execEnv = cr.kill, cr.env
 	}
 	waitMS := hold.WaitMS
 	hist(state.Event{Event: "start", Slot: hold.Slot, Units: hold.Counts, Nested: hold.Nested, WaitMS: &waitMS})
 	t0 := time.Now()
 	res, err := Exec(parent, ExecSpec{
-		Argv: argv, Env: env, Dir: inv.Cwd, Stdin: inv.Stdin, Stdout: inv.Stdout, Stderr: inv.Stderr,
+		Argv: argv, Env: execEnv, Dir: inv.Cwd, Stdin: inv.Stdin, Stdout: inv.Stdout, Stderr: inv.Stderr,
 		OnSignal: pool.OnSignal, Grace: eff.Scale(eff.Host.Grace), Timeout: eff.Scale(pool.Timeout), MaxSignalWait: eff.Scale(eff.Host.MaxSignalWait),
 		Started:  func(pid, pgid int, start uint64) { _ = hold.SetProcess(pid, pgid, start) },
 		Pending:  gap,          // Exec stops it once its own handler is registered
