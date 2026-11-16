@@ -651,6 +651,30 @@ func TestDK13_DockerSeesTheCallersEnvironmentNotThePools(t *testing.T) {
 	}
 }
 
+// The guard's removal (bitc SIGKILLed) runs with the caller's environment as well, not the pool's.
+func TestDK14_TheGuardRemovesWithTheCallersEnvironment(t *testing.T) {
+	h := harness.New(t)
+	fd := h.FakeDocker()
+	h.HostConfig("[pools.box]\ncontainer = { image = \"" + dkImage + "\" }\nenv = { DOCKER_HOST = \"tcp://pool-env\" }\n")
+	pidFile := filepath.Join(h.Root, "pid")
+	p := h.StartWith([]string{"DOCKER_HOST=unix:///caller.sock"}, append([]string{"run", "--name", "g1", "box", "--"}, dkPidFile(pidFile)...)...)
+	dkWaitPid(h, pidFile)
+	name := dkName(t, fd, "g1")
+	p.Signal(syscall.SIGKILL)
+	if r := p.Wait(); r.Code != 137 {
+		t.Fatalf("%+v", r)
+	}
+	h.Until(func() bool { return fd.Removed(name) && !fd.Exists(name) }, 20*time.Second)
+	if len(fd.CallsOf("rm")) != 1 {
+		t.Fatalf("calls: %v", fd.Calls())
+	}
+	for i, got := range fd.DockerHosts() {
+		if got != "unix:///caller.sock" {
+			t.Fatalf("docker call %d (the guard's rm is the last) ran with DOCKER_HOST=%q: %v", i, got, fd.Calls())
+		}
+	}
+}
+
 // DK10 is opt-in: it needs a docker daemon and a small local image, and never pulls.
 func TestDK10_RealDockerRunsAndTimesOut(t *testing.T) {
 	if os.Getenv("BITC_TEST_DOCKER") != "1" {

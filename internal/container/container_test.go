@@ -394,9 +394,14 @@ func TestSweepKeepsWhenATicketPathCannotBeChecked(t *testing.T) {
 	f.plant("bitc-a", map[string]string{LabelPool: "p", LabelState: StateHash(l.Root), LabelTicket: id, LabelJob: "j"})
 	var removed, kept []string
 	rec := func(into *[]string) func(Found) { return func(x Found) { *into = append(*into, x.Name) } }
-	err = Sweep(context.Background(), f.path, l, f.env, false, rec(&removed), rec(&kept))
+	var why string
+	err = Sweep(context.Background(), f.path, l, f.env, false, rec(&removed), func(x Found) { kept = append(kept, x.Name); why = x.Why })
 	if err != nil || len(removed) != 0 || len(kept) != 1 || !f.exists("bitc-a") || f.rmCalls() != 0 {
 		t.Fatalf("err %v removed %v kept %v", err, removed, kept)
+	}
+	// the reason is the real one (here ENOTDIR), not a guess about /proc/locks, which macOS has not
+	if !strings.Contains(why, "not a directory") || strings.Contains(why, "/proc") {
+		t.Fatalf("the kept reason is %q", why)
 	}
 	// and a ticket that is simply not there (ENOENT) is free: the container is an orphan
 	if err := os.Remove(l.Tickets("p")); err != nil {
@@ -407,6 +412,31 @@ func TestSweepKeepsWhenATicketPathCannotBeChecked(t *testing.T) {
 	}
 	removed, kept = nil, nil
 	if err := Sweep(context.Background(), f.path, l, f.env, false, rec(&removed), rec(&kept)); err != nil || len(removed) != 1 || f.exists("bitc-a") {
+		t.Fatalf("err %v removed %v kept %v", err, removed, kept)
+	}
+}
+
+// A stray file in pools/ (a .DS_Store, an editor's backup) is not a pool: it must not make every
+// ticket check unknown, so a real orphan is still swept.
+func TestSweepSkipsNonDirectoryEntriesOfPools(t *testing.T) {
+	f := newFake(t)
+	l, err := state.Open(filepath.Join(t.TempDir(), "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(l.Tickets("p"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, stray := range []string{".DS_Store", "notes.txt"} {
+		if err := os.WriteFile(filepath.Join(l.Root, "pools", stray), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.plant("bitc-a", map[string]string{LabelPool: "p", LabelState: StateHash(l.Root), LabelTicket: "0-0000000000000000001-aaaaaaaa", LabelJob: "j"})
+	var removed, kept []string
+	rec := func(into *[]string) func(Found) { return func(x Found) { *into = append(*into, x.Name) } }
+	if err := Sweep(context.Background(), f.path, l, f.env, false, rec(&removed), rec(&kept)); err != nil ||
+		len(removed) != 1 || len(kept) != 0 || f.exists("bitc-a") {
 		t.Fatalf("err %v removed %v kept %v", err, removed, kept)
 	}
 }
