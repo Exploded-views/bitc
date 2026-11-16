@@ -600,7 +600,11 @@ func TestCompatFlockExclusiveKey(t *testing.T) {
 	}
 	_, err := newFixture(t, host("[compat.flock.heavy]\n"+files+"exclusive = \"yes\"\n"), "").load()
 	expect78(t, err)
-	// host-only: the repo file may not set it
+	// host-only: the repo file may not set it. The loader rejects the whole [compat] table and its
+	// message names "compat", not the key, so the key's own class is asserted on the reference too.
 	_, err = newFixture(t, host(""), "version = 1\n[compat.flock.heavy]\nexclusive = true\n").load()
-	expect78(t, err, "")
+	expect78(t, err, "compat is a host-only key")
+	if !strings.Contains(GenerateReference(), "| `compat.flock.<pool>.exclusive` | host | `false` |") {
+		t.Fatal("compat.flock.<pool>.exclusive is not classed host with default false")
+	}
 }
