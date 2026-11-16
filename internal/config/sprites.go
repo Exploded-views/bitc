@@ -10,16 +10,13 @@ const SpritesRefusal = "Sprites jobs are refused in this release: their network 
 	"https://github.com/Exploded-views/bitc#known-issues)."
 
 // spritesRefused reports, from the decoded host file alone (nothing is read), whether it
-// configures sprites or a pool names it, and is refused for it. Off Linux the platform refusal of
-// every provider stands instead. The only bypass is [test] allow_sprites, for the test suites,
+// configures sprites or a pool names it, and is refused for it, on every OS: a macOS client gets
+// the same refusal as Linux (#6). The only bypass is [test] allow_sprites, for the test suites,
 // honoured only when every endpoint of the sprites section is a loopback literal (and a [test]
 // table needs loopback endpoints anyway, checkTestGate). It keeps a host from using it by
 // accident; it is not a security boundary against the host's owner, who may put a loopback proxy
 // or tunnel in front of the real API by their own choice.
-func spritesRefused(s fileSchema, goos string) bool {
-	if goos != "linux" {
-		return false
-	}
+func spritesRefused(s fileSchema) bool {
 	raw, table := s.Providers["sprites"]
 	return spritesNamed(s) && !spritesTestBypass(s, raw, table)
 }

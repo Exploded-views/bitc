@@ -27,8 +27,8 @@ conformance suite; any language or repo; config validated before any side effect
 (`flock(2)`); safe remote overflow (account-wide daily cap per provider account, leak-proof, no
 secrets in argv or logs);
 agent-grade contracts; small. **Non-goals (v1):** CI, sharding, build caching; multi-host
-scheduling; daemon or UI; Windows; macOS beyond a client build (local pools and exec plugins: memory
-admission, the built-in remote providers, the agent, the parent-death signal for local commands, the inotify wake-up and the
+scheduling; daemon or UI; Windows; macOS beyond a client build (local pools, exec plugins and the ssh provider as a client: memory
+admission, the RunPod provider, sprites (refused on every OS, #6), the agent, the parent-death signal for local commands, the inotify wake-up and the
 `/proc/locks` view stay Linux-only; issue #3; a macOS plugin cannot be stopped from gaining
 privileges through setuid or setgid programs, 8.5.1); cgroup limits, PSI admission;
 GPU pods; job DAGs or retries (callers retry on 75); sandboxing the account from itself (10).

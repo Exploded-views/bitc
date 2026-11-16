@@ -11,7 +11,8 @@ what it will change and how to check and undo it. Read the script before running
   cgroup v2.
 - A `bitc` binary built for that machine's architecture (`GOOS=linux`, `arm64` on an M-series
   Mac): `--agent` below. The firewall self-test runs it.
-- The controller's ed25519 public key (the key without a comment).
+- The controller's ed25519 public key (the key without a comment). The controller is the machine
+  you run `bitc` on: Linux, or macOS (a macOS `bitc` is only the client; the agent runs on this host).
 - The addresses: the DNS resolver jobs may use (`--resolver`), the LAN router (`--router`, default
   192.168.1.1) and the controller-facing LAN address (`--controller`, required for a real run: the
   self-test must show a job cannot reach it on port 22).

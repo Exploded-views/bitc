@@ -29,7 +29,7 @@ func darwinLoad(t *testing.T, host string, cleanup bool) (*config.Effective, err
 		t.Fatal(err)
 	}
 	cfg := filepath.Join(dir, "bitc.toml")
-	body := strings.ReplaceAll(host, "IDENT", key) + "[test]\naccounting_dir = \"" + filepath.Join(dir, "account") + "\"\n"
+	body := strings.ReplaceAll(host, "IDENT", key)
 	if err := os.WriteFile(cfg, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestDarwinSSHNeedsExperimentalRemoteLikeLinux(t *testing.T) {
 // Sprites stays refused everywhere until #6: on darwin it gets the same refusal as on Linux, not
 // the platform line. A cleanup (sweep, doctor --remote) gets it as CleanupOnly.
 func TestDarwinSpritesIsRefusedForIssue6NotForThePlatform(t *testing.T) {
-	host := "version = 1\n[host]\nexperimental_remote = true\n[pools.heavy]\nproviders = [\"sprites\", \"local\"]\n[providers.sprites]\norg = \"o\"\ndaily_usd = 1\n"
+	host := "version = 1\n[host]\nexperimental_remote = true\n[pools.heavy]\nproviders = [\"sprites\", \"local\"]\n[providers.sprites]\norg = \"o\"\ndaily_usd = 1\nsizes = { cpu8 = { memory = \"16GiB\" } }\n"
 	_, err := darwinLoad(t, host, false)
 	if err == nil || !strings.Contains(err.Error(), config.SpritesRefusal) {
 		t.Fatalf("want the #6 refusal, got %v", err)
