@@ -38,6 +38,7 @@ rows = [
   { id = "R4", task = "1.3", ported = "TestR4_DeadTicketsPrunedPriorityPerPool", desc = "tickets of dead owners are pruned on sight; priority is per pool" },
   { id = "R5", task = "1.3", ported = "TestR5_OutsideFragmentsQueuesBehindHigh", desc = "a caller outside every high entry is normal and still queues behind a live high ticket" },
   { id = "R6", task = "1.3", ported = "TestR6_PriorityIsPerPoolNotPerGroup", desc = "priority is per pool, never per group: a high waiter of one pool does not stop another pool taking a shared group" },
+  { id = "R7", task = "1.3", ported = "TestR7_NormalRunAgesIntoTheHighLane", desc = "a normal ticket that has waited priority.age_after (default 5m, \"0\" off) is ordered as high, by ticket age among the high and aged; a bad age_after is 78" },
 
   # H: history
   { id = "H1", task = "1.7", ported = "TestH1_HistoryLineFields", desc = "every admitted command appends one history.jsonl line: UTC time, pool, slot, pid and the argv as an array" },

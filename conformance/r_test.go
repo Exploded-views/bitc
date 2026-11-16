@@ -1,6 +1,7 @@
 package conformance
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Exploded-views/bitc/conformance/harness"
+	"github.com/Exploded-views/bitc/internal/lock"
 )
 
 // prioHost writes a config with lint (1 slot) whose high entries are frags, and makes dirs.
@@ -153,6 +155,71 @@ func TestR6_PriorityIsPerPoolNotPerGroup(t *testing.T) {
 	}
 	heavyHold.Release()
 	if r := hp.Wait(); r.Code != 0 {
+		t.Fatalf("%+v", r)
+	}
+}
+
+// plantWaiter makes a live waiting ticket of lint, flocked by the test, whose name and wait_started
+// say it arrived age ago. Its owner is this process, so nothing prunes it, and no clock moves.
+func plantWaiter(t *testing.T, h *harness.H, class int, age time.Duration) {
+	t.Helper()
+	dir := filepath.Join(h.State, "pools", "lint", "tickets")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ts := time.Now().Add(-age).UnixNano()
+	f, err := lock.Open(filepath.Join(dir, fmt.Sprintf("%d-%019d-0badf00d.json", class, ts)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := f.TryLock(); !ok || err != nil {
+		t.Fatalf("lock planted ticket: %v %v", ok, err)
+	}
+	body := fmt.Sprintf(`{"pid":%d,"start":1,"class":%d,"state":"waiting","token":"x","wait_started":%d}`, os.Getpid(), class, ts)
+	if err := f.Rewrite([]byte(body)); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.Close() })
+}
+
+// highRun is one high-lane attempt at lint that waits no longer than one attempt.
+func highRun(h *harness.H) harness.Result {
+	old := h.Cwd
+	defer func() { h.Cwd = old }()
+	h.Cwd = filepath.Join(h.Root, "urgent-age")
+	_ = os.MkdirAll(h.Cwd, 0o755)
+	return h.RunWith([]string{"PWD=" + h.Cwd}, "run", "--wait", "0s", "lint", "--", "true")
+}
+
+func TestR7_NormalRunAgesIntoTheHighLane(t *testing.T) {
+	for _, c := range []struct {
+		name, prio string
+		age        time.Duration
+		blocked    bool
+	}{
+		{"default age_after: an old normal waiter is not overtaken", "", time.Hour, true},
+		{"a recent normal waiter yields to the high run", "", time.Minute, false},
+		{"age_after = 30m, waiter older", "age_after = \"30m\"\n", time.Hour, true},
+		{"age_after = 30m, waiter younger", "age_after = \"30m\"\n", 10 * time.Minute, false},
+		{"age_after = 0 turns aging off", "age_after = \"0\"\n", time.Hour, false},
+	} {
+		h := harness.New(t)
+		h.HostConfig("[priority]\nhigh_cwd_contains = [\"urgent\"]\n" + c.prio + "[pools.lint]\nwait = \"30s\"\n")
+		plantWaiter(t, h, 1, c.age)
+		r := highRun(h)
+		if c.blocked && (r.Code != 75 || !strings.Contains(r.Stderr, "STARVED lint (queue")) {
+			t.Errorf("%s: want 75 queue, got %+v", c.name, r)
+		}
+		if !c.blocked && r.Code != 0 {
+			t.Errorf("%s: want 0, got %+v", c.name, r)
+		}
+	}
+}
+
+func TestR7_BadAgeAfterIs78(t *testing.T) {
+	h := harness.New(t)
+	h.HostConfig("[priority]\nage_after = \"soon\"\n[pools.lint]\nwait = \"30s\"\n")
+	if r := h.Run("run", "lint", "--", "true"); r.Code != 78 || !strings.Contains(r.Stderr, "priority.age_after") {
 		t.Fatalf("%+v", r)
 	}
 }
