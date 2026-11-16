@@ -10,6 +10,7 @@ import (
 	"github.com/Exploded-views/bitc/internal/config"
 	"github.com/Exploded-views/bitc/internal/exit"
 	"github.com/Exploded-views/bitc/internal/provider"
+	"github.com/Exploded-views/bitc/internal/provider/plugin/pin"
 	"github.com/Exploded-views/bitc/internal/redact"
 	"github.com/Exploded-views/bitc/internal/state"
 )
@@ -167,6 +168,13 @@ func CheckPlugins(ctx context.Context, e *config.Effective, stderr io.Writer) er
 	sort.Strings(types)
 	for _, typ := range types {
 		core := e.Providers[typ]
+		// On every OS: a plugin that no longer passes the load-time check for a reason of its own
+		// (a quarantine added since, not executable) is a configuration error with its fix, not a
+		// plugin that "cannot start". An insecure path or a setuid bit still fails at spawn (69).
+		var pe *pin.Error
+		if err := pin.Check(core.Plugin.Path); errors.As(err, &pe) && pe.Kind == pin.KindReason && pe.Detail != "missing" {
+			return exit.Configf("%s: providers.%s.plugin.path: %s", e.HostFile, typ, pe.Detail)
+		}
 		p, err := NewProvider(ctx, typ, core, e, provider.Runtime{Red: redact.New(), Stderr: stderr, Debug: e.LogLevel == "debug"})
 		if err != nil {
 			var ec *provider.ErrConfig

@@ -223,11 +223,18 @@ func applyHost(p *problems, e *Effective, host layer, env map[string]string, cle
 			e.Test.AllowSprites = *t.AllowSprites
 		}
 	}
-	if platformGOOS != "linux" { // every provider is refused for the platform: read none of their files
-		for t := range s.Providers {
-			e.platformRefused = append(e.platformRefused, t)
+	if platformGOOS != "linux" {
+		// Off Linux only a plugin provider loads (its shim, pin and money rails run on darwin);
+		// every other table is refused for the platform without reading any of its files.
+		kept := map[string]map[string]any{}
+		for t, raw := range s.Providers {
+			if _, isPlugin := raw["plugin"]; isPlugin { // a built-in type with a plugin key is refused by decodeProviders
+				kept[t] = raw
+			} else {
+				e.platformRefused = append(e.platformRefused, t)
+			}
 		}
-		return
+		s.Providers = kept
 	}
 	decodeProviders(p, e, f, s.Providers, env)
 }

@@ -64,8 +64,9 @@ func TestLoadRefusesLinuxOnlyKeysOnDarwin(t *testing.T) {
 	}
 }
 
-// Off Linux a [providers.<name>] table is a config error (78) for every provider type, known or
-// not, so no remote or spend path can open on a macOS client by accident. On darwin this runs
+// Off Linux a [providers.<name>] table is a config error (78) for every provider type except a
+// plugin (TestPluginProvidersLoadOnDarwin), known or not, so no ssh, runpod or sprites path can
+// open on a macOS client by accident. On darwin this runs
 // against the real platform; on Linux it stands darwin in.
 func TestEveryProviderTableIsRefusedOffLinux(t *testing.T) {
 	if runtime.GOOS == "linux" {
@@ -76,13 +77,35 @@ func TestEveryProviderTableIsRefusedOffLinux(t *testing.T) {
 		{"ssh", "[providers.ssh]\ndaily_usd = 1\n"},
 		{"runpod", "[providers.runpod]\ndaily_usd = 1\nimage = \"x\"\nsizes = {}\n"},
 		{"sprites", "[providers.sprites]\norg = \"o\"\ndaily_usd = 1\n"},
-		{"modal", "[providers.modal]\nplugin = { path = \"/nonexistent/bitc-provider-modal\", sha256 = \"" + strings.Repeat("a", 64) + "\" }\ndaily_usd = 5\nsizes = { cpu8 = { usd_per_hour = 0.60 } }\n"},
 		{"fake", "[providers.fake]\ndaily_usd = 1\n[test]\nfixed_secrets = true\n"},
 		{"nope", "[providers.nope]\ndaily_usd = 1\n"},
 	} {
 		_, err := newFixture(t, "version = 1\n"+c.host, "").load()
 		expect78(t, err, "providers."+c.typ+": a remote provider runs on Linux only")
 	}
+}
+
+// A plugin provider is not a remote provider the platform gate refuses: it loads on darwin (its
+// shim, pin and money rails run there, #26), while ssh, runpod and sprites stay refused. Pinned to
+// darwin so Linux CI exercises the same path.
+func TestPluginProvidersLoadOnDarwin(t *testing.T) {
+	defer func(g string) { platformGOOS = g }(platformGOOS)
+	platformGOOS = "darwin"
+	pl := newPlug(t, "modal")
+	e := mustLoad(t, newFixture(t, pluginHost("modal", pl, "", ""), ""))
+	if pr := e.Providers["modal"]; pr == nil || pr.Plugin == nil || pr.Plugin.Path != pl.path || pr.Sizes["cpu8"] != 600000 {
+		t.Fatalf("the plugin provider was not decoded on darwin: %+v", pr)
+	}
+	// a plugin that is not there is a plugin error, not the platform refusal
+	missing := "version = 1\n[providers.modal]\nplugin = { path = \"/nonexistent/bitc-provider-modal\", sha256 = \"" + strings.Repeat("a", 64) + "\" }\ndaily_usd = 5\nsizes = { cpu8 = { usd_per_hour = 0.60 } }\n"
+	_, err := newFixture(t, missing, "").load()
+	expect78(t, err, "providers.modal.plugin.path: missing")
+	if strings.Contains(err.Error(), "runs on Linux only") {
+		t.Errorf("a plugin was refused for the platform: %v", err)
+	}
+	// a pool may name it
+	host := pluginHost("modal", pl, "", "") + "[pools.heavy]\nproviders = [\"modal\"]\n"
+	mustLoad(t, newFixture(t, host, ""))
 }
 
 // An unknown provider name in a pool is a config error (78) on every OS, not only on Linux:
