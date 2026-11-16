@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -152,20 +153,28 @@ func TestContainerRunLifecycle(t *testing.T) {
 		t.Fatalf("guard %v stderr %q", cr.guard, stderr.String())
 	}
 	wt := p.Eff.Worktree
-	want := []string{path, "run", "--rm", "--init", "-i", "--name", "bitc-j1",
+	const own = "bitc-0-0000000000000000001-aaaaaaaa" // unique per run: the ticket, not the job
+	want := []string{path, "run", "--rm", "--init", "-i", "--name", own,
 		"--label", "bitc.job=j1", "--label", "bitc.pool=box", "--label", "bitc.state=" + container.StateHash(p.Layout.Root), "--label", "bitc.ticket=0-0000000000000000001-aaaaaaaa",
 		"--cidfile", filepath.Join(p.Layout.ContainersDir(), "0-0000000000000000001-aaaaaaaa.cid"),
 		"--mount", "type=bind,source=" + wt + ",target=" + wt, "--mount", "type=bind,source=/data,target=/data,readonly",
 		"--workdir", wt, "--cpus", "2", "--memory", "67108864",
-		"-e", "BITC_JOB=j1", "-e", "BITC_POOL=box", "-e", "BITC_SLOT=box.1", "img:1", "echo", "hi"}
+		"-e", "BITC_JOB", "-e", "BITC_POOL", "-e", "BITC_SLOT", "img:1", "echo", "hi"} // names only
 	if !reflect.DeepEqual(argv, want) {
 		t.Fatalf("got %q\nwant %q", argv, want)
 	}
-	// docker did not write the cidfile: the CLI failed before creating a container
-	plantContainer(t, fstate, "bitc-j1", nil)
+	for _, kv := range []string{"BITC_JOB=j1", "BITC_POOL=box", "BITC_SLOT=box.1"} { // the values are docker's own environment
+		if !slices.Contains(cr.cliEnv, kv) {
+			t.Fatalf("%s is not in the docker CLI's environment: %q", kv, cr.cliEnv)
+		}
+	}
+	// docker did not write the cidfile: the CLI failed before creating a container. Only this run's
+	// container goes: one another run of the same job name owns (the old name scheme's) stays
+	plantContainer(t, fstate, "bitc-j1", map[string]string{"bitc.job": "j1"})
+	plantContainer(t, fstate, own, nil)
 	cr.kill() // Exec's SIGKILL step
-	if created := cr.finish(); created || containerExists(fstate, "bitc-j1") {
-		t.Fatalf("created %v, container left %v", created, containerExists(fstate, "bitc-j1"))
+	if created := cr.finish(); created || containerExists(fstate, own) || !containerExists(fstate, "bitc-j1") {
+		t.Fatalf("created %v, own container left %v, another run's left %v", created, containerExists(fstate, own), containerExists(fstate, "bitc-j1"))
 	}
 	cr.finish() // idempotent
 
@@ -204,16 +213,53 @@ func TestContainerRunLifecycle(t *testing.T) {
 	}
 }
 
+// A container variable the host environment also has is still passed by name, its value replacing
+// the host's in docker's own environment, unless docker itself reads the variable (PATH, HOME,
+// DOCKER_*, ...): that one stays on argv as NAME=VALUE, the one case a value is visible to ps.
+func TestContainerEnvByNameAndTheProtectedKeys(t *testing.T) {
+	path, env, _ := fakeDocker(t)
+	p, hold, in := preparedForContainer(t, t.TempDir())
+	orig := guardCommand
+	t.Cleanup(func() { guardCommand = orig })
+	guardCommand = func() (string, []string, error) { return "", nil, errors.New("no guard in this test") }
+	in.Pool = &config.Pool{Name: "box", Env: map[string]config.Template{"MODE": {Raw: "fast"}, "PATH": {Raw: "/image/bin"}, "DOCKER_HOST": {Raw: "tcp://x"}}}
+	host := append(append([]string{}, env...), "MODE=slow", "HOME=/h")
+	var stderr bytes.Buffer
+	cr, argv, err := newContainerRun(Invocation{}, p, hold, path, in, nil, host, &stderr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := " " + strings.Join(argv, " ") + " "
+	for _, want := range []string{" -e MODE ", " -e PATH=/image/bin ", " -e DOCKER_HOST=tcp://x ", " -e BITC_JOB "} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("argv lacks %q: %q", want, argv)
+		}
+	}
+	if strings.Contains(joined, "fast") || strings.Contains(joined, "MODE=") {
+		t.Errorf("an unprotected value is on argv: %q", argv)
+	}
+	if got := lookup(cr.cliEnv, "MODE"); got != "fast" {
+		t.Errorf("docker's environment has MODE=%q, want the container's value", got)
+	}
+	if got := lookup(cr.cliEnv, "PATH"); strings.Contains(got, "/image/bin") || got == "" {
+		t.Errorf("docker's own PATH was replaced: %q", got)
+	}
+	if got := lookup(cr.cliEnv, "DOCKER_HOST"); got != "" {
+		t.Errorf("docker's own DOCKER_HOST was set from the container's env: %q", got)
+	}
+}
+
 func TestReapOrphans(t *testing.T) {
 	path, env, fstate := fakeDocker(t)
 	p, _, _ := preparedForContainer(t, t.TempDir())
 	hash := container.StateHash(p.Layout.Root)
-	plantContainer(t, fstate, "bitc-old", map[string]string{"bitc.pool": "box", "bitc.state": hash, "bitc.ticket": "0-0000000000000000009-bbbbbbbb"})
+	plantContainer(t, fstate, "bitc-old", map[string]string{"bitc.pool": "box", "bitc.job": "oldjob", "bitc.state": hash, "bitc.ticket": "0-0000000000000000009-bbbbbbbb"})
 	var stderr bytes.Buffer
 	var events []state.Event
 	reapOrphans(context.Background(), p, path, env, &stderr, func(e state.Event) { events = append(events, e) })
+	// the history event is its own kind (not "reaped", which counts dead tickets) and the job is the label's
 	if containerExists(fstate, "bitc-old") || stderr.String() != "bitc: removed orphaned container bitc-old (its run is gone)\n" ||
-		len(events) != 1 || events[0].Event != "reaped" || events[0].Pool != "box" || events[0].Job != "old" {
+		len(events) != 1 || events[0].Event != "container-reaped" || events[0].Pool != "box" || events[0].Job != "oldjob" {
 		t.Fatalf("%q %+v", stderr.String(), events)
 	}
 	// a daemon that cannot list is not the run's failure: one debug line

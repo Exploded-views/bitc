@@ -7,9 +7,17 @@
 //	ps -a --filter label=K=V... --format F   list the known containers whose labels match
 //
 // State lives in $FAKE_DOCKER_DIR: argv.log (one JSON array per call) and c/<name>.json (one file
-// per container: its labels and the pid/process group of its command). Like the real CLI the
-// fake does NOT forward signals to the container unless FAKE_DOCKER_PROXY=1, so a TERM or a
-// SIGKILL that reaches only the CLI leaves the container running until `rm -f`.
+// per container: its labels and the pid/process group of its command). `-e NAME` takes the value
+// from the fake's own environment, as the real CLI does.
+//
+// Signals: the real `docker run` proxies INT, TERM and HUP to the container unless it has a TTY
+// (-t) or --sig-proxy=false. The fake does NOT, by default: that is the worst case, where a TERM or
+// a SIGKILL that reaches only the CLI leaves the container running until `rm -f`. FAKE_DOCKER_PROXY=1
+// makes it proxy like the real one (still not with -t).
+//
+// Not modelled: the daemon-side auto-remove (since API 1.25 a --rm container whose CLI was killed
+// is still removed by the daemon when its command exits); the fake removes it when the CLI ends or
+// on `rm -f`. bitc's `rm -f` is idempotent, so the difference is not a bitc correctness matter.
 //
 // FAKE_DOCKER_FAIL=run|ps makes that call fail at once like a daemon error (exit 125, nothing created).
 package main
@@ -94,7 +102,7 @@ func run(args []string) int {
 	var name, cidfile, workdir string
 	var env []string
 	labels := map[string]string{}
-	rmAfter := false
+	rmAfter, tty := false, false
 	valued := map[string]bool{"--name": true, "--label": true, "--cidfile": true, "--mount": true, "--workdir": true, "-w": true,
 		"--cpus": true, "--memory": true, "-e": true, "--env": true, "-v": true, "--user": true, "-u": true}
 	flags := map[string]bool{"--rm": true, "--init": true, "-i": true, "-t": true, "-it": true, "-ti": true}
@@ -104,6 +112,7 @@ func run(args []string) int {
 		switch {
 		case flags[a]:
 			rmAfter = rmAfter || a == "--rm"
+			tty = tty || a == "-t" || a == "-it" || a == "-ti"
 		case valued[a] && i+1 < len(args):
 			i++
 			v := args[i]
@@ -118,6 +127,9 @@ func run(args []string) int {
 			case "--workdir", "-w":
 				workdir = v
 			case "-e", "--env":
+				if !strings.Contains(v, "=") { // -e NAME: the value is the CLI's own
+					v += "=" + os.Getenv(v)
+				}
 				env = append(env, v)
 			}
 		default:
@@ -161,7 +173,7 @@ func run(args []string) int {
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	var sigs chan os.Signal
-	if os.Getenv("FAKE_DOCKER_PROXY") == "1" {
+	if os.Getenv("FAKE_DOCKER_PROXY") == "1" && !tty {
 		sigs = make(chan os.Signal, 8)
 		signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
 	}

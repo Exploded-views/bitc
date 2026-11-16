@@ -70,6 +70,7 @@ func TestParseMount(t *testing.T) {
 		{"/a:b", "absolute"},
 		{"/a,x:/b", "comma"},
 		{"/a:/b,readonly", "comma"},
+		{"/a\"b:/c", "double quote"},
 	} {
 		_, err := parseMount(c.in)
 		if (c.want == "") != (err == "") || !strings.Contains(err, c.want) {

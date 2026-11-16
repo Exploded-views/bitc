@@ -86,11 +86,11 @@ func TestNamesAndHashes(t *testing.T) {
 func TestRunArgv(t *testing.T) {
 	s := Spec{Runtime: "/bin/docker", Image: "img:1", Job: "j", Pool: "p", State: "abc", Ticket: "tk", CID: "/s/tk.cid",
 		Mounts: []config.Mount{{Source: "/w", Target: "/w"}, {Source: "/a", Target: "/b", ReadOnly: true}},
-		Dir:    "/w/sub", CPUs: "1.5", Memory: 8 << 20, Env: []string{"A=1", "B=2"}, TTY: true, Argv: []string{"echo", "-n", "x"}}
-	want := []string{"/bin/docker", "run", "--rm", "--init", "-it", "--name", "bitc-j",
+		Dir:    "/w/sub", CPUs: "1.5", Memory: 8 << 20, Env: []string{"A=1", "B"}, TTY: true, Argv: []string{"echo", "-n", "x"}}
+	want := []string{"/bin/docker", "run", "--rm", "--init", "-it", "--name", "bitc-tk", // unique per run: from the ticket, not the job
 		"--label", "bitc.job=j", "--label", "bitc.pool=p", "--label", "bitc.state=abc", "--label", "bitc.ticket=tk",
 		"--cidfile", "/s/tk.cid", "--mount", "type=bind,source=/w,target=/w", "--mount", "type=bind,source=/a,target=/b,readonly",
-		"--workdir", "/w/sub", "--cpus", "1.5", "--memory", "8388608", "-e", "A=1", "-e", "B=2", "img:1", "echo", "-n", "x"}
+		"--workdir", "/w/sub", "--cpus", "1.5", "--memory", "8388608", "-e", "A=1", "-e", "B", "img:1", "echo", "-n", "x"}
 	if got := RunArgv(s); !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %q\nwant %q", got, want)
 	}
@@ -227,6 +227,36 @@ func TestSweepRemovesOrphansOfThisStateDirOnly(t *testing.T) {
 	}
 	if err := Sweep(context.Background(), "/nonexistent/docker", l, f.env, false, rec(&removed), rec(&kept)); err == nil {
 		t.Fatal("a runtime that cannot start is an error")
+	}
+}
+
+// An unreadable pools/ dir says nothing about which tickets are held: every container is kept
+// (the sweep never removes on a guess, #24), whatever the error is but "it is not there".
+func TestSweepKeepsEverythingWhenTheTicketsCannotBeRead(t *testing.T) {
+	f := newFake(t)
+	l, err := state.Open(filepath.Join(t.TempDir(), "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(l.Root, "pools"), []byte("not a dir"), 0o600); err != nil { // ReadDir: ENOTDIR
+		t.Fatal(err)
+	}
+	const id = "0-0000000000000000001-aaaaaaaa"
+	f.plant("bitc-"+id, map[string]string{LabelPool: "p", LabelState: StateHash(l.Root), LabelTicket: id, LabelJob: "j"})
+	var removed, kept []string
+	err = Sweep(context.Background(), f.path, l, f.env, false, func(x Found) { removed = append(removed, x.Name) }, func(x Found) { kept = append(kept, x.Name) })
+	if err != nil || len(removed) != 0 || len(kept) != 1 || !f.exists("bitc-"+id) {
+		t.Fatalf("err %v removed %v kept %v", err, removed, kept)
+	}
+	if got := TicketState(l, id); got != lock.StateUnknown {
+		t.Fatalf("TicketState = %v", got)
+	}
+	// no pools dir at all is just "no tickets": the container is an orphan
+	if err := os.Remove(filepath.Join(l.Root, "pools")); err != nil {
+		t.Fatal(err)
+	}
+	if got := TicketState(l, id); got != lock.StateFree {
+		t.Fatalf("TicketState = %v", got)
 	}
 }
 
