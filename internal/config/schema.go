@@ -73,6 +73,7 @@ type groupSchema struct {
 type prioritySchema struct {
 	HighCwdContains []string `toml:"high_cwd_contains" bitc:"host,default=[]"`
 	HighCwd         []string `toml:"high_cwd" bitc:"host,default=[]"`
+	AgeAfter        *string  `toml:"age_after" bitc:"host,default=5m"`
 }
 
 type detachSchema struct {

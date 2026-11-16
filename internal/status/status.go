@@ -36,7 +36,8 @@ type Holder struct {
 
 type Waiter struct {
 	Job      string         `json:"job"`
-	Class    string         `json:"class"` // high | normal
+	Class    string         `json:"class"`          // high | normal
+	Aged     bool           `json:"aged,omitempty"` // a normal waiter ordered as high: it has waited priority.age_after
 	Pid      int            `json:"pid"`
 	Since    string         `json:"since"`
 	WaitedS  int64          `json:"waited_s"`        // whole seconds from Since to the report's time
@@ -154,7 +155,7 @@ func Snapshot(e *config.Effective, l state.Layout, only []string) Report {
 				if t.T.Class == 0 {
 					class = "high"
 				}
-				p.Waiters = append(p.Waiters, Waiter{Job: red.String(t.T.Job), Class: class, Pid: t.T.Pid, Since: iso(t.T.WaitStarted), WaitedS: ageS(now, t.T.WaitStarted), Units: t.T.Units,
+				p.Waiters = append(p.Waiters, Waiter{Job: red.String(t.T.Job), Class: class, Aged: admit.Aged(t, now, e.Priority.AgeAfter), Pid: t.T.Pid, Since: iso(t.T.WaitStarted), WaitedS: ageS(now, t.T.WaitStarted), Units: t.T.Units,
 					Blocking: red.String(strings.Join(t.T.GroupWait, ",")), Unknown: unknown})
 			}
 		}
@@ -300,6 +301,9 @@ func (r Report) Text(w io.Writer) {
 			unk := ""
 			if q.Unknown {
 				unk = "  unknown"
+			}
+			if q.Aged {
+				q.Class += " aged"
 			}
 			fmt.Fprintf(w, "  waiting  %s  %s  pid %d%s  since %s (%s)%s\n", q.Job, q.Class, q.Pid, unitsText(q.Units), q.Since, ageText(q.WaitedS), unk)
 		}

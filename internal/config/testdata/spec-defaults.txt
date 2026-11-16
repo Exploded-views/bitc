@@ -19,6 +19,7 @@ pools.<pool>.remote_limits.timeout = 90m
 detach.wait_timeout = 9m
 priority.high_cwd_contains = []
 priority.high_cwd = []
+priority.age_after = 5m
 remote_limits.worktrees = []
 remote_limits.forward_env_allow = []
 remote_limits.forward_env_force = []

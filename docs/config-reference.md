@@ -63,6 +63,7 @@ Generated from `internal/config/schema.go` by `go generate ./internal/config`. D
 | `groups.<group>.units` | host | `required` |
 | `priority.high_cwd_contains` | host | `[]` |
 | `priority.high_cwd` | host | `[]` |
+| `priority.age_after` | host | `5m` |
 | `detach.wait_timeout` | host | `9m` |
 | `vars` | project | unset |
 | `remote_limits.worktrees` | host | `[]` |

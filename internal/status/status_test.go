@@ -266,3 +266,17 @@ func TestAgeIsMeasuredToTheReportTimeAndNeverNegative(t *testing.T) {
 		t.Errorf("a ticket from the future has age %d", got)
 	}
 }
+
+func TestAgedWaiterIsMarkedInTextAndJSON(t *testing.T) {
+	r := Report{Pools: []Pool{{Name: "lint", Slots: 1, Wait: "10m", Holders: []Holder{},
+		Waiters: []Waiter{{Job: "a", Class: "normal", Aged: true, Pid: 1, Since: "t1", WaitedS: 400}, {Job: "b", Class: "normal", Pid: 2, Since: "t2", WaitedS: 5}}}}}
+	var out bytes.Buffer
+	r.Text(&out)
+	if !strings.Contains(out.String(), "waiting  a  normal aged  pid 1") || strings.Contains(out.String(), "b  normal aged") {
+		t.Errorf("status text:\n%s", out.String())
+	}
+	b, _ := json.Marshal(r)
+	if strings.Count(string(b), `"aged":true`) != 1 {
+		t.Errorf("status --json: %s", b)
+	}
+}

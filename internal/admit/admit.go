@@ -204,8 +204,11 @@ func (a *admission) attempt(now time.Time) (bool, string, error) {
 		return false, reason, a.me.write()
 	}
 
-	// priority: a normal ticket waits while the pool has a live high ticket (per pool)
-	if a.me.t.Class == 1 && !a.samePool {
+	// priority: a normal ticket waits while the pool has a live high ticket (per pool), unless it
+	// has aged into the high lane (priority.age_after), where only the queue order below holds it
+	meTF := TicketFile{Name: a.me.name, Pool: a.pool.Name, T: a.me.t}
+	after := a.r.Eff.Priority.AgeAfter
+	if a.me.t.Class == 1 && !a.samePool && !Aged(meTF, now, after) {
 		for _, t := range tickets {
 			if t.Name != a.me.name && t.T.Class == 0 {
 				return fail("priority lane", nil)
@@ -230,14 +233,15 @@ func (a *admission) attempt(now time.Time) (bool, string, error) {
 		return a.admitted(now)
 	}
 
-	// queue: eligible iff our (class, time) position among waiters < free slots
+	// queue: eligible iff our (lane, time) position among waiters < free slots; the high lane is
+	// high tickets and aged normal ones
 	running, pos := 0, 0
 	for _, t := range tickets {
 		switch {
 		case t.T.Nested:
 		case t.T.State == "running":
 			running++
-		case t.Name < a.me.name:
+		case Ahead(t, meTF, now, after):
 			pos++
 		}
 	}
