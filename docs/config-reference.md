@@ -83,6 +83,7 @@ Generated from `internal/config/schema.go` by `go generate ./internal/config`. D
 | `compat.flock.<pool>.lock` | host | `required` |
 | `compat.flock.<pool>.gate` | host | `required` |
 | `compat.flock.<pool>.slot` | host | `required` |
+| `compat.flock.<pool>.exclusive` | host | `false` |
 | `test.procfs_root` | host | unset |
 | `test.time_scale` | host | unset |
 | `test.http_results` | host | unset |

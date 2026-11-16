@@ -329,6 +329,9 @@ type Flock struct {
 	Lock string // flock(1) target of bare callers
 	Gate string // turnstile taken before Lock
 	Slot string // slot file template, "{n}" is the slot number
+	// Exclusive: the pool holds Gate and Lock exclusive and takes no slot file (a bench); default
+	// false, a normal pool.
+	Exclusive bool
 }
 
 type Test struct {

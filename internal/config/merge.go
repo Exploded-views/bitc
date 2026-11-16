@@ -737,7 +737,7 @@ func compatFlock(p *problems, file string, in map[string]*compatFlockSchema, poo
 		if fl == nil {
 			fl = &compatFlockSchema{}
 		}
-		got := Flock{Lock: expandHome(fl.Lock, env), Gate: expandHome(fl.Gate, env), Slot: expandHome(fl.Slot, env)}
+		got := Flock{Lock: expandHome(fl.Lock, env), Gate: expandHome(fl.Gate, env), Slot: expandHome(fl.Slot, env), Exclusive: fl.Exclusive}
 		for _, k := range []struct{ name, v string }{{"lock", got.Lock}, {"gate", got.Gate}, {"slot", got.Slot}} {
 			switch {
 			case k.v == "":

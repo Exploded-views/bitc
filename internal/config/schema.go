@@ -110,6 +110,8 @@ type compatFlockSchema struct {
 	Lock string `toml:"lock" bitc:"host,required"`
 	Gate string `toml:"gate" bitc:"host,required"`
 	Slot string `toml:"slot" bitc:"host,required"`
+	// Exclusive makes the pool take the gate and the lock exclusive for its whole hold (a bench).
+	Exclusive bool `toml:"exclusive" bitc:"host,default=false"`
 }
 
 type testSchema struct {

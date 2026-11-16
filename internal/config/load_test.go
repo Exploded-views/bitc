@@ -588,3 +588,19 @@ func TestCompatFlock(t *testing.T) {
 		expect78(t, err, c.want)
 	}
 }
+
+func TestCompatFlockExclusiveKey(t *testing.T) {
+	host := func(flock string) string {
+		return "version = 1\n[pools.heavy]\n[pools.bench]\n[compat]\nlegacy_dir = \"/x\"\n" + flock
+	}
+	files := "lock = \"/s/heavy.lock\"\ngate = \"/s/heavy.gate\"\nslot = \"/s/heavy.slot{n}\"\n"
+	e := mustLoad(t, newFixture(t, host("[compat.flock.heavy]\n"+files+"[compat.flock.bench]\n"+files+"exclusive = true\n"), ""))
+	if e.Compat.Flock["heavy"].Exclusive || !e.Compat.Flock["bench"].Exclusive {
+		t.Fatalf("exclusive defaults to false and is set per pool: %+v", e.Compat.Flock)
+	}
+	_, err := newFixture(t, host("[compat.flock.heavy]\n"+files+"exclusive = \"yes\"\n"), "").load()
+	expect78(t, err)
+	// host-only: the repo file may not set it
+	_, err = newFixture(t, host(""), "version = 1\n[compat.flock.heavy]\nexclusive = true\n").load()
+	expect78(t, err, "")
+}
