@@ -87,6 +87,37 @@ func dkNames(fd *harness.FakeDocker, job string) []string {
 	return out
 }
 
+// dkEnvFilePath is the --env-file of job's first run (in the state dir, next to the cidfile).
+func dkEnvFilePath(t *testing.T, fd *harness.FakeDocker, job string) string {
+	t.Helper()
+	for _, c := range fd.CallsOf("run") {
+		if dkLabel(c, "bitc.job") != job {
+			continue
+		}
+		for i, a := range c {
+			if a == "--env-file" && i+1 < len(c) {
+				return c[i+1]
+			}
+		}
+	}
+	t.Fatalf("no --env-file for job %s: %v", job, fd.Calls())
+	return ""
+}
+
+// dkGone reports whether path does not exist.
+func dkGone(path string) bool { _, err := os.Lstat(path); return os.IsNotExist(err) }
+
+// dkRemovedByID fails unless every removal was by container id: a removal by name could remove a
+// container another run owns.
+func dkRemovedByID(t *testing.T, fd *harness.FakeDocker) {
+	t.Helper()
+	for _, a := range fd.RemovedBy() {
+		if strings.HasPrefix(a, "bitc-") || !strings.HasPrefix(a, "cid") {
+			t.Fatalf("a container was removed by %q, not by id: %v", a, fd.Calls())
+		}
+	}
+}
+
 // dkPidFile is a command that records its pid in file and then sleeps; it is the container's
 // process, so the pid says whether `rm -f` killed it.
 func dkPidFile(file string) []string {
@@ -121,11 +152,20 @@ func TestDK1_RunArgvShape(t *testing.T) {
 	want := []string{"run", "--rm", "--init", "-i", "--name", name1,
 		"--label", "bitc.job=j1", "--label", "bitc.pool=box", "--label", "bitc.state=" + dkHash(h), "--label", "bitc.ticket=" + ticket,
 		"--cidfile", filepath.Join(h.State, "containers", ticket+".cid"),
+		"--env-file", filepath.Join(h.State, "containers", ticket+".env"), // the values are in this 0600 file, never on argv
 		"--mount", "type=bind,source=" + wt + ",target=" + wt, "--workdir", wt,
-		"-e", "BITC_JOB", "-e", "BITC_POOL", "-e", "BITC_SLOT", "-e", "LC_ALL", // names only: the values travel in docker's environment, never its argv
 		dkImage, "echo", "hi", "--flag"}
 	if !reflect.DeepEqual(runs[0], want) {
 		t.Fatalf("docker run argv:\n got %q\nwant %q", runs[0], want)
+	}
+	// the env file: 0600, one NAME=VALUE per line sorted by name, and gone once the run ended
+	path, mode, body, ok := fd.EnvFile(name1)
+	if !ok || mode != "0600" || path != filepath.Join(h.State, "containers", ticket+".env") ||
+		body != "BITC_JOB=j1\nBITC_POOL=box\nBITC_SLOT=box.1\nLC_ALL=C\n" {
+		t.Fatalf("env file: ok %v mode %q path %q body %q", ok, mode, path, body)
+	}
+	if !dkGone(path) {
+		t.Fatal("a finished run left its env file")
 	}
 	// cpus, memory and extra mounts, each only when set; the work tree mount comes first
 	if r := h.Run("run", "--name", "j2", "big", "--", "true"); r.Code != 0 {
@@ -140,11 +180,11 @@ func TestDK1_RunArgvShape(t *testing.T) {
 	want = []string{"run", "--rm", "--init", "-i", "--name", name2,
 		"--label", "bitc.job=j2", "--label", "bitc.pool=big", "--label", "bitc.state=" + dkHash(h), "--label", "bitc.ticket=" + ticket,
 		"--cidfile", filepath.Join(h.State, "containers", ticket+".cid"),
+		"--env-file", filepath.Join(h.State, "containers", ticket+".env"),
 		"--mount", "type=bind,source=" + wt + ",target=" + wt,
 		"--mount", "type=bind,source=/data,target=/data,readonly",
 		"--mount", "type=bind,source=/cache,target=/cache",
 		"--workdir", wt, "--cpus", "1.5", "--memory", "536870912",
-		"-e", "BITC_JOB", "-e", "BITC_POOL", "-e", "BITC_SLOT", "-e", "LC_ALL",
 		"big:2", "true"}
 	if !reflect.DeepEqual(runs[1], want) {
 		t.Fatalf("docker run argv with limits:\n got %q\nwant %q", runs[1], want)
@@ -185,8 +225,14 @@ func TestDK3_TimeLimitRemovesTheContainer(t *testing.T) {
 	if r.Code != 124 || !strings.Contains(r.Stderr, "bitc: box: time limit 10s reached; terminated\n") {
 		t.Fatalf("%+v", r)
 	}
-	if name := dkName(t, fd, "tl"); !fd.Removed(name) || fd.Exists(name) {
+	// a limit this short can fire before the CLI created anything: then there is no container and
+	// nothing to remove; one that was created is removed, by its id from the cidfile
+	if name := dkName(t, fd, "tl"); fd.Exists(name) || (fd.Created(name) && !fd.Removed(name)) {
 		t.Fatalf("the time limit left the container: calls %v", fd.Calls())
+	}
+	dkRemovedByID(t, fd)
+	if env := dkEnvFilePath(t, fd, "tl"); !dkGone(env) {
+		t.Fatalf("the time limit left the env file %s", env)
 	}
 	if b, err := os.ReadFile(pidFile); err == nil && len(b) > 0 {
 		pid := h.Atoi(string(b))
@@ -211,8 +257,8 @@ func TestDK4_SignalAndCancelRemoveTheContainer(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 	h.Until(func() bool { return proctest.Gone(pid) }, 20*time.Second)
-	if name := dkName(t, fd, "t1"); !fd.Removed(name) || fd.Exists(name) {
-		t.Fatalf("SIGTERM left the container: calls %v", fd.Calls())
+	if name := dkName(t, fd, "t1"); !fd.Removed(name) || fd.Exists(name) || !dkGone(dkEnvFilePath(t, fd, "t1")) {
+		t.Fatalf("SIGTERM left the container or its env file: calls %v", fd.Calls())
 	}
 	// SIGINT and SIGHUP too
 	for i, sig := range []syscall.Signal{syscall.SIGINT, syscall.SIGHUP} {
@@ -253,8 +299,10 @@ func TestDK4_SignalAndCancelRemoveTheContainer(t *testing.T) {
 			t.Fatalf("%v: %+v", c.args, r)
 		}
 		cn := dkName(t, fd, c.name)
-		h.Until(func() bool { return fd.Removed(cn) && !fd.Exists(cn) && proctest.Gone(pid) }, 20*time.Second)
+		envf := dkEnvFilePath(t, fd, c.name)
+		h.Until(func() bool { return fd.Removed(cn) && !fd.Exists(cn) && proctest.Gone(pid) && dkGone(envf) }, 20*time.Second)
 	}
+	dkRemovedByID(t, fd)
 }
 
 func TestDK5_SigkilledBitcLeavesNoContainer(t *testing.T) {
@@ -272,7 +320,13 @@ func TestDK5_SigkilledBitcLeavesNoContainer(t *testing.T) {
 	if r := p.Wait(); r.Code != 137 {
 		t.Fatalf("%+v", r)
 	}
-	h.Until(func() bool { return fd.Removed(name) && !fd.Exists(name) && proctest.Gone(pid) }, 20*time.Second)
+	envf := dkEnvFilePath(t, fd, "k1")
+	if dkGone(envf) {
+		t.Fatal("the env file is gone while the container runs")
+	}
+	// the guard removes the container (by the id in the cidfile) and the env file bitc could not
+	h.Until(func() bool { return fd.Removed(name) && !fd.Exists(name) && proctest.Gone(pid) && dkGone(envf) }, 20*time.Second)
+	dkRemovedByID(t, fd)
 	// and the slot is free: the next run is admitted and its prune finds nothing left to reap
 	if r := h.Run("run", "--wait", "0s", "box", "--", "true"); r.Code != 0 {
 		t.Fatalf("%+v", r)
@@ -332,6 +386,49 @@ func TestDK6_OrphansAreSweptByLabel(t *testing.T) {
 	if !fd.Exists("bitc-elsewhere") || !fd.Exists("unrelated") {
 		t.Fatal("the admission prune touched a container that is not this state dir's")
 	}
+	dkRemovedByID(t, fd) // the sweep removes by the id it listed, never by a name
+}
+
+// A sweep that cannot tell which tickets are held (the pools dir does not read) stops and removes
+// nothing, however many orphans there look to be, and says so; the run that swept at admission
+// goes on regardless.
+func TestDK12_ASweepErrorRemovesNothing(t *testing.T) {
+	h := harness.New(t)
+	fd := h.FakeDocker()
+	h.HostConfig(dkPool)
+	labels := map[string]string{"bitc.job": "x", "bitc.pool": "box", "bitc.state": dkHash(h), "bitc.ticket": "0-0000000000000000002-cafef00d"}
+	if r := h.Run("run", "box", "--", "true"); r.Code != 0 { // makes the state dir
+		t.Fatalf("%+v", r)
+	}
+	fd.Plant("bitc-orphan", labels)
+	if err := os.RemoveAll(filepath.Join(h.State, "pools")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(h.State, "pools"), []byte("not a dir"), 0o600); err != nil { // reading pools/ fails
+		t.Fatal(err)
+	}
+	cid := filepath.Join(h.State, "containers", "0-0000000000000000002-cafef00d.cid")
+	h.Write(cid, "cidplantedbitc-orphan", 0o600)
+	r := h.Run("sweep")
+	if !strings.Contains(r.Stdout, "container sweep aborted") || strings.Contains(r.Stdout, "swept container") {
+		t.Fatalf("%+v", r)
+	}
+	if !fd.Exists("bitc-orphan") || len(fd.CallsOf("rm")) != 0 || dkGone(cid) {
+		t.Fatalf("an aborted sweep deleted something: calls %v", fd.Calls())
+	}
+	// the daemon failing in the middle of the removals stops it there too
+	if err := os.Remove(filepath.Join(h.State, "pools")); err != nil {
+		t.Fatal(err)
+	}
+	fd.Plant("bitc-orphan2", labels)
+	r = h.RunWith([]string{"FAKE_DOCKER_FAIL=rm"}, "sweep")
+	if !strings.Contains(r.Stdout, "container sweep aborted") || !fd.Exists("bitc-orphan") || !fd.Exists("bitc-orphan2") {
+		t.Fatalf("%+v", r)
+	}
+	// and a run's admission with a failing sweep still runs the command
+	if r := h.RunWith([]string{"FAKE_DOCKER_FAIL=ps"}, "run", "box", "--", "true"); r.Code != 0 {
+		t.Fatalf("%+v", r)
+	}
 }
 
 func TestDK7_ConfigErrorsAre78(t *testing.T) {
@@ -388,7 +485,7 @@ func TestDK8_RuntimeFailuresAre69(t *testing.T) {
 		!strings.Contains(r.Stderr, "bitc: box: docker could not start the container (it exited 125 before the command ran; its message is above)\n") {
 		t.Fatalf("%+v", r)
 	}
-	if len(fd.CallsOf("run")) != 1 {
+	if len(fd.CallsOf("run")) != 1 || len(fd.CallsOf("rm")) != 0 { // no container was created: nothing to remove
 		t.Fatalf("calls: %v", fd.Calls())
 	}
 	// no docker on PATH: 69 before admission, one line, no state left behind
@@ -406,7 +503,7 @@ func TestDK8_RuntimeFailuresAre69(t *testing.T) {
 	if r := h.RunWith([]string{"FAKE_DOCKER_FAIL=run"}, "run", "--name", "dup", "box", "--", "true"); r.Code != 69 {
 		t.Fatalf("%+v", r)
 	}
-	if !fd.Exists("bitc-dup") || fd.Removed("bitc-dup") {
+	if !fd.Exists("bitc-dup") || len(fd.CallsOf("rm")) != 0 { // no cidfile, so no container of its own: no rm at all
 		t.Fatalf("a failed run removed a container it did not create: %v", fd.Calls())
 	}
 }
@@ -439,7 +536,16 @@ func TestDK11_SameJobNameRunsHaveTheirOwnContainers(t *testing.T) {
 	if r := c.Wait(); r.Code != 137 {
 		t.Fatalf("C: %+v", r)
 	}
-	h.Until(func() bool { return fd.Removed(names[2]) && !fd.Exists(names[2]) && proctest.Gone(pid) }, 20*time.Second)
+	envC := dkEnvFilePath(t, fd, "same") // A's: the first run of the job; C's is the last --env-file in the log
+	for _, c := range fd.CallsOf("run") {
+		for i, a := range c {
+			if a == "--env-file" {
+				envC = c[i+1]
+			}
+		}
+	}
+	h.Until(func() bool { return fd.Removed(names[2]) && !fd.Exists(names[2]) && proctest.Gone(pid) && dkGone(envC) }, 20*time.Second)
+	dkRemovedByID(t, fd)
 	if !fd.Running(nameA) || fd.Removed(nameA) {
 		t.Fatalf("another run's end removed A's container: %v", fd.Calls())
 	}
@@ -472,16 +578,27 @@ func TestDK9_ContainerEnvIsMinimal(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("container env:\n got %v\nwant %v", got, want)
 	}
-	// the values reach the container through docker's own environment, never its argv (ps and
-	// /proc/<pid>/cmdline are readable by every local user): the argv has the names only
-	argv := strings.Join(fd.CallsOf("run")[0], "\x00")
-	for _, secret := range []string{"s3cret-greeting", "fast", "xterm", "C.UTF-8"} {
+	// the values reach docker in a 0600 --env-file, never on its argv (ps and /proc/<pid>/cmdline are
+	// readable by every local user); bitc removes the file when the run ends
+	run := fd.CallsOf("run")[0]
+	argv := strings.Join(run, "\x00")
+	for _, secret := range []string{"s3cret-greeting", "fast", "xterm", "C.UTF-8", "GREETING"} {
 		if strings.Contains(argv, secret) {
-			t.Fatalf("the value %q is on docker's argv: %q", secret, argv)
+			t.Fatalf("%q is on docker's argv: %q", secret, argv)
 		}
 	}
-	if !strings.Contains(argv, "-e\x00GREETING\x00") {
-		t.Fatalf("GREETING is not passed by name: %q", argv)
+	for _, a := range run {
+		if a == "-e" || a == "--env" {
+			t.Fatalf("an -e on docker's argv: %q", run)
+		}
+	}
+	path, mode, body, ok := fd.EnvFile(dkName(t, fd, "e1"))
+	if !ok || mode != "0600" || !strings.Contains(body, "GREETING=s3cret-greeting\n") || !strings.Contains(body, "MODE=fast\n") ||
+		strings.Contains(body, "SECRET_TOKEN") || strings.Contains(body, "BITC_HOLD") || strings.Contains(body, "BITC_DIR") {
+		t.Fatalf("env file: ok %v mode %q body %q", ok, mode, body)
+	}
+	if !dkGone(path) {
+		t.Fatal("the env file is still there after the run")
 	}
 }
 

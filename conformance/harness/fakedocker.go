@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -119,17 +120,70 @@ func (f *FakeDocker) CallsOf(verb string) [][]string {
 	return out
 }
 
-// Removed reports whether `docker rm -f name` was called.
+// Removed reports whether a `docker rm` removed the container of that name (by whatever it was given).
 func (f *FakeDocker) Removed(name string) bool {
-	for _, c := range f.CallsOf("rm") {
-		if len(c) >= 3 && c[1] == "-f" && c[len(c)-1] == name {
+	for _, r := range f.removals() {
+		if r["name"] == name {
 			return true
 		}
 	}
 	return false
 }
 
+// Created reports whether the fake ever created a container of that name (a run killed before the
+// CLI got that far creates none).
+func (f *FakeDocker) Created(name string) bool {
+	b, err := os.ReadFile(filepath.Join(f.State, "created.log"))
+	if err != nil {
+		return false
+	}
+	for _, l := range strings.Split(string(b), "\n") {
+		if l == name {
+			return true
+		}
+	}
+	return false
+}
+
+// RemovedBy is what each `docker rm` that removed a container was given (an id, or a name).
+func (f *FakeDocker) RemovedBy() []string {
+	var out []string
+	for _, r := range f.removals() {
+		out = append(out, r["arg"])
+	}
+	return out
+}
+
+func (f *FakeDocker) removals() []map[string]string {
+	var out []map[string]string
+	file, err := os.Open(filepath.Join(f.State, "removed.log"))
+	if err != nil {
+		return nil
+	}
+	defer file.Close()
+	sc := bufio.NewScanner(file)
+	for sc.Scan() {
+		var m map[string]string
+		if json.Unmarshal(sc.Bytes(), &m) == nil {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// EnvFile is what the fake found in the --env-file of the run that named its container name: the
+// file's path, its mode ("0600") and its body, taken when docker run started.
+func (f *FakeDocker) EnvFile(name string) (path, mode, body string, ok bool) {
+	var s struct{ Path, Mode, Body string }
+	b, err := os.ReadFile(filepath.Join(f.State, "envfiles", name+".json"))
+	if err != nil || json.Unmarshal(b, &s) != nil {
+		return "", "", "", false
+	}
+	return s.Path, s.Mode, s.Body, true
+}
+
 type fakeRec struct {
+	ID     string            `json:"id"`
 	Name   string            `json:"name"`
 	Labels map[string]string `json:"labels"`
 	Pgid   int               `json:"pgid"`
@@ -152,13 +206,16 @@ func (f *FakeDocker) Exists(name string) bool { _, ok := f.Container(name); retu
 func (f *FakeDocker) Running(name string) bool { r, ok := f.Container(name); return ok && r.Pgid > 0 }
 
 // Plant adds a container that nothing runs, as a leftover of a bitc that died: an orphan to sweep.
-func (f *FakeDocker) Plant(name string, labels map[string]string) {
+// It returns the container's id.
+func (f *FakeDocker) Plant(name string, labels map[string]string) string {
 	f.h.T.Helper()
 	if err := os.MkdirAll(filepath.Join(f.State, "c"), 0o755); err != nil {
 		f.h.T.Fatal(err)
 	}
-	b, _ := json.Marshal(fakeRec{Name: name, Labels: labels})
+	id := "cidplanted" + name
+	b, _ := json.Marshal(fakeRec{ID: id, Name: name, Labels: labels})
 	if err := os.WriteFile(filepath.Join(f.State, "c", name+".json"), b, 0o644); err != nil {
 		f.h.T.Fatal(err)
 	}
+	return id
 }

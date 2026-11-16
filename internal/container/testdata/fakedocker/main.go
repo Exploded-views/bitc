@@ -32,11 +32,21 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/Exploded-views/bitc/internal/exit"
 )
 
+// envSnapshot is what the fake saw of an --env-file when `run` started (the file is bitc's to
+// remove, and the tests look at it afterwards): its path, mode and body.
+type envSnapshot struct {
+	Path string `json:"path"`
+	Mode string `json:"mode"`
+	Body string `json:"body"`
+}
+
 type record struct {
+	ID     string            `json:"id"`
 	Name   string            `json:"name"`
 	Labels map[string]string `json:"labels"`
 	Pgid   int               `json:"pgid"`
@@ -99,12 +109,12 @@ func readRec(name string) (record, bool) {
 }
 
 func run(args []string) int {
-	var name, cidfile, workdir string
+	var name, cidfile, workdir, envfile string
 	var env []string
 	labels := map[string]string{}
 	rmAfter, tty := false, false
 	valued := map[string]bool{"--name": true, "--label": true, "--cidfile": true, "--mount": true, "--workdir": true, "-w": true,
-		"--cpus": true, "--memory": true, "-e": true, "--env": true, "-v": true, "--user": true, "-u": true}
+		"--cpus": true, "--memory": true, "-e": true, "--env": true, "--env-file": true, "-v": true, "--user": true, "-u": true}
 	flags := map[string]bool{"--rm": true, "--init": true, "-i": true, "-t": true, "-it": true, "-ti": true}
 	i := 0
 	for ; i < len(args) && strings.HasPrefix(args[i], "-"); i++ {
@@ -124,6 +134,8 @@ func run(args []string) int {
 				labels[k] = val
 			case "--cidfile":
 				cidfile = v
+			case "--env-file":
+				envfile = v
 			case "--workdir", "-w":
 				workdir = v
 			case "-e", "--env":
@@ -153,17 +165,42 @@ func run(args []string) int {
 		fmt.Fprintf(os.Stderr, "docker: Error response from daemon: Conflict. The container name \"/%s\" is already in use.\n", name)
 		return 125
 	}
+	if envfile != "" { // docker reads it first; an unreadable one is a failure before the container exists
+		st, err := os.Stat(envfile)
+		b, rerr := os.ReadFile(envfile)
+		if err != nil || rerr != nil {
+			fmt.Fprintf(os.Stderr, "docker: open %s: no such file or directory\n", envfile)
+			return 125
+		}
+		snap, _ := json.Marshal(envSnapshot{Path: envfile, Mode: fmt.Sprintf("%04o", st.Mode().Perm()), Body: string(b)})
+		_ = os.MkdirAll(filepath.Join(dir, "envfiles"), 0o755)
+		_ = os.WriteFile(filepath.Join(dir, "envfiles", name+".json"), snap, 0o644)
+		for _, l := range strings.Split(string(b), "\n") {
+			switch {
+			case l == "" || strings.HasPrefix(l, "#"):
+			case strings.Contains(l, "="):
+				env = append(env, l)
+			default: // NAME alone: the value is the CLI's own
+				env = append(env, l+"="+os.Getenv(l))
+			}
+		}
+	}
+	id := fmt.Sprintf("cid%x%x", time.Now().UnixNano(), os.Getpid())
 	if cidfile != "" {
 		f, err := os.OpenFile(cidfile, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "docker: Container ID file found, make sure the other container isn't running or delete %s\n", cidfile)
 			return 125
 		}
-		_, _ = f.WriteString("fakeid-" + name)
+		_, _ = f.WriteString(id)
 		f.Close()
 	}
-	rec := record{Name: name, Labels: labels}
+	rec := record{ID: id, Name: name, Labels: labels}
 	writeRec(rec)
+	if f, err := os.OpenFile(filepath.Join(dir, "created.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+		_, _ = f.WriteString(name + "\n")
+		f.Close()
+	}
 	if rmAfter {
 		defer os.Remove(recPath(name))
 	}
@@ -201,13 +238,29 @@ func run(args []string) int {
 	return cmd.ProcessState.ExitCode()
 }
 
+// find is a container by name or by id, as `docker rm` takes either.
+func find(nameOrID string) (record, bool) {
+	if r, ok := readRec(nameOrID); ok {
+		return r, true
+	}
+	ents, _ := os.ReadDir(filepath.Join(dir, "c"))
+	for _, e := range ents {
+		if name, ok := strings.CutSuffix(e.Name(), ".json"); ok {
+			if r, ok := readRec(name); ok && r.ID == nameOrID {
+				return r, true
+			}
+		}
+	}
+	return record{}, false
+}
+
 func rm(args []string) int {
 	rc := 0
 	for _, a := range args {
 		if strings.HasPrefix(a, "-") {
 			continue
 		}
-		r, ok := readRec(a)
+		r, ok := find(a)
 		if !ok {
 			fmt.Fprintf(os.Stderr, "Error response from daemon: No such container: %s\n", a)
 			rc = 1
@@ -216,7 +269,12 @@ func rm(args []string) int {
 		if r.Pgid > 0 {
 			_ = syscall.Kill(-r.Pgid, syscall.SIGKILL)
 		}
-		_ = os.Remove(recPath(a))
+		_ = os.Remove(recPath(r.Name))
+		b, _ := json.Marshal(map[string]string{"arg": a, "name": r.Name, "id": r.ID})
+		if f, err := os.OpenFile(filepath.Join(dir, "removed.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+			_, _ = f.Write(append(b, '\n'))
+			f.Close()
+		}
 		fmt.Println(a)
 	}
 	return rc
@@ -260,7 +318,7 @@ next:
 				continue next
 			}
 		}
-		line := strings.ReplaceAll(format, "{{.Names}}", r.Name)
+		line := strings.ReplaceAll(strings.ReplaceAll(format, "{{.Names}}", r.Name), "{{.ID}}", r.ID)
 		line = labelRE.ReplaceAllStringFunc(line, func(m string) string { return r.Labels[labelRE.FindStringSubmatch(m)[1]] })
 		fmt.Println(line)
 	}

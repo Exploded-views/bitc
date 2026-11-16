@@ -53,16 +53,31 @@ func newFake(t *testing.T) *fake {
 	return f
 }
 
-// plant adds a container record the fake knows (nothing runs).
-func (f *fake) plant(name string, labels map[string]string) {
+// plant adds a container record the fake knows (nothing runs) and returns its id.
+func (f *fake) plant(name string, labels map[string]string) string {
 	f.t.Helper()
 	if err := os.MkdirAll(filepath.Join(f.state, "c"), 0o755); err != nil {
 		f.t.Fatal(err)
 	}
-	b, _ := json.Marshal(map[string]any{"name": name, "labels": labels})
+	id := "cid" + name
+	b, _ := json.Marshal(map[string]any{"id": id, "name": name, "labels": labels})
 	if err := os.WriteFile(filepath.Join(f.state, "c", name+".json"), b, 0o644); err != nil {
 		f.t.Fatal(err)
 	}
+	return id
+}
+
+// removedBy is what each `docker rm` that removed a container was given.
+func (f *fake) removedBy() []string {
+	b, _ := os.ReadFile(filepath.Join(f.state, "removed.log"))
+	var out []string
+	for _, l := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		var m map[string]string
+		if json.Unmarshal([]byte(l), &m) == nil {
+			out = append(out, m["arg"])
+		}
+	}
+	return out
 }
 
 func (f *fake) exists(name string) bool {
@@ -86,17 +101,17 @@ func TestNamesAndHashes(t *testing.T) {
 func TestRunArgv(t *testing.T) {
 	s := Spec{Runtime: "/bin/docker", Image: "img:1", Job: "j", Pool: "p", State: "abc", Ticket: "tk", CID: "/s/tk.cid",
 		Mounts: []config.Mount{{Source: "/w", Target: "/w"}, {Source: "/a", Target: "/b", ReadOnly: true}},
-		Dir:    "/w/sub", CPUs: "1.5", Memory: 8 << 20, Env: []string{"A=1", "B"}, TTY: true, Argv: []string{"echo", "-n", "x"}}
+		Dir:    "/w/sub", CPUs: "1.5", Memory: 8 << 20, EnvFile: "/s/tk.env", TTY: true, Argv: []string{"echo", "-n", "x"}}
 	want := []string{"/bin/docker", "run", "--rm", "--init", "-it", "--name", "bitc-tk", // unique per run: from the ticket, not the job
 		"--label", "bitc.job=j", "--label", "bitc.pool=p", "--label", "bitc.state=abc", "--label", "bitc.ticket=tk",
-		"--cidfile", "/s/tk.cid", "--mount", "type=bind,source=/w,target=/w", "--mount", "type=bind,source=/a,target=/b,readonly",
-		"--workdir", "/w/sub", "--cpus", "1.5", "--memory", "8388608", "-e", "A=1", "-e", "B", "img:1", "echo", "-n", "x"}
+		"--cidfile", "/s/tk.cid", "--env-file", "/s/tk.env", "--mount", "type=bind,source=/w,target=/w", "--mount", "type=bind,source=/a,target=/b,readonly",
+		"--workdir", "/w/sub", "--cpus", "1.5", "--memory", "8388608", "img:1", "echo", "-n", "x"}
 	if got := RunArgv(s); !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %q\nwant %q", got, want)
 	}
-	s.TTY, s.CPUs, s.Memory, s.Env, s.Mounts = false, "", 0, nil, nil
+	s.TTY, s.CPUs, s.Memory, s.EnvFile, s.Mounts = false, "", 0, "", nil
 	got := RunArgv(s)
-	for _, a := range []string{"-it", "--cpus", "--memory", "-e", "--mount"} {
+	for _, a := range []string{"-it", "--cpus", "--memory", "--env-file", "-e", "--mount"} {
 		for _, g := range got {
 			if g == a {
 				t.Fatalf("%s present without its setting: %q", a, got)
@@ -133,11 +148,11 @@ func TestLookup(t *testing.T) {
 
 func TestRemoveToleratesAnAbsentContainerButNotAFailure(t *testing.T) {
 	f := newFake(t)
-	f.plant("here", nil)
-	if err := Remove(context.Background(), f.path, "here", f.env); err != nil || f.exists("here") {
+	id := f.plant("here", nil)
+	if err := Remove(context.Background(), f.path, id, f.env); err != nil || f.exists("here") {
 		t.Fatalf("%v", err)
 	}
-	if err := Remove(context.Background(), f.path, "here", f.env); err != nil { // already gone
+	if err := Remove(context.Background(), f.path, id, f.env); err != nil { // already gone
 		t.Fatalf("a container that is gone is not an error: %v", err)
 	}
 	err := Remove(context.Background(), f.path, "x", append(f.env, "FAKE_DOCKER_FAIL=rm")) // a daemon failure is an error
@@ -208,6 +223,9 @@ func TestSweepRemovesOrphansOfThisStateDirOnly(t *testing.T) {
 	if len(removed) != 2 || f.exists("bitc-dead") || f.exists("bitc-none") || len(kept) != 0 {
 		t.Fatalf("removed %v kept %v", removed, kept)
 	}
+	if by := f.removedBy(); len(by) != 2 || by[0] == "bitc-dead" || by[1] == "bitc-none" || !strings.HasPrefix(by[0], "cid") || !strings.HasPrefix(by[1], "cid") {
+		t.Fatalf("a container was removed by name, not by the id the listing gave: %v", by)
+	}
 	for _, n := range []string{"bitc-live", "bitc-junk", "bitc-other"} {
 		if !f.exists(n) {
 			t.Fatalf("%s was removed", n)
@@ -230,9 +248,10 @@ func TestSweepRemovesOrphansOfThisStateDirOnly(t *testing.T) {
 	}
 }
 
-// An unreadable pools/ dir says nothing about which tickets are held: every container is kept
-// (the sweep never removes on a guess, #24), whatever the error is but "it is not there".
-func TestSweepKeepsEverythingWhenTheTicketsCannotBeRead(t *testing.T) {
+// A sweep error aborts the sweep and deletes nothing: neither an unreadable pools/ dir (nothing
+// says which tickets are held, #24) nor a docker call that fails halfway lets it go on removing.
+// No pools dir at all is not an error: there are simply no tickets.
+func TestSweepAbortsOnAnErrorAndDeletesNothing(t *testing.T) {
 	f := newFake(t)
 	l, err := state.Open(filepath.Join(t.TempDir(), "state"))
 	if err != nil {
@@ -242,29 +261,101 @@ func TestSweepKeepsEverythingWhenTheTicketsCannotBeRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	const id = "0-0000000000000000001-aaaaaaaa"
-	f.plant("bitc-"+id, map[string]string{LabelPool: "p", LabelState: StateHash(l.Root), LabelTicket: id, LabelJob: "j"})
+	if err := os.MkdirAll(l.ContainersDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cid, env := filepath.Join(l.ContainersDir(), id+".cid"), filepath.Join(l.ContainersDir(), id+".env")
+	for _, p := range []string{cid, env} {
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.plant("bitc-a", map[string]string{LabelPool: "p", LabelState: StateHash(l.Root), LabelTicket: id, LabelJob: "j"})
 	var removed, kept []string
-	err = Sweep(context.Background(), f.path, l, f.env, false, func(x Found) { removed = append(removed, x.Name) }, func(x Found) { kept = append(kept, x.Name) })
-	if err != nil || len(removed) != 0 || len(kept) != 1 || !f.exists("bitc-"+id) {
+	rec := func(into *[]string) func(Found) { return func(x Found) { *into = append(*into, x.Name) } }
+	err = Sweep(context.Background(), f.path, l, f.env, false, rec(&removed), rec(&kept))
+	if err == nil || len(removed) != 0 || len(kept) != 0 || !f.exists("bitc-a") || len(f.removedBy()) != 0 {
 		t.Fatalf("err %v removed %v kept %v", err, removed, kept)
 	}
-	if got := TicketState(l, id); got != lock.StateUnknown {
-		t.Fatalf("TicketState = %v", got)
+	for _, p := range []string{cid, env} {
+		if _, err := os.Stat(p); err != nil {
+			t.Fatalf("an aborted sweep deleted %s", p)
+		}
 	}
-	// no pools dir at all is just "no tickets": the container is an orphan
+	// no pools dir: no tickets, so the container is an orphan and goes, with the dead run's files
 	if err := os.Remove(filepath.Join(l.Root, "pools")); err != nil {
 		t.Fatal(err)
 	}
-	if got := TicketState(l, id); got != lock.StateFree {
-		t.Fatalf("TicketState = %v", got)
+	// ... unless the docker call fails: that aborts too, after nothing was removed
+	f.plant("bitc-b", map[string]string{LabelPool: "p", LabelState: StateHash(l.Root), LabelTicket: "0-0000000000000000002-bbbbbbbb", LabelJob: "j"})
+	err = Sweep(context.Background(), f.path, l, append(f.env, "FAKE_DOCKER_FAIL=rm"), false, rec(&removed), rec(&kept))
+	if err == nil || len(removed) != 0 || !f.exists("bitc-a") || !f.exists("bitc-b") {
+		t.Fatalf("err %v removed %v", err, removed)
+	}
+	for _, p := range []string{cid, env} {
+		if _, err := os.Stat(p); err != nil {
+			t.Fatalf("a sweep that aborted deleted %s", p)
+		}
+	}
+	if err := Sweep(context.Background(), f.path, l, f.env, false, rec(&removed), rec(&kept)); err != nil || len(removed) != 2 || f.exists("bitc-a") {
+		t.Fatalf("err %v removed %v", err, removed)
+	}
+	for _, p := range []string{cid, env} {
+		if _, err := os.Stat(p); err == nil {
+			t.Fatalf("the dead run's %s is still there", p)
+		}
 	}
 }
 
-func TestGuardMainRemovesOnEOFAndNotAfterDone(t *testing.T) {
+func TestWriteEnvFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "t.env")
+	if err := os.WriteFile(path, []byte("stale"), 0o644); err != nil { // a leftover of the same name is replaced, and ends 0600
+		t.Fatal(err)
+	}
+	if err := WriteEnvFile(path, []string{"A=1", "B=two words", "C="}); err != nil {
+		t.Fatal(err)
+	}
+	st, err := os.Stat(path)
+	b, _ := os.ReadFile(path)
+	if err != nil || st.Mode().Perm() != 0o600 || string(b) != "A=1\nB=two words\nC=\n" {
+		t.Fatalf("%v %v %q", err, st.Mode(), b)
+	}
+	for _, bad := range []string{"A=x\ny", "A=x\x00y", "NOEQUALS", "=v"} {
+		if err := WriteEnvFile(filepath.Join(dir, "bad.env"), []string{bad}); err == nil {
+			t.Errorf("%q was accepted", bad)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "bad.env")); err == nil {
+			t.Errorf("%q left a file", bad)
+		}
+	}
+	if err := WriteEnvFile(filepath.Join(dir, "no", "dir.env"), []string{"A=1"}); err == nil {
+		t.Error("an unwritable path was accepted")
+	}
+	if got := ReadID(filepath.Join(dir, "none.cid")); got != "" {
+		t.Fatalf("%q", got)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "x.cid"), []byte("abc123\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := ReadID(filepath.Join(dir, "x.cid")); got != "abc123" {
+		t.Fatalf("%q", got)
+	}
+}
+
+func TestGuardMainRemovesByTheCidfileOnEOFAndNotAfterDone(t *testing.T) {
 	f := newFake(t)
 	t.Setenv("PATH", f.env[0][len("PATH="):])
 	t.Setenv("FAKE_DOCKER_DIR", f.state)
-	f.plant("bitc-g", nil)
+	dir := t.TempDir()
+	cid, env := filepath.Join(dir, "t.cid"), filepath.Join(dir, "t.env")
+	id := f.plant("bitc-g", nil)
+	f.plant("bitc-other", nil) // another run's: never touched
+	for p, body := range map[string]string{cid: id, env: "A=1\n"} {
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -272,7 +363,7 @@ func TestGuardMainRemovesOnEOFAndNotAfterDone(t *testing.T) {
 	if _, err := w.WriteString("noise\n" + doneLine); err != nil {
 		t.Fatal(err)
 	}
-	if code := GuardMain([]string{f.path, "bitc-g"}, r); code != 0 || !f.exists("bitc-g") {
+	if code := GuardMain([]string{f.path, cid, env}, r); code != 0 || !f.exists("bitc-g") {
 		t.Fatalf("a done guard touched the container (code %d)", code)
 	}
 	w.Close()
@@ -285,8 +376,29 @@ func TestGuardMainRemovesOnEOFAndNotAfterDone(t *testing.T) {
 		t.Fatal(err)
 	}
 	w.Close()
-	if code := GuardMain([]string{f.path, "bitc-g"}, r); code != 0 || f.exists("bitc-g") {
-		t.Fatalf("EOF without done left the container (code %d)", code)
+	if code := GuardMain([]string{f.path, cid, env}, r); code != 0 || f.exists("bitc-g") || !f.exists("bitc-other") {
+		t.Fatalf("EOF without done left the container, or removed another (code %d)", code)
+	}
+	if by := f.removedBy(); len(by) != 1 || by[0] != id {
+		t.Fatalf("removed by %v, want the id %s from the cidfile", by, id)
+	}
+	for _, p := range []string{cid, env} {
+		if _, err := os.Stat(p); err == nil {
+			t.Fatalf("the guard left %s", p)
+		}
+	}
+	r.Close()
+	// no cidfile (docker never created the container): nothing of docker's is removed, the env file is
+	if err := os.WriteFile(env, []byte("A=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r, w, _ = os.Pipe()
+	w.Close()
+	if code := GuardMain([]string{f.path, cid, env}, r); code != 0 || !f.exists("bitc-other") || len(f.removedBy()) != 1 {
+		t.Fatalf("a guard with no cidfile removed a container (code %d)", code)
+	}
+	if _, err := os.Stat(env); err == nil {
+		t.Fatal("the guard left the env file")
 	}
 	r.Close()
 	if code := GuardMain(nil, nil); code != 64 {
@@ -300,16 +412,24 @@ func TestGuardHelperProcess(t *testing.T) {
 		t.Skip("helper process")
 	}
 	args := os.Args
-	os.Exit(GuardMain(args[len(args)-2:], os.NewFile(LifelineFD, "lifeline")))
+	os.Exit(GuardMain(args[len(args)-3:], os.NewFile(LifelineFD, "lifeline")))
 }
 
 func TestStartGuard(t *testing.T) {
 	f := newFake(t)
 	env := append(append([]string{}, f.env...), "BITC_TEST_GUARD_HELPER=1")
 	exe, args := os.Args[0], []string{"-test.run=^TestGuardHelperProcess$"}
+	dir := t.TempDir()
+	cidOf := func(name, id string) (cid, envf string) {
+		cid, envf = filepath.Join(dir, name+".cid"), filepath.Join(dir, name+".env")
+		if err := os.WriteFile(cid, []byte(id), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return cid, envf
+	}
 
-	f.plant("bitc-done", nil)
-	g, err := StartGuard(exe, args, f.path, "bitc-done", env)
+	cid, envf := cidOf("done", f.plant("bitc-done", nil))
+	g, err := StartGuard(exe, args, f.path, cid, envf, env)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,8 +442,8 @@ func TestStartGuard(t *testing.T) {
 		t.Fatal("a guard that was told done removed the container")
 	}
 	// a bitc that dies closes the pipe without saying done: the guard removes the container
-	f.plant("bitc-died", nil)
-	g, err = StartGuard(exe, args, f.path, "bitc-died", env)
+	cid, envf = cidOf("died", f.plant("bitc-died", nil))
+	g, err = StartGuard(exe, args, f.path, cid, envf, env)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +454,7 @@ func TestStartGuard(t *testing.T) {
 	if f.exists("bitc-died") {
 		t.Fatal("the guard did not remove the container of a bitc that died")
 	}
-	if _, err := StartGuard("/nonexistent/bitc", args, f.path, "x", env); err == nil {
+	if _, err := StartGuard("/nonexistent/bitc", args, f.path, cid, envf, env); err == nil {
 		t.Fatal("a guard that cannot start is an error")
 	}
 }
