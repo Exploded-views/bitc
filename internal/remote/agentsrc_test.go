@@ -3,6 +3,7 @@ package remote
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -65,7 +66,8 @@ func TestReleaseAgentOnADarwinClientIsHashChecked(t *testing.T) {
 	core := &config.Provider{Type: "ssh", Agent: config.Agent{Source: "release"}}
 	e := &config.Effective{Test: &config.Test{AccountingDir: filepath.Join(t.TempDir(), "acct")}}
 	_, _, err := ResolveAgentFile(e, core, "arm64")
-	if _, ok := err.(*provider.ErrIneligible); !ok || !strings.Contains(err.Error(), "does not match checksums.txt") {
+	var inel *provider.ErrIneligible
+	if !errors.As(err, &inel) || !strings.Contains(err.Error(), "does not match checksums.txt") {
 		t.Fatalf("got %v", err)
 	}
 }
