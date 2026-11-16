@@ -71,21 +71,20 @@ func TestExperimentalRemoteDarwinRefusalTakesPrecedence(t *testing.T) {
 	defer func(g string) { platformGOOS = g }(platformGOOS)
 	platformGOOS = "darwin"
 	_, err := newRawFixture(t, remoteHost, "").load()
-	expect78(t, err, "providers.runpod: a remote provider runs on Linux only (this is a darwin build)")
+	expect78(t, err, "providers.runpod: RunPod runs on Linux only for now (this is a darwin build)")
 	if strings.Contains(err.Error(), "experimental") {
 		t.Fatalf("darwin: %v", err)
 	}
 }
 
-// On darwin the platform refusal of every provider stands alone: no sprites line either. (The
-// sprites type is not registered in this package's tests, so the darwin line itself is checked
-// by TestExperimentalRemoteDarwinRefusalTakesPrecedence with runpod.)
-func TestSpritesRefusalDarwinPrecedence(t *testing.T) {
+// On darwin sprites gets the same refusal as on Linux (#6), then the experimental line, and never
+// the platform line.
+func TestSpritesRefusalDarwinIsLinuxs(t *testing.T) {
 	defer func(g string) { platformGOOS = g }(platformGOOS)
 	platformGOOS = "darwin"
 	_, err := newRawFixture(t, "version = 1\n[pools]\nheavy = { providers = [\"sprites\", \"local\"] }\n[providers.sprites]\norg = \"o\"\ndaily_usd = 1\n", "").load()
-	expect78(t, err)
-	if strings.Contains(err.Error(), "sprites provider is refused") || strings.Contains(err.Error(), "experimental") {
+	expect78(t, err, "bitc: "+SpritesRefusal, ExperimentalRemoteRefusal)
+	if strings.Contains(err.Error(), "runs on Linux only") {
 		t.Fatalf("darwin: %v", err)
 	}
 }
@@ -122,7 +121,7 @@ func TestPlatformRefusalReadsNoProviderMaterial(t *testing.T) {
 	host := "version = 1\n[[repos]]\nmatch = \"**\"\ndeploy_key_file = \"" + key + "\"\n[pools]\nheavy = { providers = [\"runpod\", \"local\"] }\n" +
 		"[providers.runpod]\napi_key_file = \"" + token + "\"\ndaily_usd = 1\nimage = \"x\"\nsizes = {}\n"
 	_, err := newRawFixture(t, host, "").load()
-	expect78(t, err, "providers.runpod: a remote provider runs on Linux only (this is a darwin build)")
+	expect78(t, err, "providers.runpod: RunPod runs on Linux only for now (this is a darwin build)")
 	if strings.Contains(err.Error(), token) || strings.Contains(err.Error(), key) || strings.Contains(err.Error(), "not local or a configured") {
 		t.Fatalf("darwin read or checked provider material: %v", err)
 	}
