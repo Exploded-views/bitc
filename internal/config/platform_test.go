@@ -139,3 +139,17 @@ func TestPoolProviderNamesOffLinux(t *testing.T) {
 		t.Errorf("want exactly one runpod problem, got %d:\n%v", n, err)
 	}
 }
+
+// A plugin provider on darwin is gated by [host] experimental_remote like on Linux (the flag is
+// not skipped off Linux): without it the load is 78 with the same text, and no platform line.
+func TestPluginProviderOnDarwinNeedsExperimentalRemote(t *testing.T) {
+	defer func(g string) { platformGOOS = g }(platformGOOS)
+	platformGOOS = "darwin"
+	pl := newPlug(t, "modal")
+	_, err := newRawFixture(t, pluginHost("modal", pl, "", ""), "").load()
+	expect78(t, err, "bitc: "+ExperimentalRemoteRefusal)
+	if strings.Contains(err.Error(), "runs on Linux only") {
+		t.Fatalf("a plugin was refused for the platform: %v", err)
+	}
+	mustLoad(t, newFixture(t, pluginHost("modal", pl, "", ""), "")) // newFixture adds the flag
+}

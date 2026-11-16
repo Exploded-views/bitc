@@ -50,7 +50,7 @@ toolchain.
 macOS builds run **local pools, exec plugins and the `ssh` provider as a client**: `run`, `status`,
 `wait`, `logs` and `cancel` over `flock` pools, plus detached jobs, groups, priority lanes, nested
 holds, `doctor` and `config`. A `[providers.<type>]` table with a `plugin` pin loads and runs, and
-so does `[providers.ssh]` (still behind `[host] experimental_remote = true`, as on Linux): the Mac
+so does `[providers.ssh]` (both still behind `[host] experimental_remote = true`, as on Linux): the Mac
 sends jobs to your Linux ssh host, and `bitc sweep` and `bitc doctor --remote` work from it.
 Memory floors (a pool's `memory` key) and the `runpod` table are refused with exit 78 (RunPod runs
 on Linux only for now), and `sprites` is refused as on Linux until its egress fix
