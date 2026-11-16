@@ -168,8 +168,9 @@ func CheckPlugins(ctx context.Context, e *config.Effective, stderr io.Writer) er
 	sort.Strings(types)
 	for _, typ := range types {
 		core := e.Providers[typ]
-		// a plugin that no longer passes the load-time check (a quarantine added since, a changed
-		// mode) is a configuration error with its fix, not a plugin that "cannot start"
+		// On every OS: a plugin that no longer passes the load-time check for a reason of its own
+		// (a quarantine added since, not executable) is a configuration error with its fix, not a
+		// plugin that "cannot start". An insecure path or a setuid bit still fails at spawn (69).
 		var pe *pin.Error
 		if err := pin.Check(core.Plugin.Path); errors.As(err, &pe) && pe.Kind == pin.KindReason && pe.Detail != "missing" {
 			return exit.Configf("%s: providers.%s.plugin.path: %s", e.HostFile, typ, pe.Detail)

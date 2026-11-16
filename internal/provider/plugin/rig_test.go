@@ -176,6 +176,7 @@ type diagT struct {
 	Secrets    string   `json:"secrets"`
 	Cmdline    string   `json:"cmdline"`
 	Exe        string   `json:"exe"`
+	Fd4AtStart bool     `json:"fd4atstart"`
 }
 
 func (r *rig) diag() diagT {

@@ -28,9 +28,9 @@ func (p *Provider) shimLaunch(f, secR *os.File, d dirs) (shimSpec, error) {
 	local := func(why string) error { return &provider.ErrUnavailable{Why: why, Local: true} }
 	copyPath, err := privateCopy(f, filepath.Join(d.state, "bin"), p.core.Plugin.SHA256)
 	if err != nil {
-		var ch *pin.Changed
-		if errors.As(err, &ch) {
-			return shimSpec{}, local(ch.Error())
+		var bad *badCopy
+		if errors.As(err, &bad) {
+			return shimSpec{}, local(bad.Error())
 		}
 		return shimSpec{}, local("plugin " + p.core.Plugin.Path + ": " + err.Error())
 	}
@@ -48,7 +48,8 @@ func (p *Provider) shimLaunch(f, secR *os.File, d dirs) (shimSpec, error) {
 
 // privateCopy returns <dir>/<sha256>, a 0500 copy of the open, hashed plugin f in a 0700
 // directory. The name is the hash of the bytes, so an existing file is the same plugin and is
-// never rewritten; one that no longer hashes to its name was tampered with and is refused.
+// never rewritten; one that no longer hashes to its name was tampered with or damaged and is
+// refused with an error that names it and says to remove it (bitc never deletes it itself).
 func privateCopy(f *os.File, dir, sum string) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
@@ -73,6 +74,10 @@ func privateCopy(f *os.File, dir, sum string) (string, error) {
 		tmp.Close()
 		return "", err
 	}
+	if err := tmp.Sync(); err != nil { // the data is on disk before the name is visible
+		tmp.Close()
+		return "", err
+	}
 	if err := tmp.Close(); err != nil {
 		return "", err
 	}
@@ -83,6 +88,13 @@ func privateCopy(f *os.File, dir, sum string) (string, error) {
 	return dst, verifyCopy(dst, sum)
 }
 
+// badCopy is a private copy that is not the plain 0500 file of the pinned bytes it is named for.
+type badCopy struct{ Path, Why string }
+
+func (b *badCopy) Error() string {
+	return fmt.Sprintf("the private copy %s changed (%s); remove it and retry", b.Path, b.Why)
+}
+
 // verifyCopy refuses a copy that is not a plain 0500 file of the pinned bytes.
 func verifyCopy(path, sum string) error {
 	st, err := os.Lstat(path)
@@ -90,14 +102,14 @@ func verifyCopy(path, sum string) error {
 		return err
 	}
 	if !st.Mode().IsRegular() || st.Mode().Perm() != 0o500 || st.Mode()&(os.ModeSetuid|os.ModeSetgid) != 0 {
-		return fmt.Errorf("the private copy %s is not a plain mode 0500 file", path)
+		return &badCopy{path, "not a plain mode 0500 file"}
 	}
 	got, err := pin.SumFile(path)
 	if err != nil {
 		return err
 	}
 	if got != sum {
-		return &pin.Changed{Path: path, Want: sum, Got: got}
+		return &badCopy{path, fmt.Sprintf("sha256 %s, now %s", pin.Short(sum), pin.Short(got))}
 	}
 	return nil
 }

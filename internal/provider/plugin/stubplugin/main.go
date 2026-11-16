@@ -166,6 +166,7 @@ func diag() {
 	fds := openFds()
 	sort.Strings(fds)
 	d["fds"] = fds
+	d["fd4atstart"] = fd4AtStart
 	if os.Getenv("BITC_SECRETS_FD") == "3" {
 		if b, err := io.ReadAll(os.NewFile(3, "secrets")); err == nil {
 			d["secrets"] = string(b)

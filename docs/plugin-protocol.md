@@ -38,7 +38,7 @@ started with the `job` object and to carry its logs and files back.
 in its own process group, killed if bitc dies. stdin and stdout are pipes; stderr goes to a 64 KiB
 ring buffer. bitc starts the plugin through its own `__plugin-exec` shim, which sets
 `PR_SET_NO_NEW_PRIVS` and execs the exact file descriptor that was hashed. The plugin sees nothing
-of this except that it can never gain privileges.
+of this on Linux, except that it can never gain privileges.
 
 On macOS there is no `PR_SET_NO_NEW_PRIVS` and no `execveat`, so the shim stays the plugin's
 parent: it runs a private copy of the hashed bytes (mode 0500, no setuid or setgid bit, named by
@@ -49,6 +49,14 @@ the start, forwards `SIGTERM`, and exits with the plugin's status. If bitc dies,
 Mach-O files are accepted in place of ELF. **Known limit:** on macOS a plugin's process cannot be
 stopped from gaining privileges through setuid or setgid programs, as Linux does with
 `no_new_privs`; only run plugins you trust as you would any program run as your user.
+
+**What a plugin sees on macOS.** The plugin's parent is the shim, not bitc (`getppid()` is the
+shim, which is also the leader of the plugin's process group). `argv[0]` is the pinned path, but
+the executable itself is the private copy: `os.Executable`, `_NSGetExecutablePath` and
+`@executable_path` resolve to `<state>/plugins/<type>/bin/<sha256>`, so files next to the pinned
+path are not next to the running binary. Locate resources from `argv[0]` or `BITC_PLUGIN_STATE`,
+and ship a single self-contained Mach-O. Descriptors 0 to 3 are all the plugin has; fd 4 (bitc's
+lifeline) is closed in the plugin.
 
 **Environment**, built from empty:
 

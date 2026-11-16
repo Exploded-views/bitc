@@ -19,7 +19,8 @@ const (
 // darwinSetuidPolicy is the one seam for the darwin no_new_privs decision. The default is accept.
 var darwinSetuidPolicy = darwinAccept
 
-// setuidPolicy refuses to start any plugin under darwinRefuse.
+// setuidPolicy refuses to start any plugin under darwinRefuse. darwinSandbox behaves as
+// darwinAccept until it is implemented.
 func (p *Provider) setuidPolicy() error {
 	if darwinSetuidPolicy == darwinRefuse {
 		return p.config("plugins are refused on macOS: it cannot stop a plugin from gaining privileges through setuid programs")

@@ -27,9 +27,10 @@ conformance suite; any language or repo; config validated before any side effect
 (`flock(2)`); safe remote overflow (account-wide daily cap per provider account, leak-proof, no
 secrets in argv or logs);
 agent-grade contracts; small. **Non-goals (v1):** CI, sharding, build caching; multi-host
-scheduling; daemon or UI; Windows; macOS beyond a client build (local pools only: memory
-admission, remote providers, the agent, the parent-death signal, the inotify wake-up and the
-`/proc/locks` view stay Linux-only; issue #3); cgroup limits, PSI admission;
+scheduling; daemon or UI; Windows; macOS beyond a client build (local pools and exec plugins: memory
+admission, the built-in remote providers, the agent, the parent-death signal for local commands, the inotify wake-up and the
+`/proc/locks` view stay Linux-only; issue #3; a macOS plugin cannot be stopped from gaining
+privileges through setuid or setgid programs, 8.5.1); cgroup limits, PSI admission;
 GPU pods; job DAGs or retries (callers retry on 75); sandboxing the account from itself (10).
 
 ## 2. Concepts
@@ -961,7 +962,9 @@ region = "eu"
 1. `plugin` is a **host** key. In a repo file it is 78, like every `[providers.*]` key (5.3).
 2. bitc never looks the plugin up on `PATH`. The basename of `path` must be
    `bitc-provider-<type>`.
-3. **At load:** open `path` with `O_NOFOLLOW`. It must be a regular ELF file, executable, owned by
+3. **At load:** open `path` with `O_NOFOLLOW`. It must be a regular ELF file (on macOS a thin or
+   universal Mach-O file, and it must not carry `com.apple.quarantine`; the refusal says
+   `xattr -d com.apple.quarantine <path>`), executable, owned by
    the user or root and not group- or world-writable, and so must every parent directory. It must
    have no setuid or setgid bit and no `security.capability` extended attribute (file
    capabilities), because either would run it above the account. Its sha256 must equal `sha256`.
@@ -977,14 +980,29 @@ region = "eu"
    mismatch here (the file changed since load) is `ErrUnavailable{Local}`:
    `bitc: <type>: plugin <path> changed since load (sha256 <want12>, now <got12>)`. A mode or
    xattr change is `bitc: <type>: plugin <path>: insecure: setuid/setgid/capabilities`.
+   **On macOS** there is no `PR_SET_NO_NEW_PRIVS` and no `execveat`, so the pin differs. bitc
+   copies the hashed bytes to a private file `<state>/plugins/<type>/bin/<sha256>` (mode 0500, no
+   setuid or setgid bit, in a 0700 directory; an existing copy is never rewritten, and one that no
+   longer hashes to its name is refused with an error that names it and says to remove it). It
+   starts `bitc __plugin-exec <path> <copy> <sha256>` through `os.Executable`, with the secrets
+   pipe as fd 3 and the read end of a lifeline pipe as fd 4. The shim re-hashes the copy just
+   before it starts it by path (a same-user race window, weaker than the Linux fd-exec), runs it
+   with argv[0] the pinned path as its child (so the plugin's parent is the shim and its
+   executable path is the copy), forwards `SIGTERM`, `SIGINT` and `SIGHUP`, and exits with the
+   plugin's status. **No-new-privs is not available: a macOS plugin can run setuid and setgid
+   programs that exist on the system, and the plugin must be trusted as any program run as the
+   user. This is accepted, known behaviour** (10).
 5. Scripts are not plugins, because a `#!` interpreter breaks the fd-exec pin. A plugin written
-   in an interpreted language ships as a single ELF (for example a PyInstaller or Deno compile).
+   in an interpreted language ships as a single ELF (a single Mach-O on macOS; for example a
+   PyInstaller or Deno compile).
 
 #### 8.5.2 Process, environment and secrets
 
 1. **Spawn** lazily, at the first call the walk, `sweep`, `status`, `doctor` or `config check`
    makes for that type. One process per bitc process and type, in its own process group, with
-   `Pdeathsig = SIGKILL` (6.4), stdin and stdout pipes, and stderr to a 64 KiB ring buffer.
+   `Pdeathsig = SIGKILL` (6.4), stdin and stdout pipes, and stderr to a 64 KiB ring buffer. macOS
+   has no `Pdeathsig`: the shim (8.5.1 item 4) reads bitc's lifeline pipe, and when that closes,
+   even by `SIGKILL` of bitc, it kills the plugin's whole process group.
 2. **Environment** built from empty: `PATH=/usr/sbin:/usr/bin:/sbin:/bin`, `HOME`, `LANG=C.UTF-8`,
    `TMPDIR`, `BITC_PLUGIN_STATE`, `BITC_PLUGIN_SHARED`, `BITC_PLUGIN_PROTOCOL=1`,
    `BITC_SECRETS_FD=3`, plus each `env_pass` name the caller has set. `env_pass` entries follow the

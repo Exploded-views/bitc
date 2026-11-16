@@ -8,7 +8,11 @@ A provider decides where a job runs. There are two ways to add one:
   reference and [`../examples/plugins/bitc-provider-fakex/`](../examples/plugins/bitc-provider-fakex/)
   as a working example. Plugins run on Linux and macOS; on macOS a plugin's process cannot be
   stopped from gaining privileges through setuid or setgid programs, as Linux does with
-  `no_new_privs`, so only run plugins you trust as you would any program run as your user.
+  `no_new_privs`, so only run plugins you trust as you would any program run as your user. Also on macOS: the
+  plugin's parent is a shim, not bitc, and `os.Executable` and `@executable_path` are a private
+  copy of your binary, not the pinned path, so locate resources from `argv[0]` or
+  `BITC_PLUGIN_STATE` and ship a single self-contained Mach-O
+  ([`plugin-protocol.md`](plugin-protocol.md#2-process-environment-and-secrets)).
 - a **built-in provider**: a Go package in this repository (`runpod`, `sprites` and the in-process
   `fake` are built this way). This page covers that path. Both paths meet the same interface and
   the same conformance suite.

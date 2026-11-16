@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -83,7 +84,8 @@ func TestDarwinCopyIsNotRewrittenBySecondSpawn(t *testing.T) {
 	}
 }
 
-// A binary swapped in after hashing must not run: the shim re-hashes the copy just before exec.
+// A bad copy already in place is refused by bitc before it starts anything; the error names the
+// copy and says to remove it.
 func TestDarwinShimRefusesACopySwappedAfterHashing(t *testing.T) {
 	r := newRig(t)
 	marker := filepath.Join(r.dir, "tampered-ran")
@@ -94,12 +96,39 @@ func TestDarwinShimRefusesACopySwappedAfterHashing(t *testing.T) {
 	if err := os.WriteFile(r.copyPath(), []byte(script), 0o500); err != nil {
 		t.Fatal(err)
 	}
-	wantUnavailableLocal(t, r.startErr(), "changed")
+	err := r.startErr()
+	wantUnavailableLocal(t, err, "changed")
+	if !strings.Contains(err.Error(), r.copyPath()) || !strings.Contains(err.Error(), "remove it") {
+		t.Errorf("error %q does not name the copy and say to remove it", err)
+	}
 	if _, err := os.Stat(marker); err == nil {
 		t.Fatal("the swapped copy ran")
 	}
 	if r.exists("diag.json") {
 		t.Error("a plugin ran from a swapped copy")
+	}
+}
+
+// The shim itself re-hashes the copy just before it starts it: run directly with a copy that does
+// not match, it exits 69 and the copy never runs (the bitc-side check is bypassed here).
+func TestDarwinShimItselfRefusesACopyThatDoesNotMatch(t *testing.T) {
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "ran")
+	cp := filepath.Join(dir, "copy")
+	if err := os.WriteFile(cp, []byte("#!/bin/sh\ntouch "+marker+"\n"), 0o500); err != nil {
+		t.Fatal(err)
+	}
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command(self, "__plugin-exec", "/pinned/bitc-provider-x", cp, strings.Repeat("ab", 32)).CombinedOutput()
+	var ee *exec.ExitError
+	if !errors.As(err, &ee) || ee.ExitCode() != 69 || !strings.Contains(string(out), "changed") {
+		t.Fatalf("shim: %v, output %q, want exit 69 naming a changed copy", err, out)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("the mismatched copy ran")
 	}
 }
 
@@ -139,8 +168,8 @@ func TestDarwinShimPassesOnThePluginsExitStatus(t *testing.T) {
 	wantUnavailableLocal(t, r.startErr(), "exit status 3")
 }
 
-// A plugin that carries com.apple.quarantine (Gatekeeper would stop it) is refused with 78 and a
-// message on how to clear it.
+// A plugin that carries com.apple.quarantine (Gatekeeper would stop it) is refused at spawn
+// (Unavailable, local); the config check below turns it into 78 with how to clear it.
 func TestDarwinQuarantinedPluginIsRefusedAtSpawn(t *testing.T) {
 	r := newRig(t)
 	quarantine(t, r.bin)

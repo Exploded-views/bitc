@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -80,6 +81,11 @@ func TestSpawnRunsThePinnedPluginInItsOwnProcessGroupWithoutLeakedFds(t *testing
 		if strings.HasSuffix(fd, "bitc-provider-stub") {
 			t.Errorf("the pin fd leaked into the plugin: %q", fd)
 		}
+	}
+	// fd 4 is bitc's lifeline on darwin: the plugin never has it. Not asserted on Linux, where the
+	// Go runtime may itself own fd 4 (epoll) at start; the pin fd is checked by path above.
+	if runtime.GOOS == "darwin" && d.Fd4AtStart {
+		t.Error("fd 4 was open in the plugin at start (the shim's own descriptor leaked)")
 	}
 }
 
