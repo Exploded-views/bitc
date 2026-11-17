@@ -5,19 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.5] - 2026-11-16
 
 ### Added
 
 - Exec plugins run on macOS. `[providers.<type>]` with a `plugin` pin now loads on a macOS client
   (the built-in `ssh`, `runpod` and `sprites` stay refused there). bitc runs a private, 0500,
   content-addressed copy of the pinned plugin through a `__plugin-exec` shim that stays the
-  plugin's parent, forwards `SIGTERM` and takes the plugin's process group down if bitc is killed.
-  Thin and universal Mach-O plugins are accepted, and one that carries `com.apple.quarantine` is
-  refused with the `xattr -d com.apple.quarantine` fix. **Known limit:** macOS has no
-  `no_new_privs`, so a plugin's process cannot be stopped from gaining privileges through setuid
-  or setgid programs as it is on Linux; only run plugins you trust as you would any program run
-  as your user ([#26](https://github.com/Exploded-views/bitc/issues/26)).
+  plugin's parent, forwards `SIGTERM`, `SIGINT` and `SIGHUP`, and takes the plugin's process group
+  down if bitc is killed. Thin and universal Mach-O plugins are accepted, and one that carries
+  `com.apple.quarantine` is refused with the `xattr -d com.apple.quarantine` fix. **Known limit:**
+  macOS has no `no_new_privs`, so a plugin's process cannot be stopped from gaining privileges
+  through setuid or setgid programs as it is on Linux; only run plugins you trust as you would any
+  program run as your user ([#26](https://github.com/Exploded-views/bitc/issues/26)).
+
+### Changed
+
+- `golang.org/x/sys` is updated from 0.49.0 to 0.50.0.
 
 ### Fixed
 
@@ -25,15 +29,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `bitc status`, `bitc doctor` and `bitc sweep --dry-run` no longer take a brief try-lock to
   read pool slot holders, which could make a free slot look busy to a concurrent admission.
   They take no lock and show such a slot as `unknown`, with its units as on any holder line
-  (`"unknown": true` in `status --json`,
-  documented in `docs/status.schema.json`); `doctor` prints one `warn locks:` line naming
-  `/proc/locks`, and `sweep --dry-run` never counts an unknown slot as reclaimable
+  (`"unknown": true` in `status --json`, documented in `docs/status.schema.json`); `doctor`
+  prints one `warn locks:` line naming `/proc/locks`, and `sweep --dry-run` never counts an
+  unknown slot as reclaimable
   ([#24](https://github.com/Exploded-views/bitc/issues/24)).
 
 ### Security
 
 - Builds and CI use Go 1.27.4, which fixes the standard-library `net/http` advisory
   GO-2026-6859 that `govulncheck` reports in Go 1.27.3.
+
+### Known issues
+
+- macOS builds still refuse the built-in remote providers (`ssh`, `runpod` and `sprites`, exit
+  78); only exec plugins run there. macOS as a client to the built-in remote providers
+  ([#4](https://github.com/Exploded-views/bitc/issues/4)) is now planned for 0.1.6.
+- On macOS, bitc never removes the private plugin copies under `<state>/plugins/<type>/bin/`, so
+  a copy of each plugin version bitc has run stays there until you delete it. A bitc that is
+  already running when its binary is replaced in place starts the new binary as its plugin shim;
+  restart long-running bitc processes after an upgrade.
+- Sprites stays refused until the catch-all egress deny lands
+  ([#6](https://github.com/Exploded-views/bitc/issues/6)).
+- A run from a working directory in the high priority lane (`priority.high_cwd` or
+  `priority.high_cwd_contains`) can still starve normal runs in the same pool while high runs keep
+  overlapping; aging is now planned for 0.1.6.
 
 ## [0.1.4] - 2026-11-04
 
