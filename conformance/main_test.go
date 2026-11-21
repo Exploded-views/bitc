@@ -58,6 +58,7 @@ func TestMain(m *testing.M) {
 		code := m.Run()
 		os.RemoveAll(stubDir)
 		os.RemoveAll(sshDir)
+		harness.CleanupFakeDocker()
 		os.Exit(code)
 	}
 	dir, err := os.MkdirTemp("", "bitc-conformance-")
@@ -76,6 +77,7 @@ func TestMain(m *testing.M) {
 	os.RemoveAll(dir)
 	os.RemoveAll(stubDir)
 	os.RemoveAll(sshDir)
+	harness.CleanupFakeDocker()
 	os.Exit(code)
 }
 

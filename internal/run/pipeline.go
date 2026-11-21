@@ -312,6 +312,15 @@ func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Wri
 			return failed(err)
 		}
 	}
+	var rt string // the container runtime's CLI (pools.<p>.container)
+	if pool.Container != nil {
+		r, err := containerRuntime(pool, inv.Env)
+		if err != nil {
+			return failed(err)
+		}
+		rt = r
+		reapOrphans(ctx, p, rt, inv.Env, stderr, hist)
+	}
 	hold, err := admit.Acquire(ctx, admit.Request{ // 8
 		Layout: p.Layout, Eff: eff, Pool: pool, Argv: p.Args.Argv, Job: p.Job,
 		CallerHold: lookup(inv.Env, "BITC_HOLD"), CallerEnv: inv.Env, Stderr: stderr,
@@ -331,37 +340,67 @@ func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Wri
 	if err != nil {
 		return failed(err)
 	}
+	var hookKV []KV
 	if pool.Hooks.Env != nil { // 9
 		h := scaled(eff, []config.Hook{*pool.Hooks.Env})[0]
 		kv, err := RunHook(ctx, HookCall{Kind: EnvHook, Hook: h, Pool: pool.Name, Vars: vars, Env: env, Worktree: eff.Worktree, Stderr: stderr})
 		if err != nil {
 			return failed(err)
 		}
+		hookKV = kv
 		env = ApplyHookEnv(env, kv, BitcVars(in))
 	}
-	argv, err := WrapArgv(eff, pool, vars, p.Args.Argv) // 10
+	var argv []string // 10: the command, wrapped, or the docker run that carries it
+	var cr *containerRun
+	if pool.Container != nil {
+		cr, argv, err = newContainerRun(inv, p, hold, rt, in, hookKV, inv.Env, stderr)
+	} else {
+		argv, err = WrapArgv(eff, pool, vars, p.Args.Argv)
+	}
 	if err != nil {
 		return failed(err)
 	}
 	if out, ok := interrupted(); ok {
+		if cr != nil {
+			cr.finish()
+		}
 		signal.Stop(gap)
 		return out
+	}
+	var onKill func()
+	execEnv := env
+	if cr != nil {
+		// the docker CLI runs with the environment bitc was given, as its removals, its guard and
+		// the sweep do, so they all reach one daemon: the pool's env and the env hook's output are
+		// the container's (the env file), never docker's
+		onKill, execEnv = cr.kill, cr.env
 	}
 	waitMS := hold.WaitMS
 	hist(state.Event{Event: "start", Slot: hold.Slot, Units: hold.Counts, Nested: hold.Nested, WaitMS: &waitMS})
 	t0 := time.Now()
 	res, err := Exec(parent, ExecSpec{
-		Argv: argv, Env: env, Dir: inv.Cwd, Stdin: inv.Stdin, Stdout: inv.Stdout, Stderr: inv.Stderr,
+		Argv: argv, Env: execEnv, Dir: inv.Cwd, Stdin: inv.Stdin, Stdout: inv.Stdout, Stderr: inv.Stderr,
 		OnSignal: pool.OnSignal, Grace: eff.Scale(eff.Host.Grace), Timeout: eff.Scale(pool.Timeout), MaxSignalWait: eff.Scale(eff.Host.MaxSignalWait),
 		Started:  func(pid, pgid int, start uint64) { _ = hold.SetProcess(pid, pgid, start) },
 		Pending:  gap,          // Exec stops it once its own handler is registered
 		NoHangup: inv.Detached, // spec 7: a hangup neither escalates nor reaches the command
+		OnKill:   onKill,
 	})
+	created := true
+	if cr != nil {
+		created = cr.finish() // the container is removed whatever happened to the CLI
+	}
 	if err != nil {
 		return failed(err)
 	}
 	if res.StartErr != nil {
 		fmt.Fprintf(stderr, "bitc: %s: %v\n", argv[0], res.StartErr)
+	}
+	// docker run exits 125 for its own failure; with no container created the command never ran
+	dockerFailed := cr != nil && !created && res.StartErr == nil && res.Code == 125 && !res.TimedOut && res.Interrupted == 0
+	if dockerFailed {
+		fmt.Fprintf(stderr, "bitc: %s: %s could not start the container (it exited 125 before the command ran; its message is above)\n", pool.Name, pool.Container.Runtime)
+		res.Code = exit.Unavailable
 	}
 	if res.TimedOut { // the scale applies to the timer only: the line names the configured limit
 		fmt.Fprintf(stderr, "bitc: %s: time limit %s reached; terminated\n", pool.Name, config.FormatDuration(pool.Timeout))
@@ -370,6 +409,8 @@ func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Wri
 	code := res.Code
 	outcome := "ok"
 	switch {
+	case dockerFailed:
+		outcome = "unavailable"
 	case res.Interrupted != 0 && code == 128+int(res.Interrupted):
 		outcome = "interrupted"
 	case res.TimedOut:
@@ -394,7 +435,7 @@ func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Wri
 		}
 	}
 	origin := "command"
-	if outcome == "interrupted" || res.TimedOut {
+	if outcome == "interrupted" || res.TimedOut || dockerFailed {
 		origin = "bitc"
 	}
 	return Outcome{Code: code, Result: Result{Origin: origin, Outcome: outcome, ExitCode: code, Pool: pool.Name,

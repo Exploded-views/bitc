@@ -63,7 +63,8 @@ Global flags before the subcommand: `--config <file>`, `--state-dir <dir>`, `-v`
 | `bitc config check \| explain [key] \| hook-env <pool> --slot N` | validate; show each effective value and its source; run an `env` hook without a lock and print the parse |
 | `bitc version [--json]` | version, commit, schema versions, `release` stamp |
 
-Hidden: `bitc __supervise <job>` (detached supervisor), `bitc __agent` (remote side, 8.4).
+Hidden: `bitc __supervise <job>` (detached supervisor), `bitc __agent` (remote side, 8.4),
+`bitc __container-guard <runtime> <name>` (removes a container when bitc is killed, 6.4).
 
 ### 3.1 `run`
 
@@ -156,7 +157,7 @@ record (a job a legacy launcher started, 12): legacy J8/J9 apply, so the last li
 | command's own (`128+N` if killed by signal N) | the command ran, locally or remotely | treat as the real result |
 | 64 `EX_USAGE` | bad arguments or malformed `BITC_*` value; unknown/invalid pool; group used as a pool; refused by policy; `--provider` not allowed; uncreatable detached log | fix the call |
 | 66 `EX_NOINPUT` | `wait`/`logs`/`cancel`: no such job | check the name |
-| 69 `EX_UNAVAILABLE` | not Linux or macOS; a Linux-only feature in the macOS build; hook could not start, timed out, printed unparsable output or exited with an unlisted code; no provider left and the last was unusable (a remote-only pool's job not eligible for remote, 8.2); a remote job's own setup step failed by itself (15.9); `cancel` cannot read or update the job's `status.json`; a detached supervisor cannot mark its job running; internal error (a bitc bug) | do not retry blindly |
+| 69 `EX_UNAVAILABLE` | not Linux or macOS; a Linux-only feature in the macOS build; hook could not start, timed out, printed unparsable output or exited with an unlisted code; a container pool's runtime CLI is not on PATH, or docker failed before the container existed (6.4); no provider left and the last was unusable (a remote-only pool's job not eligible for remote, 8.2); a remote job's own setup step failed by itself (15.9); `cancel` cannot read or update the job's `status.json`; a detached supervisor cannot mark its job running; internal error (a bitc bug) | do not retry blindly |
 | 75 `EX_TEMPFAIL` | starved; hook exited 75; remote infrastructure failure after start; no provider left after a transient failure | wait and retry |
 | 78 `EX_CONFIG` | invalid config file; host-only key in a repo file; `min_version` unmet; insecure, NFS (on Linux also CIFS, SMB2, SMB, 9p, AFS and any FUSE mount, local FUSE included; on macOS also smbfs, afpfs, webdav and any non-local mount) or newer-schema state or accounting dirs; a pool's `memory` or a `[providers.*]` table in the macOS build | fix config |
 | 124 | `wait`: job still running; or a local run ended by its time limit (`pools.<p>.timeout`, `run --timeout`, 6.4) | `wait`: call it again; a run: the command took too long, raise the limit or fix the command |
@@ -245,6 +246,7 @@ only (repo: 78). **narrowable**: others may only narrow it (widening: 78 in a fi
 | `pools.<p>.groups_max.<g>` | host | `--units <g>=<k>` may not ask for more; `<g>` must be in the pool's `groups`, the value `1..groups.<g>.units` (else 78 naming the key) | — |
 | `[defaults] wait`, `pools.<p>.wait` | host, narrow=min | repo `wait`, `--wait` | minimum |
 | `pools.<p>.timeout` (a duration above 0; unset: no limit) | host, narrow=min | `--timeout` (a local run only) | minimum, unset counting as infinite |
+| `pools.<p>.container` (`image`, `runtime`, `mounts`, `cpus`, `memory`; 6.4) | host | — (a repo file: 78) | — |
 | `pools.<p>.providers` | host, narrow=exclude | repo `providers_exclude`, `BITC_PROVIDER=local`, `--local`, `--provider` | host order; removals only |
 | `pools.<p>.remote_limits.timeout` | host, narrow=min | repo `[pools.<p>.remote] timeout` | minimum |
 | `[remote_limits]`, `pools.<p>.remote_limits.size`, `[providers.*]`, `[compat]`, `[[repos]]`, `[test]` | host | — | — |
@@ -288,6 +290,7 @@ and a test fails when a tag, the reference and this table disagree.
 | `host.experimental_remote` (remote providers' opt-in, 5.8) | `false` | host |
 | `defaults.slots` / `defaults.wait` (pools inherit both) | `1` / `10m` | host / narrowable |
 | `pools.<p>.memory`, `groups` / `providers` | none / `["local"]` | host / narrowable |
+| `pools.<p>.container.image` / `runtime`, `mounts`, `cpus`, `memory` | required when the table is set / `docker`, `[]`, none, none (no limit unless set) | host |
 | `pools.<p>.on_signal`, `refuse`, hooks; hook `timeout`, `refuse_exit` | `terminate`, none, none; `60s`, `[64]` | project |
 | `detach.wait_timeout` / `priority.high_cwd_contains`, `high_cwd` | `9m` (fits a 10-minute tool cap) / `[]` | host |
 | `remote_limits.worktrees`, `forward_env_allow`, `forward_env_force` / `on_failure` | `[]` (nothing goes remote) / `next` (`stop`: fail) | host |
@@ -442,7 +445,10 @@ From the caller's env: `[defaults].env_unset`, `[defaults].env`; pool `env_defau
 only), `env`, `env_unset`; `env` hook output; then `BITC_POOL`, `BITC_SLOT` (`<pool>.<i>`, i in
 1..N, an "inside a slot" guard), `BITC_HOLD` (`<pool>:<ticket>:<token>`), `BITC_JOB` (job name),
 `BITC_DIR` (absolute). Host and repo values merge per 5.3 first. Nothing project-specific is built
-in.
+in. A pool with `container` (6.4) passes the container only `TERM`, `LANG`, `LC_ALL`, `LC_CTYPE` and
+`TZ` of the caller's env, the pool's `env`, `env_default` and `env_unset` as above, the `env` hook's
+output, and `BITC_POOL`, `BITC_SLOT`, `BITC_JOB`; not `BITC_HOLD` or `BITC_DIR`, and nothing else
+of the caller's env.
 
 ### 6.4 Running the command
 
@@ -468,6 +474,49 @@ in.
   signal that arrives first (including under `forward-and-wait`) or after wins with its `128+N`.
   A command's own 124 has `outcome = "command-failed"` and no such line. A remote run has no such
   limit (8.2: `remote_limits.timeout`).
+- **Container** (`pools.<p>.container = { image, runtime = "docker", mounts, cpus, memory }`, host
+  file only; docs/containers.md): the admitted command runs as `docker run --rm --init -i
+  --name bitc-<ticket> --label bitc.job=<job> --label bitc.pool=<p> --label bitc.state=<hash> --label
+  bitc.ticket=<ticket> --cidfile <state>/containers/<ticket>.cid --mount <work tree> ... --workdir
+  <cwd> [--cpus N] [--memory BYTES] --env-file <state>/containers/<ticket>.env <image> <argv>` as
+  the run's child, so
+  admission, slots, groups, FIFO, the time limit, signals and the exit status are those of any
+  local run: the status is the command's. The name is unique per run (the ticket id; `--name` is
+  the caller's and may be shared by runs going at once, so the job is only the `bitc.job` label),
+  and nothing is removed by name: a removal goes by the container id docker wrote to the
+  `--cidfile` (none there: no container of this run, none removed), the sweep by the id it listed.
+  The work tree (with no work tree, the cwd) is mounted
+  at the same path and is the working directory; `-i` gives the command bitc's stdin (`-it` on a
+  TTY); the environment is the minimal one of 6.3, written by bitc to the 0600 env file (a value
+  with a line break is 78) and never on argv; the file is removed when the run ends (and by the
+  guard if bitc is killed). `--timeout`, `pools.<p>.timeout`, `cancel` and
+  INT/TERM/HUP end the run as above and then bitc runs `docker rm -f <id>`, also when it
+  sends SIGKILL after `grace`, because killing the docker CLI does not stop its container (without
+  a TTY the CLI proxies the TERM to the container; with one it does not). A
+  guard process (`bitc __container-guard`, its own session, `fd 3` the read end of a pipe bitc
+  holds, the way the macOS plugin shim finds bitc dead) removes the container (by the id in the
+  cidfile) when that pipe
+  closes without bitc having said `done`: a SIGKILLed bitc on Linux and macOS. A container whose
+  `bitc.state` label is this state dir's hash and whose `bitc.ticket` names no held ticket is an
+  orphan: the next admission of a container pool (note `bitc: removed orphaned container <name>
+  (its run is gone)`) and `bitc sweep` (`swept container <name> (its run is gone)`; `--dry-run`
+  lists) remove it, and never a live run's, another state dir's or an unlabelled one. The
+  runtime CLI missing from PATH is 69 before admission (`bitc: <pool>: container runtime "docker"
+  not found on PATH ...`); `docker run` exiting 125 without having written its `--cidfile` is a
+  failure before the command started: `bitc: <pool>: docker could not start the container ...`,
+  69, `outcome = "unavailable"`. A 125, 126 or 127 once the container exists is the command's
+  (a 125 can still be docker's own start failure; it is not told apart). Only a full 64-hex id
+  counts (the listing is `docker ps -a --no-trunc`); a ticket path that cannot be checked for any
+  reason but ENOENT keeps its container. The docker CLI, its removals, the guard and `bitc sweep`
+  run with bitc's own environment (one daemon); the pool env and hook output are the container's
+  only. A container env value with a line break, a NUL, invalid UTF-8 or 64 KiB or more is 78
+  naming the key. A sweep error (the pools dir cannot be read or the listing fails) aborts the
+  sweep and deletes nothing; a removal that fails stops it there: containers removed before it stay
+  removed, nothing more is deleted, not even a cidfile or env file. `bitc sweep` says `container
+  sweep aborted: <why>`, finishes the rest of its work and exits 69; an admission goes on. An orphan removed by an
+  admission is a `container-reaped` history event, the job from the `bitc.job` label.
+  `container` with a `wrap` hook, an unknown runtime, a bad `image`, `cpus`, `memory` or `mounts`
+  entry is 78.
 - **End of hold:** `post_run`; group stragglers SIGTERM then SIGKILL after `grace`; unlock all,
   unlink ticket, drop reservation, history `end`, return the command's code (`128+N` if it died of
   signal N).

@@ -32,6 +32,10 @@ type ExecSpec struct {
 	Started       func(pid, pgid int, leaderStart uint64)
 	Pending       chan os.Signal // optional: a channel the caller registered; Exec takes it over
 	NoHangup      bool           // detached supervisor (spec 7): SIGHUP is neither handled nor forwarded
+	// OnKill, if set, runs when the command is sent SIGKILL (the grace after a signal or the time
+	// limit has run out, or a forward-and-wait run gave up). A container's docker CLI dies without
+	// stopping its container: this is where the container is force-removed.
+	OnKill func()
 }
 
 // ExecResult is how the command ended.
@@ -134,6 +138,9 @@ func Exec(ctx context.Context, s ExecSpec) (ExecResult, error) {
 		}
 	}
 	forward := func(sig syscall.Signal) {
+		if sig == syscall.SIGKILL && s.OnKill != nil {
+			s.OnKill()
+		}
 		if tty {
 			_ = syscall.Kill(pid, sig) // leader only: the caller's group is not ours
 		} else {

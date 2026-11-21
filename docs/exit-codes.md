@@ -8,7 +8,7 @@ never Go's default 2. stdout belongs to the command: bitc writes only the stderr
 | the command's own | | the command ran, locally or remotely; `128+N` if a signal N killed it | treat it as the real result |
 | 64 | usage | bad arguments or a malformed `BITC_*` value; unknown pool; refused by a refuse rule or hook; `--provider` not allowed; a bad `--units` (malformed, above the group's units or `groups_max`, or a group the pool does not list); an uncreatable detached log | fix the call |
 | 66 | no input | `wait`, `logs` or `cancel`: no such job | check the job name |
-| 69 | unavailable | not Linux or macOS; a Linux-only feature in the macOS build (`bitc: <feature> runs on Linux only (this is a darwin build)`); a hook could not start, timed out or printed unparsable output; no provider is usable; a remote job's own setup step failed; an internal error (a bitc bug) | do not retry blindly: stop and report |
+| 69 | unavailable | not Linux or macOS; a Linux-only feature in the macOS build (`bitc: <feature> runs on Linux only (this is a darwin build)`); a hook could not start, timed out or printed unparsable output; a container pool's runtime CLI is not on `PATH`, or docker failed before the container existed, or `bitc sweep` aborted its container sweep ([containers.md](containers.md)); no provider is usable; a remote job's own setup step failed; an internal error (a bitc bug) | do not retry blindly: stop and report |
 | 75 | temporary failure | starved; a hook asked to wait; a remote infrastructure failure after the job started | wait, then run again |
 | 78 | config | invalid config file (a `groups_max` that names a group the pool does not list, or is not 1 to the group's units, included); a host-only key in a repo file; a pool's `memory` or a `[providers.*]` table in the macOS build; `min_version` not met; an insecure, network-filesystem (NFS; on Linux also CIFS, SMB2, SMB, 9p, AFS and any FUSE mount) or newer-schema state dir, or an accounting dir on a network filesystem (`bitc sweep` there: after tearing down what is provably expired) | fix the configuration |
 | 124 | still running; time limit | `wait`: the job has not ended. A local run: bitc ended it at its time limit (`pools.<p>.timeout`, `run --timeout`) | `wait`: call it again. A run: raise the limit or fix the command |
@@ -30,6 +30,9 @@ It is never 75, so a bug that fails every time cannot keep a retrying caller loo
 | `pod: <line>` | output of the remote setup steps |
 | `bitc: <pool>: refused: <reason>` | 64 from a refuse rule or hook |
 | `bitc: <pool>: time limit <dur> reached; terminated` | 124 from a local run that reached its time limit; the command was sent SIGTERM, then SIGKILL after `grace` |
+| `bitc: <pool>: container runtime "docker" not found on PATH ...` | 69 before admission: a pool with `container` and no docker CLI |
+| `bitc: <pool>: docker could not start the container (it exited 125 before the command ran; its message is above)` | 69: docker failed before the container existed |
+| `bitc: removed orphaned container <name> (its run is gone)` | a container pool's admission removed an orphan ([containers.md](containers.md)) |
 | `bitc: <message>` | every other note, warning or error |
 
 ## `wait` outcomes

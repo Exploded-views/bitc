@@ -122,6 +122,7 @@ type Pool struct {
 	RemoteSize       map[string]string // provider type -> size key
 	RemoteTimeout    time.Duration
 	Remote           *PoolRemote // repo [pools.<p>.remote], nil if absent
+	Container        *Container  // host [pools.<p>.container]: run local commands in a container, nil if absent
 }
 
 type Hooks struct {

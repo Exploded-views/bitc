@@ -38,6 +38,10 @@ func (l Layout) NestLock(p string, i, depth int) string {
 func (l Layout) GroupUnitLock(g string, j int) string {
 	return filepath.Join(l.Root, "groups", g, fmt.Sprintf("unit.%d.lock", j))
 }
+
+// ContainersDir holds a containerized run's --cidfile (<ticket>.cid): docker writes the id there
+// once the container exists, which tells a docker failure from the command's own exit 125.
+func (l Layout) ContainersDir() string          { return filepath.Join(l.Root, "containers") }
 func (l Layout) History() string                { return filepath.Join(l.Root, "history.jsonl") }
 func (l Layout) JobsDir() string                { return filepath.Join(l.Root, "jobs") }
 func (l Layout) JobDir(wt8, name string) string { return filepath.Join(l.Root, "jobs", wt8, name) }

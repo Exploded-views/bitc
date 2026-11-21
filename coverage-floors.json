@@ -8,6 +8,7 @@
   "github.com/Exploded-views/bitc/internal/cli": 12.8,
   "github.com/Exploded-views/bitc/internal/config": 71.0,
   "github.com/Exploded-views/bitc/internal/config/gen": 0.0,
+  "github.com/Exploded-views/bitc/internal/container": 94.0,
   "github.com/Exploded-views/bitc/internal/exit": 92.9,
   "github.com/Exploded-views/bitc/internal/jobs": 68.7,
   "github.com/Exploded-views/bitc/internal/lock": 83.6,

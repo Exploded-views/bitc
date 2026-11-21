@@ -83,7 +83,7 @@ func init() {
 		if code != 0 {
 			return code
 		}
-		_ = status.Sweep(e, l, dry, std.Out)
+		swept := status.Sweep(e, l, dry, std.Out)           // non-nil: a container sweep aborted (its line is printed)
 		for _, t := range config.UnconfiguredLeftovers(e) { // nothing configured can sweep these
 			fmt.Fprintln(std.Err, "bitc: remote "+config.LeftoverHint(t))
 		}
@@ -92,6 +92,9 @@ func init() {
 				fmt.Fprintln(std.Err, exit.As(err).Line)
 				return exit.Code(err)
 			}
+		}
+		if swept != nil {
+			return exit.Code(swept) // 69 (unavailable), once everything else is done
 		}
 		return 0
 	})
