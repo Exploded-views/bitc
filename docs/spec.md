@@ -353,8 +353,12 @@ is a regular file and reads at most 64 bytes; it never creates the dir. With no 
 type configured (for example after its `[providers.<type>]` table was deleted), `bitc doctor`
 prints `warn remote: <type>: an earlier version's run may have left paid resources ...` and
 `bitc sweep` prints the same hint on stderr, since nothing configured can sweep it. The key is
-host-only (a repo file setting it is 78) and no `BITC_*` variable sets it. On a darwin build the
-platform refusal of every provider (1) applies instead. With the flag set, remote providers behave
+host-only (a repo file setting it is 78) and no `BITC_*` variable sets it. The opt-in applies on
+every OS: on a darwin build an exec plugin `[providers.<type>]` table (the one remote provider that
+build runs, 1) needs the flag too, with the same message and cleanup line. The built-in `ssh`,
+`runpod` and `sprites` tables are refused for the platform there (1) with or without the flag, and
+when both apply the opt-in refusal is listed first, then the platform line for each built-in table
+(a darwin build lists no opt-in refusal for a built-in table alone). With the flag set, remote providers behave
 as described in 8, `bitc config check` passes and `bitc doctor` prints
 `warn remote: experimental_remote is on`.
 

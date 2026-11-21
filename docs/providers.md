@@ -9,7 +9,9 @@ selection and fallback; [spec.md](spec.md) section 8 has every rule.
 Remote providers are experimental and off by default: the host file must opt in with
 `experimental_remote = true` under `[host]`, or any `[providers.<type>]` table (or a pool naming
 one) is a config error (exit 78; see [Known issues](../README.md#known-issues)). A repository file
-cannot set it and no environment variable does.
+cannot set it and no environment variable does. This holds on every OS: an exec plugin on macOS
+needs the switch too, and the built-in `ssh`, `runpod` and `sprites` tables are refused there
+whatever it says.
 
 ```toml
 [host]

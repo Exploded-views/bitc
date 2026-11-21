@@ -49,8 +49,10 @@ toolchain.
 
 macOS builds run **local pools and exec plugins**: `run`, `status`, `wait`, `logs` and `cancel` over
 `flock` pools, plus detached jobs, groups, priority lanes, nested holds, `doctor` and `config`.
-A `[providers.<type>]` table with a `plugin` pin loads and runs; memory floors (a pool's `memory`
-key) and the built-in `ssh`, `runpod` and `sprites` tables are refused with exit 78. Tracked in:
+A `[providers.<type>]` table with a `plugin` pin loads and runs once the host file sets
+`[host] experimental_remote = true`, as on Linux (without it: exit 78; 0.1.5 loaded it without the
+flag, which was a bug fixed after it); memory floors (a pool's `memory` key) and the built-in
+`ssh`, `runpod` and `sprites` tables are refused with exit 78, flag or not. Tracked in:
 
 - [#3](https://github.com/Exploded-views/bitc/issues/3): macOS parity (umbrella);
 - [#4](https://github.com/Exploded-views/bitc/issues/4): macOS as a client to the built-in remote
