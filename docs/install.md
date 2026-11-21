@@ -54,7 +54,7 @@ key) and the built-in `ssh`, `runpod` and `sprites` tables are refused with exit
 
 - [#3](https://github.com/Exploded-views/bitc/issues/3): macOS parity (umbrella);
 - [#4](https://github.com/Exploded-views/bitc/issues/4): macOS as a client to the built-in remote
-  providers (planned for 0.1.5);
+  providers (planned for 0.1.6);
 - macOS as a remote build target: planned but not scheduled ([ROADMAP.md](ROADMAP.md)).
 
 Linux-only features, and other differences on macOS:
