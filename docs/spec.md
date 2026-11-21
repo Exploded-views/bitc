@@ -158,7 +158,7 @@ record (a job a legacy launcher started, 12): legacy J8/J9 apply, so the last li
 | 66 `EX_NOINPUT` | `wait`/`logs`/`cancel`: no such job | check the name |
 | 69 `EX_UNAVAILABLE` | not Linux or macOS; a Linux-only feature in the macOS build; hook could not start, timed out, printed unparsable output or exited with an unlisted code; no provider left and the last was unusable (a remote-only pool's job not eligible for remote, 8.2); a remote job's own setup step failed by itself (15.9); `cancel` cannot read or update the job's `status.json`; a detached supervisor cannot mark its job running; internal error (a bitc bug) | do not retry blindly |
 | 75 `EX_TEMPFAIL` | starved; hook exited 75; remote infrastructure failure after start; no provider left after a transient failure | wait and retry |
-| 78 `EX_CONFIG` | invalid config file; host-only key in a repo file; `min_version` unmet; insecure, NFS (on Linux also CIFS, SMB2, SMB, 9p, AFS and any FUSE mount, local FUSE included; on macOS also smbfs, afpfs, webdav and any non-local mount) or newer-schema state or accounting dirs; a pool's `memory` or a `[providers.*]` table in the macOS build | fix config |
+| 78 `EX_CONFIG` | invalid config file; host-only key in a repo file; `min_version` unmet; insecure, NFS (on Linux also CIFS, SMB2, SMB, 9p, AFS and any FUSE mount, local FUSE included; on macOS also smbfs, afpfs, webdav and any non-local mount) or newer-schema state or accounting dirs; a pool's `memory`, a built-in `[providers.*]` table (`ssh`, `runpod`, `sprites`) in the macOS build, or a plugin table there without `[host] experimental_remote` | fix config |
 | 124 | `wait`: job still running; or a local run ended by its time limit (`pools.<p>.timeout`, `run --timeout`, 6.4) | `wait`: call it again; a run: the command took too long, raise the limit or fix the command |
 
 A remote problem surfaces only as local fallback, 69 or 75 (8.2). An internal error or panic
@@ -358,8 +358,8 @@ every OS: on a darwin build an exec plugin `[providers.<type>]` table (the one r
 build runs, 1) needs the flag too, with the same message and cleanup line. The built-in `ssh`,
 `runpod` and `sprites` tables are refused for the platform there (1) with or without the flag, and
 when both apply the opt-in refusal is listed first, then the platform line for each built-in table
-(a darwin build lists no opt-in refusal for a built-in table alone). With the flag set, remote providers behave
-as described in 8, `bitc config check` passes and `bitc doctor` prints
+(a darwin build lists no opt-in refusal for a built-in table alone). With the flag set, remote
+providers behave as described in 8, `bitc config check` passes and `bitc doctor` prints
 `warn remote: experimental_remote is on`.
 
 **Sprites jobs are refused in this release.** Any `[providers.sprites]` table, or a pool whose

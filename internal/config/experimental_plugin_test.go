@@ -34,9 +34,13 @@ func TestExperimentalRemoteDarwinPluginRefused(t *testing.T) {
 	bad := "version = 1\n[providers.modal]\nplugin = { path = \"/nonexistent/bitc-provider-modal\", sha256 = \"" + strings.Repeat("a", 64) + "\" }\ndaily_usd = 5\nsizes = { cpu8 = { usd_per_hour = 0.60 } }\n"
 	_, err = newRawFixture(t, bad, "").load()
 	expect78(t, err, ExperimentalRemoteRefusal)
+	// the repo file cannot set the flag: the refusal stands, next to the host-only-key problem
+	_, err = newRawFixture(t, pluginHost("modal", pl, "", ""), "version = 1\n[host]\nexperimental_remote = true\n").load()
+	expect78(t, err, "host.experimental_remote is a host-only key", ExperimentalRemoteRefusal)
 }
 
-// With the flag a darwin plugin provider loads as in 0.1.5; the repo file cannot set the flag.
+// With the flag a darwin plugin provider loads as in 0.1.5. This passes before and after the
+// fix: it guards against over-refusing.
 func TestExperimentalRemoteDarwinPluginWithFlagLoads(t *testing.T) {
 	defer func(g string) { platformGOOS = g }(platformGOOS)
 	platformGOOS = "darwin"
@@ -46,8 +50,6 @@ func TestExperimentalRemoteDarwinPluginWithFlagLoads(t *testing.T) {
 	if pr := e.Providers["modal"]; pr == nil || pr.Plugin == nil || !e.Host.ExperimentalRemote {
 		t.Fatalf("flag set, plugin not loaded on darwin: %+v", e.Providers["modal"])
 	}
-	_, err := newRawFixture(t, pluginHost("modal", pl, "", ""), "version = 1\n[host]\nexperimental_remote = true\n").load()
-	expect78(t, err, "host.experimental_remote is a host-only key", ExperimentalRemoteRefusal)
 	// local only on darwin: nothing to gate
 	if _, err := newRawFixture(t, "version = 1\n[pools]\nlint = { providers = [\"local\"] }\n", "").load(); err != nil {
 		t.Fatal(err)
