@@ -122,9 +122,9 @@ container, so bitc removes it itself with `docker rm -f <container id>`:
   removed earlier in that sweep stay removed). `bitc sweep` prints `container sweep aborted: <why>`,
   carries on with the rest of its work and exits 69 (unavailable: the docker side could not be
   used; stop and report). An admission that swept goes on and runs its command (a debug line). The
-  sweep also removes the cidfile and env file of runs that are gone. The admission's orphan removal appears in the
-  history as a `container-reaped` event with the job from the `bitc.job` label (not `reaped`, which
-  counts dead tickets).
+  sweep also removes the cidfile and env file of runs that are gone. The admission's orphan
+  removal appears in the history as a `container-reaped` event with the job from the `bitc.job`
+  label (not `reaped`, which counts dead tickets).
 
 The admission's orphan check is one `docker ps` per admission to a container pool, before the run
 queues: about 100 to 300 ms on Docker Desktop or OrbStack, and bounded at 30 s if the daemon hangs.

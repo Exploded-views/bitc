@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.5] - 2026-11-16
+## [Unreleased]
 
 ### Added
 
@@ -15,19 +15,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   command as `docker run` with the work tree mounted at the same path as the working directory;
   the exit status is the command's. Each container is named `bitc-<ticket id>` (unique per run,
   so runs that share a `--name` never remove each other's) and labelled `bitc.job`, `bitc.pool`,
-  `bitc.state` and `bitc.ticket`, and bitc force-removes it at the time
-  limit, on INT, TERM or HUP, on `bitc cancel`, and when bitc is SIGKILLed (a guard process on a
-  lifeline pipe, on Linux and macOS). `bitc sweep` and the next admission remove orphaned
-  containers by label, and a sweep error aborts the sweep: nothing more is deleted (containers
-  removed earlier in it stay removed) and `bitc sweep` exits 69 after the rest of its work. Every
-  removal is by full container id (from the cidfile or `docker ps --no-trunc`), never by name;
-  docker runs with bitc's own environment, and an env value docker's env file cannot hold (line
-  break, NUL, invalid UTF-8, 64 KiB or more) is 78 naming the key. The container gets a minimal
-  environment, not the host's, in a 0600 `--env-file` that bitc removes when the run ends (its
-  values never reach docker's command line). A missing docker
-  CLI, or docker failing before the container exists, is exit 69; a bad `container` table is 78.
-  See [docs/containers.md](docs/containers.md)
+  `bitc.state` and `bitc.ticket`, and bitc force-removes it at the time limit, on INT, TERM or
+  HUP, on `bitc cancel`, and when bitc is SIGKILLed (a guard process on a lifeline pipe, on Linux
+  and macOS). `bitc sweep` and the next admission remove orphaned containers by label, and a
+  sweep error aborts the sweep: nothing more is deleted (containers removed earlier in it stay
+  removed) and `bitc sweep` exits 69 after the rest of its work. Every removal is by full
+  container id (from the cidfile or `docker ps --no-trunc`), never by name; docker runs with
+  bitc's own environment, and an env value docker's env file cannot hold (line break, NUL,
+  invalid UTF-8, 64 KiB or more) is 78 naming the key. The container gets a minimal environment,
+  not the host's, in a 0600 `--env-file` that bitc removes when the run ends (its values never
+  reach docker's command line). A missing docker CLI, or docker failing before the container
+  exists, is exit 69; a bad `container` table is 78. See [docs/containers.md](docs/containers.md)
   ([#60](https://github.com/Exploded-views/bitc/issues/60)).
+
+## [0.1.5] - 2026-11-16
+
+### Added
+
 - Exec plugins run on macOS. `[providers.<type>]` with a `plugin` pin now loads on a macOS client
   (the built-in `ssh`, `runpod` and `sprites` stay refused there). bitc runs a private, 0500,
   content-addressed copy of the pinned plugin through a `__plugin-exec` shim that stays the
