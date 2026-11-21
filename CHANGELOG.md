@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.5] - 2026-11-16
+## [Unreleased]
 
 ### Added
 
@@ -13,9 +13,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `flock heavy.lock cmd`, gate and slot-file shape), so bitc, live shell holders and bare `flock`
   callers exclude each other in both directions. Keys `lock`, `gate`, a `slot` template with
   `{n}` and `exclusive` (default false; `true` for a bench pool that takes the gate and the lock
-  exclusive). Status and doctor do not show shell holders of these pools; a busy legacy lock ends `STARVED <pool> (legacy pool: <path> busy)`. Time-boxed like
-  `[compat]` (spec 12.2)
+  exclusive). Status and doctor do not show shell holders of these pools; a busy legacy lock ends
+  `STARVED <pool> (legacy pool: <path> busy)`. Time-boxed like `[compat]` (spec 12.2)
   ([#33](https://github.com/Exploded-views/bitc/issues/33)).
+
+## [0.1.5] - 2026-11-16
+
+### Added
+
 - Exec plugins run on macOS. `[providers.<type>]` with a `plugin` pin now loads on a macOS client
   (the built-in `ssh`, `runpod` and `sprites` stay refused there). bitc runs a private, 0500,
   content-addressed copy of the pinned plugin through a `__plugin-exec` shim that stays the

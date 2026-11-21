@@ -104,6 +104,7 @@ file for benchmarks and one slot file per run), name those files in the host fil
 the scripts exclude each other while callers move over:
 
 ```toml
+version = 1
 groups = { cpu = { units = 8 } }
 [pools.heavy]
 slots = 3
