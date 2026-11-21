@@ -20,19 +20,29 @@ const ExperimentalRemoteRefusal = "remote providers are experimental in this rel
 const ExperimentalRemoteCleanup = "To clean up resources left by an earlier version, set the flag and run bitc sweep."
 
 // checkExperimentalRemote refuses remote providers unless the host file opts in: any
-// [providers.<type>] table, or a pool naming a provider other than local, is one problem. Off
-// Linux the platform refusal of every provider (checkPlatform) stands instead. It only reads.
+// [providers.<type>] table, or a pool naming a provider other than local, is one problem. It
+// applies on every OS. Off Linux the built-in providers (ssh, runpod, sprites) are refused for the
+// platform instead (checkPlatform, listed after this problem), so only an exec plugin table, the
+// one remote provider a darwin build runs, counts there. It only reads.
 func checkExperimentalRemote(p *problems, e *Effective, host fileSchema, goos string, cleanup bool) {
-	if goos != "linux" || e.Host.ExperimentalRemote {
+	if e.Host.ExperimentalRemote {
 		return
 	}
-	remote := len(host.Providers) > 0
-	for _, ps := range host.Pools {
-		if ps == nil {
-			continue
+	remote := false
+	if goos == "linux" {
+		remote = len(host.Providers) > 0
+		for _, ps := range host.Pools {
+			if ps == nil {
+				continue
+			}
+			for _, t := range ps.Providers {
+				remote = remote || t != "local"
+			}
 		}
-		for _, t := range ps.Providers {
-			remote = remote || t != "local"
+	} else {
+		for _, raw := range host.Providers {
+			_, isPlugin := raw["plugin"] // a pool can only name a plugin through its table
+			remote = remote || isPlugin
 		}
 	}
 	if !remote {

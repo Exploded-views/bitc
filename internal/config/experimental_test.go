@@ -66,7 +66,8 @@ func TestExperimentalRemoteCleanupLine(t *testing.T) {
 	}
 }
 
-// On darwin the platform refusal of providers stands alone (it takes precedence).
+// On darwin a built-in provider table alone gets only the platform refusal (no plugin table, so
+// no opt-in line; see experimental_plugin_test.go for plugins).
 func TestExperimentalRemoteDarwinRefusalTakesPrecedence(t *testing.T) {
 	defer func(g string) { platformGOOS = g }(platformGOOS)
 	platformGOOS = "darwin"
