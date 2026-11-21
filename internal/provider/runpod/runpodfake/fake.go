@@ -103,7 +103,7 @@ func (f *Fake) URL() string       { return f.api.URL }
 func (f *Fake) ProxyAddr() string { return strings.TrimPrefix(f.proxy.URL, "http://") }
 
 // Behave arms a behaviour: transient-create, transient-create-twice (the same no-capacity answer on a create and on its one retry), create-500-twice, create-429-twice, create-500-after-create (makes the pod, answers 500), unavailable, slow-create,
-// list-500, list-500-after-create (the first list once a pod was made), billing-500, refuse-create (422 with a two-line message), restart-after-begin, restart-after-begin-no-boot (startedAt changes, the agent never boots again: build mode once the agent ref is gone), lost-after-begin, drop-log-tail, forge-result, logs-429-burst (the next 5 log reads answer 429, the first with Retry-After: 1), logs-stall-after-first (once a log line was served, since= queries return nothing, as the live API did 2026-10-23; tail queries still work); or
+// list-500, list-500-after-create (the first list once a pod was made), billing-500, refuse-create (422 with a two-line message), restart-after-begin, restart-after-begin-no-boot (startedAt changes, the agent never boots again: build mode once the agent ref is gone), lost-after-begin, drop-log-tail, forge-result (the next created pod only: every result.json read of it is a forged document), logs-429-burst (the next 5 log reads answer 429, the first with Retry-After: 1), logs-stall-after-first (once a log line was served, since= queries return nothing, as the live API did 2026-10-23; tail queries still work); or
 // "hold <METHOD> <path>" (e.g. "hold POST /v2/pods"): every such call is recorded and does its
 // work (a create makes its pod), then its answer waits until Release or until the client gives
 // up. Race tests use it instead of fixed delays.
@@ -676,6 +676,7 @@ func (f *Fake) serveProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if forged {
+		// served without the agent's bearer check: the forgery stands in for a hostile agent
 		_, _ = w.Write(forgedResult())
 		return
 	}
