@@ -179,7 +179,8 @@ func applyHost(p *problems, e *Effective, host layer, env map[string]string, cle
 			}
 			cg[canon] = stem
 		}
-		e.Compat = &Compat{LegacyDir: expandHome(c.LegacyDir, env), HoldEnv: c.HoldEnv, NamePrefix: c.NamePrefix, Groups: cg}
+		e.Compat = &Compat{LegacyDir: expandHome(c.LegacyDir, env), HoldEnv: c.HoldEnv, NamePrefix: c.NamePrefix, Groups: cg,
+			Flock: compatFlock(p, f, c.Flock, s.Pools, env)}
 	}
 	if t := s.Test; t != nil {
 		e.Test = &Test{}
@@ -707,4 +708,51 @@ func keyFileProblem(path string) string {
 		return fmt.Sprintf("%s must be owned by you and mode 600 (it is %o)", path, st.Mode&0o777)
 	}
 	return ""
+}
+
+// compatFlock validates [compat.flock.<pool>] (spec 12.2): every key set, absolute paths, a slot
+// template with {n}, a lock distinct from the gate, and a pool the host file declares.
+func compatFlock(p *problems, file string, in map[string]*compatFlockSchema, pools map[string]*poolSchema, env map[string]string) map[string]Flock {
+	if len(in) == 0 {
+		return nil
+	}
+	declared := map[string]bool{}
+	for name := range pools {
+		declared[CanonName(name)] = true
+	}
+	out := map[string]Flock{}
+	for raw, fl := range in {
+		canon := CanonName(raw)
+		key := "compat.flock." + raw
+		if !ValidPoolName(raw) {
+			p.addf("%s: %s: pool name is invalid", file, key)
+			continue
+		}
+		if !declared[canon] {
+			p.addf("%s: %s names no declared pool", file, key)
+		}
+		if _, dup := out[canon]; dup {
+			p.addf("%s: compat.flock %s: same pool spelled twice", file, canon)
+		}
+		if fl == nil {
+			fl = &compatFlockSchema{}
+		}
+		got := Flock{Lock: expandHome(fl.Lock, env), Gate: expandHome(fl.Gate, env), Slot: expandHome(fl.Slot, env), Exclusive: fl.Exclusive}
+		for _, k := range []struct{ name, v string }{{"lock", got.Lock}, {"gate", got.Gate}, {"slot", got.Slot}} {
+			switch {
+			case k.v == "":
+				p.addf("%s: %s.%s is required", file, key, k.name)
+			case !filepath.IsAbs(k.v):
+				p.addf("%s: %s.%s must be an absolute path", file, key, k.name)
+			}
+		}
+		if got.Slot != "" && !strings.Contains(got.Slot, "{n}") {
+			p.addf("%s: %s.slot must contain {n}", file, key)
+		}
+		if got.Lock != "" && got.Lock == got.Gate {
+			p.addf("%s: %s: lock and gate must be different files", file, key)
+		}
+		out[canon] = got
+	}
+	return out
 }

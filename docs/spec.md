@@ -1557,6 +1557,61 @@ Each is a `changed` row in `behaviours.toml`; they are listed in 15.
 - Internal errors (bitc's own bugs) exit 69 with `bitc: internal error: <msg>` (legacy:
   unspecified); 75 is only for a genuine wait-and-retry.
 
+### 12.2 A shell pool on one lock file (`[compat.flock]`, time-boxed)
+
+Spec 12 covers a legacy pool of one lock file per slot. A shell pool built on ONE lock file
+(`flock heavy.lock cmd`, with a gate and slot files for its `run` and `bench` callers) is not
+covered by it. `[compat.flock.<pool>]` (host table under `[compat]`, keyed by pool name as
+`compat.groups` is keyed by group name; it needs `[compat] legacy_dir` like the rest of `[compat]`)
+makes bitc, live shell holders and bare `flock heavy.lock cmd` callers exclude each other. Keys,
+`lock` (the lock file), `gate` (the turnstile file) and `slot` (a template naming slot file i,
+`{n}` is the slot number: `slot = "/p/heavy.slot{n}"`) are required, and `exclusive` (boolean,
+default false) picks the mode below. All are host-only. Paths must be absolute, the
+template must contain `{n}`, `lock` and `gate` must differ, and the key must name a pool the host
+file declares (else 78). A pool needs its own entry, so a pool that shares the shell pool (a bench
+beside a `heavy`) is listed with the same files. Pools that share one slot template contend for
+the same slot files by index (the pool's slot i is always slot file i), so every normal pool of a
+template should have as many `slots` as the shell pool has slot files.
+
+- A normal pool (`exclusive` false or unset) takes, in this order and each without blocking:
+  `gate` shared, `lock` shared (then lets go of `gate`: a normal run only passes the turnstile),
+  and slot file i exclusive (replacing the spec 12 `locks/<pool>.<i>.lock`). A held slot file sends
+  bitc to the next slot, as in spec 12. The shell `run` script takes the gate exclusive for an
+  instant and drops it before it takes the lock shared; bitc's shared try is compatible with that,
+  and a bitc attempt that meets the instant fails once with `legacy pool: <gate> busy` and retries
+  (under `--wait 0s` that one attempt is the whole call and ends 75).
+- An exclusive pool (`exclusive = true`, like a bench) takes `gate` exclusive, then `lock`
+  exclusive, and holds both for the hold; it takes no slot file. The mode is the key alone: it does
+  not depend on the pool's `groups`, on `--units` or on a group's size. There is no inference from
+  group sizing.
+- All of it happens inside the admission attempt under `admit.lock`, with try-locks only. If the
+  gate or the lock is busy the attempt fails with `legacy pool: <path> busy`; bitc keeps nothing
+  between attempts, so it neither blocks a shell caller while it waits nor deadlocks against one,
+  and at the pool's wait it ends `STARVED <pool> (legacy pool: <path> busy)` (75), the same as a
+  busy spec 12 slot. A waiting bitc exclusive pool holds no gate while it waits, so a steady
+  stream of shell runs can starve it to its wait (the shell bench holds the gate while it waits).
+  When an exclusive pool fails on the gate or the lock it keeps its claim on the groups it lists
+  (`group_wait`, spec 6.2), so newer bitc consumers of those groups back off. A normal
+  `[compat.flock]` pool that shares none of the exclusive pool's groups is not held back and can
+  starve it (so can a stream of runs against an exclusive pool that lists no group): give the
+  exclusive pool the group its sharing pools use, as a bench takes `cpu` beside `heavy`. The claim
+  also holds back newer non-flock consumers of those groups while the exclusive pool waits on
+  shell holders, for up to its wait.
+- Status and doctor do not show shell holders of a `[compat.flock]` pool: `status` counts the pool
+  from bitc's own holds, and the legacy-holder lists read only `<legacy_dir>/locks`. A long wait on
+  such a pool is explained by the `STARVED ... (legacy pool: <path> busy)` line, not by status.
+- The files are opened read-write and created 0600 when missing, without following a symlink, as
+  every bitc lock file is. Use plain files owned by the user who runs bitc: a symlink or a file
+  that user cannot open read-write makes the run fail with `admission: open <path>` (69), and a
+  file bitc created is not writable by other users' shell callers.
+- Priority markers are not mirrored to shell callers (their pool has no priority lane). A bitc
+  exclusive run started inside a hold of the same flock files is a different process and cannot be
+  admitted (it waits for the hold that waits for it), as it could not in the shell.
+- Release is orderly (slot file, lock, gate); the kernel releases all of them if bitc dies.
+
+Remove `[compat.flock]` when the last shell caller of the lock file has moved to bitc, and in any
+case together with `[compat]` (12), a week after M1 exit; this subsection and its code go with it.
+
 ## 13. Repository layout and release
 
 `cmd/bitc/`; `internal/{config,lock,admit,run,classify,jobs,state,remote,provider,agent,redact}`

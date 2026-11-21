@@ -18,6 +18,16 @@ import (
 type CompatLocks interface {
 	TrySlot(pool string, slot int) (release func(), ok bool, err error)
 	TryUnit(group string, unit int, supervisorPid int) (release func(), ok bool, err error)
+	// HasFlock reports whether [compat.flock] names pool (spec 12.2).
+	HasFlock(pool string) bool
+	// FlockExclusive reports the pool's [compat.flock.<pool>] exclusive key (default false).
+	FlockExclusive(pool string) bool
+	// FlockSlotFile is the path of the pool's slot file i.
+	FlockSlotFile(pool string, slot int) string
+	// TryFlock takes the shared pool's gate and lock without blocking: gate shared, then lock
+	// shared (the gate is let go once the lock is held), or gate and lock exclusive. busy names the
+	// file that was not free.
+	TryFlock(pool string, exclusive bool) (release func(), busy string, ok bool, err error)
 	MirrorHigh(pool string, pid int) (remove func(), err error)
 	RemoveMirror(pool string, pid int)
 	LegacyHigh(pool string) bool
@@ -50,6 +60,11 @@ func (x *compat) take(path string, pid int) (func(), bool, error) {
 	if _, err := os.Stat(x.dir); err != nil {
 		return nil, false, fmt.Errorf("compat: legacy lock dir %s: %w", x.dir, err)
 	}
+	return takeFile(path, pid)
+}
+
+// takeFile tries path exclusively; a flock pool's files live outside legacy_dir/locks.
+func takeFile(path string, pid int) (func(), bool, error) {
 	f, err := lock.Open(path)
 	if err != nil {
 		return nil, false, err
@@ -64,9 +79,69 @@ func (x *compat) take(path string, pid int) (func(), bool, error) {
 	return func() { _ = f.Unlock(); f.Close() }, true, nil
 }
 
-// TrySlot: bitc slot i also needs exactly locks/<pool>.<i>.lock (same index, spec 12).
+// TrySlot: bitc slot i also needs exactly locks/<pool>.<i>.lock (same index, spec 12), or, for a
+// pool named in [compat.flock], its slot file i (spec 12.2).
 func (x *compat) TrySlot(pool string, slot int) (func(), bool, error) {
+	if fl, ok := x.c.Flock[pool]; ok {
+		return takeFile(FlockSlotPath(fl, slot), 0)
+	}
 	return x.take(x.lockPath(pool, slot), 0)
+}
+
+// FlockSlotPath is the slot file i of a [compat.flock] pool: the one place the template lives,
+// used by admission. Status does not call it: status and doctor do not show shell holders of a
+// flock pool (spec 12.2).
+func FlockSlotPath(fl config.Flock, slot int) string {
+	return strings.ReplaceAll(fl.Slot, "{n}", strconv.Itoa(slot))
+}
+
+func (x *compat) FlockExclusive(pool string) bool { return x.c.Flock[pool].Exclusive }
+
+func (x *compat) FlockSlotFile(pool string, slot int) string {
+	return FlockSlotPath(x.c.Flock[pool], slot)
+}
+
+func (x *compat) HasFlock(pool string) bool {
+	_, ok := x.c.Flock[pool]
+	return ok
+}
+
+// TryFlock never blocks: admit.lock is held, so a legacy holder that is busy costs one failed
+// attempt and bitc holds nothing while it queues (spec 12.2). Order: gate, lock.
+func (x *compat) TryFlock(pool string, exclusive bool) (func(), string, bool, error) {
+	fl := x.c.Flock[pool]
+	try := func(f *lock.File) (bool, error) {
+		if exclusive {
+			return f.TryLock()
+		}
+		return f.TryLockShared()
+	}
+	gate, err := lock.Open(fl.Gate)
+	if err != nil {
+		return nil, "", false, err
+	}
+	if ok, err := try(gate); err != nil || !ok {
+		gate.Close()
+		return nil, fl.Gate, false, err
+	}
+	lk, err := lock.Open(fl.Lock)
+	if err != nil {
+		_ = gate.Unlock()
+		gate.Close()
+		return nil, "", false, err
+	}
+	if ok, err := try(lk); err != nil || !ok {
+		lk.Close()
+		_ = gate.Unlock()
+		gate.Close()
+		return nil, fl.Lock, false, err
+	}
+	if !exclusive { // the gate is a turnstile: a normal run passes through it
+		_ = gate.Unlock()
+		gate.Close()
+		return func() { _ = lk.Unlock(); lk.Close() }, "", true, nil
+	}
+	return func() { _ = lk.Unlock(); lk.Close(); _ = gate.Unlock(); gate.Close() }, "", true, nil
 }
 
 // TryUnit: group unit j also needs locks/<stem>.<j>.lock; the supervisor pid goes inside so a

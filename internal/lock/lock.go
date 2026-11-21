@@ -36,8 +36,14 @@ func Open(path string) (*File, error) {
 func (l *File) Fd() int { return int(l.f.Fd()) }
 
 // TryLock takes an exclusive lock without blocking.
-func (l *File) TryLock() (bool, error) {
-	err := unix.Flock(l.Fd(), unix.LOCK_EX|unix.LOCK_NB)
+func (l *File) TryLock() (bool, error) { return l.try(unix.LOCK_EX) }
+
+// TryLockShared takes a shared lock without blocking (compat.flock: the lock a flock -s caller
+// takes beside other shared holders).
+func (l *File) TryLockShared() (bool, error) { return l.try(unix.LOCK_SH) }
+
+func (l *File) try(how int) (bool, error) {
+	err := unix.Flock(l.Fd(), how|unix.LOCK_NB)
 	switch {
 	case err == nil:
 		return true, nil

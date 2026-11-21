@@ -53,6 +53,8 @@ func walkRef(b *strings.Builder, t reflect.Type, prefix, parent string) {
 		switch {
 		case ft.Kind() == reflect.Map && name == "pools":
 			walkRef(b, ft.Elem(), key+".<pool>", class)
+		case ft.Kind() == reflect.Map && name == "flock":
+			walkRef(b, ft.Elem(), key+".<pool>", class)
 		case ft.Kind() == reflect.Map && name == "groups" && prefix == "":
 			walkRef(b, ft.Elem(), key+".<group>", class)
 		case ft.Kind() == reflect.Struct:

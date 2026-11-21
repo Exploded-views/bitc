@@ -413,6 +413,13 @@ rows = [
   { id = "CM7", task = "audit-E", ported = "TestCM7_CompatGroupKeysMustNameDeclaredGroups", desc = "a [compat].groups key naming no declared group, or a duplicate after canonicalisation, is a config error (78)" },
   { id = "CM8", task = "issue-33", ported = "TestCM8_StatusCountsALegacyHeldSlot", desc = "status counts a legacy-held pool slot as held and shows its legacy holder (text and --json), with the report-level legacy list kept" },
 
+  # FC: [compat.flock] (bitc-only, removed with [compat])
+  { id = "FC1", task = "issue-33", ported = "TestFC1_ShellRunHolderMakesSlotOneBusyBitcTakesSlotTwo", desc = "[compat.flock]: a live holder of the one-lock-file shell shape (lock shared, slot 1; the shell run takes its gate only for an instant) makes bitc's slot 1 busy and bitc takes slot 2" },
+  { id = "FC2", task = "issue-33", ported = "TestFC2_BareExclusiveFlockBlocksEveryBitcSlot", desc = "[compat.flock]: a bare exclusive flock on the lock file blocks every bitc slot: bitc waits, and with --wait 0s exits 75 with a STARVED line naming the legacy lock" },
+  { id = "FC3", task = "issue-33", ported = "TestFC3_BenchHoldersExcludeEachOtherBothWays", desc = "[compat.flock]: a bitc exclusive (exclusive = true, a bench) hold blocks a shell run holder, and a shell bench holder (gate and lock exclusive) blocks bitc" },
+  { id = "FC4", task = "issue-33", ported = "TestFC4_BitcHolderMakesNonBlockingExclusiveFlockFail", desc = "[compat.flock]: a bitc holder makes a non-blocking exclusive flock of the lock file fail; its end releases lock, gate and slot file" },
+  { id = "FC5", task = "issue-33", ported = "TestFC5_BadCompatFlockConfigIs78", desc = "[compat.flock.<pool>]: a missing lock, gate or slot, a slot template without {n}, a relative path, a pool the host file does not declare and a lock equal to the gate are config errors (78)" },
+
   # PV: providers and selection (bitc-only)
   { id = "PV1", task = "2.1a", ported = "TestPV1_NoProviderLeft69Or75", desc = "with no provider left the call is 69 after an ineligible or unavailable failure, else 75; with no local entry after the provider (a remote-only pool) no failure prints the running-locally note, and an ineligible job ends 69 with 'bitc: <provider>: <pool>: not eligible for remote: <why>' alone and never runs locally" },
   { id = "PV2", task = "2.1a", ported = "TestPV2_OnFailureStopDoesNotFallBack", desc = "on_failure = \"stop\" ends the walk at a pre-start failure" },

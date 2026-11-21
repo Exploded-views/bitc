@@ -249,6 +249,27 @@ func (a *admission) attempt(now time.Time) (bool, string, error) {
 		return fail("", nil)
 	}
 
+	// [compat.flock]: the shared gate and lock first (spec 12.2), before any slot is tried
+	flockExcl := false
+	if a.compat != nil && a.compat.HasFlock(a.pool.Name) {
+		flockExcl = a.compat.FlockExclusive(a.pool.Name)
+		rel, busy, ok, err := a.compat.TryFlock(a.pool.Name, flockExcl)
+		if err != nil {
+			return false, "", err
+		}
+		if !ok {
+			// A waiting exclusive pool keeps its claim on its groups, as a group-busy failure
+			// would: newer bitc consumers of them back off (spec 6) so a stream of bitc runs
+			// cannot starve it. The claim holds no lock, so nothing blocks a legacy caller.
+			var claim []string
+			if flockExcl {
+				claim = a.claimGroups()
+			}
+			return fail("legacy pool: "+busy+" busy", claim)
+		}
+		a.releases = append(a.releases, rel)
+	}
+
 	// slot: lowest free slot.<i>.lock (with [compat], slot i also needs the legacy slot i lock)
 	legacyBusy := ""
 	for i := 1; i <= a.pool.Slots && a.slot == 0; i++ {
@@ -260,7 +281,7 @@ func (a *admission) attempt(now time.Time) (bool, string, error) {
 			sl.Close()
 			continue
 		}
-		if a.compat != nil {
+		if a.compat != nil && !flockExcl { // an exclusive flock pool takes the whole lock, not a slot file
 			rel, ok, err := a.compat.TrySlot(a.pool.Name, i)
 			if err != nil || !ok {
 				_ = sl.Unlock()
@@ -269,7 +290,7 @@ func (a *admission) attempt(now time.Time) (bool, string, error) {
 					return false, "", err
 				}
 				if legacyBusy == "" {
-					legacyBusy = fmt.Sprintf("%s.%d", a.pool.Name, i)
+					legacyBusy = a.legacySlotName(i)
 				}
 				continue
 			}
@@ -363,9 +384,32 @@ func (a *admission) admitted(now time.Time) (bool, string, error) {
 	return true, "", a.me.write()
 }
 
+// claimGroups are the groups this attempt would take that no ancestor already holds, sorted.
+func (a *admission) claimGroups() []string {
+	var out []string
+	for g := range a.pool.Groups {
+		if !contains(a.inherited, g) {
+			out = append(out, g)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// legacySlotName names the legacy file behind slot i in a "legacy pool: <name> busy" reason: the
+// slot file of a [compat.flock] pool, else <pool>.<i>.
+func (a *admission) legacySlotName(i int) string {
+	if a.compat != nil && a.compat.HasFlock(a.pool.Name) {
+		return a.compat.FlockSlotFile(a.pool.Name, i)
+	}
+	return fmt.Sprintf("%s.%d", a.pool.Name, i)
+}
+
+// releaseHeld lets go of the legacy locks last taken first (slot file, then lock, then gate),
+// then the bitc locks.
 func (a *admission) releaseHeld() {
-	for _, rel := range a.releases {
-		rel()
+	for i := len(a.releases) - 1; i >= 0; i-- {
+		a.releases[i]()
 	}
 	a.releases = nil
 	for _, l := range a.held {

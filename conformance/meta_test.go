@@ -60,6 +60,9 @@ func spec121(t *testing.T) string {
 	if j := strings.Index(s[3:], "\n## "); j >= 0 {
 		s = s[:j+3]
 	}
+	if j := strings.Index(s[3:], "\n### "); j >= 0 { // 12.2 is a subsection of its own
+		s = s[:j+3]
+	}
 	return strings.Join(strings.Fields(strings.ReplaceAll(s, "`", "")), " ")
 }
 

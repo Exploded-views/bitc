@@ -563,3 +563,48 @@ func TestRunTimeoutOnlyNarrows(t *testing.T) {
 		}
 	}
 }
+
+func TestCompatFlock(t *testing.T) {
+	host := func(flock string) string {
+		return "version = 1\n[pools.heavy]\n[pools.a_b]\n[compat]\nlegacy_dir = \"/x\"\n" + flock
+	}
+	ok := "[compat.flock.heavy]\nlock = \"/s/heavy.lock\"\ngate = \"/s/heavy.gate\"\nslot = \"/s/heavy.slot{n}\"\n"
+	e := mustLoad(t, newFixture(t, host(ok), ""))
+	if got := e.Compat.Flock["heavy"]; got.Lock != "/s/heavy.lock" || got.Gate != "/s/heavy.gate" || got.Slot != "/s/heavy.slot{n}" {
+		t.Fatalf("%+v", e.Compat.Flock)
+	}
+	for _, c := range []struct{ body, want string }{
+		{"[compat.flock.heavy]\ngate = \"/g\"\nslot = \"/s{n}\"\n", "compat.flock.heavy.lock is required"},
+		{"[compat.flock.heavy]\nlock = \"/l\"\nslot = \"/s{n}\"\n", "compat.flock.heavy.gate is required"},
+		{"[compat.flock.heavy]\nlock = \"/l\"\ngate = \"/g\"\n", "compat.flock.heavy.slot is required"},
+		{"[compat.flock.heavy]\nlock = \"/l\"\ngate = \"/g\"\nslot = \"/s\"\n", "compat.flock.heavy.slot must contain {n}"},
+		{"[compat.flock.heavy]\nlock = \"l\"\ngate = \"/g\"\nslot = \"/s{n}\"\n", "compat.flock.heavy.lock must be an absolute path"},
+		{"[compat.flock.heavy]\nlock = \"/l\"\ngate = \"/l\"\nslot = \"/s{n}\"\n", "lock and gate must be different files"},
+		{"[compat.flock.ghost]\nlock = \"/l\"\ngate = \"/g\"\nslot = \"/s{n}\"\n", "compat.flock.ghost names no declared pool"},
+		{"[compat.flock.\"a b\"]\nlock = \"/l\"\ngate = \"/g\"\nslot = \"/s{n}\"\n", "pool name is invalid"},
+		{"[compat.flock.a_b]\nlock = \"/l\"\ngate = \"/g\"\nslot = \"/s{n}\"\n[compat.flock.a-b]\nlock = \"/l\"\ngate = \"/g\"\nslot = \"/s{n}\"\n", "same pool spelled twice"},
+	} {
+		_, err := newFixture(t, host(c.body), "").load()
+		expect78(t, err, c.want)
+	}
+}
+
+func TestCompatFlockExclusiveKey(t *testing.T) {
+	host := func(flock string) string {
+		return "version = 1\n[pools.heavy]\n[pools.bench]\n[compat]\nlegacy_dir = \"/x\"\n" + flock
+	}
+	files := "lock = \"/s/heavy.lock\"\ngate = \"/s/heavy.gate\"\nslot = \"/s/heavy.slot{n}\"\n"
+	e := mustLoad(t, newFixture(t, host("[compat.flock.heavy]\n"+files+"[compat.flock.bench]\n"+files+"exclusive = true\n"), ""))
+	if e.Compat.Flock["heavy"].Exclusive || !e.Compat.Flock["bench"].Exclusive {
+		t.Fatalf("exclusive defaults to false and is set per pool: %+v", e.Compat.Flock)
+	}
+	_, err := newFixture(t, host("[compat.flock.heavy]\n"+files+"exclusive = \"yes\"\n"), "").load()
+	expect78(t, err)
+	// host-only: the repo file may not set it. The loader rejects the whole [compat] table and its
+	// message names "compat", not the key, so the key's own class is asserted on the reference too.
+	_, err = newFixture(t, host(""), "version = 1\n[compat.flock.heavy]\nexclusive = true\n").load()
+	expect78(t, err, "compat is a host-only key")
+	if !strings.Contains(GenerateReference(), "| `compat.flock.<pool>.exclusive` | host | `false` |") {
+		t.Fatal("compat.flock.<pool>.exclusive is not classed host with default false")
+	}
+}
