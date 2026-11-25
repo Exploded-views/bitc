@@ -261,7 +261,7 @@ func checkClasses(p *problems, file string, v reflect.Value, prefix, parentClass
 			if key == "providers" && fv.Kind() == reflect.Map { // name the boundary key too (spec 8.2)
 				for _, k := range fv.MapKeys() {
 					if m, ok := fv.MapIndex(k).Interface().(map[string]any); ok {
-						for _, hk := range []string{"fallback_until", "send_env", "plugin"} {
+						for _, hk := range []string{"fallback_until", "send_env", "plugin", "pod_env"} {
 							if _, has := m[hk]; has {
 								p.addf("%s: providers.%s.%s: host-only key", file, k.String(), hk)
 							}

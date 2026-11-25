@@ -38,6 +38,17 @@ infrastructure failure after that point is exit 75.
 | `ssh` | a Linux machine you own, over ssh | experimental: implemented and tested against fakes and, in maintainer-run tests, a real sshd. Host setup: [ssh-host.md](ssh-host.md) |
 | exec plugin | anything, through an executable `bitc-provider-<type>` pinned by path and sha256 | experimental: [writing-a-provider.md](writing-a-provider.md), [provider-author-guide.md](provider-author-guide.md), [plugin-protocol.md](plugin-protocol.md) |
 
+## Extra pod environment (RunPod)
+
+`pod_env = { NAME = "value" }` in `[providers.runpod]` adds variables to the pod's environment when
+it is created. It is a host-file key: a repository file that sets it is refused (exit 78). Up to 16
+entries; a name is `[A-Z][A-Z0-9_]{0,63}` and may not be `PATH`, `HOME`, `SHELL`, `USER`,
+`PUBLIC_KEY`, `JUPYTER_PASSWORD` or `WGETRC`, start with `BITC_`, `RUNPOD_`, `LD_`, `SSH_`, `SSL_`,
+`GIT_`, `GO`, `CGO_` or `CURL_`, or end with `_PROXY`. A value is at most 256 bytes, on one line,
+without `{{`. The job does not see these variables: they belong to the pod, not to the command.
+`bitc config explain` shows the names with `<redacted>` values, and an error names the key, never
+the value. [spec.md](spec.md) section 8.7 has the rules.
+
 ## Running them safely
 
 Remote providers leave resources that cost money if a job dies at the wrong moment, so run

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -203,6 +204,20 @@ func decodeProviders(p *problems, e *Effective, file string, sections map[string
 		if pr.APIKey != "" {
 			e.Secrets = append(e.Secrets, pr.APIKey)
 		}
+		// pod_env values are credentials in practice: redact them too (defence in depth), by the
+		// podEnvRedacts rule.
+		if pe, ok := pr.Raw["pod_env"].(map[string]any); ok {
+			names := make([]string, 0, len(pe))
+			for n := range pe {
+				names = append(names, n)
+			}
+			sort.Strings(names)
+			for _, n := range names {
+				if s, ok := pe[n].(string); ok && podEnvRedacts(n, s) {
+					e.Secrets = append(e.Secrets, s)
+				}
+			}
+		}
 		if pt.Validate != nil {
 			for _, m := range pt.Validate(pr) {
 				p.addf("%s: %s.%s", file, key, m)
@@ -215,6 +230,36 @@ func decodeProviders(p *problems, e *Effective, file string, sections map[string
 		pr.Endpoints = eps
 		e.Providers[typ] = pr
 	}
+}
+
+// podEnvRedactMin is the shortest value, under a name that is no credential name, that joins the
+// run's redaction list.
+const podEnvRedactMin = 16
+
+// podEnvRedactCredMin is the shortest value, under a credential-like name, that joins the list.
+// The name match is a substring match, so names such as TOKENIZERS_PARALLELISM or MAX_TOKENS
+// carry flags and counts ("false", "4096") that must not become patterns.
+const podEnvRedactCredMin = 8
+
+// podEnvCredentialWords are the substrings of an upper-case pod_env name that mark a credential.
+var podEnvCredentialWords = []string{"TOKEN", "KEY", "SECRET", "PASS", "AUTH", "CRED"}
+
+// podEnvRedacts reports whether the pod_env value joins the run's redaction list. A value under a
+// credential-like name joins from 8 bytes (generated credentials are far longer). Any other value
+// joins only at 16 bytes or more and when it does not start with "/": a short or path-like plain
+// value ("1", "bfloat16", "/cache/hf") would turn ordinary output into <redacted>, and redact.Env
+// drops every env entry that contains a pattern. The empty value never joins.
+func podEnvRedacts(name, value string) bool {
+	if value == "" {
+		return false
+	}
+	up := strings.ToUpper(name)
+	for _, w := range podEnvCredentialWords {
+		if strings.Contains(up, w) {
+			return len(value) >= podEnvRedactCredMin
+		}
+	}
+	return len(value) >= podEnvRedactMin && !strings.HasPrefix(value, "/")
 }
 
 func str(p *problems, file, key string, v any) string {

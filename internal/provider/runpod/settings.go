@@ -19,6 +19,9 @@ type Settings struct {
 	Sizes                                          map[string]Size
 	Disk                                           config.Size
 	Port                                           int
+	// PodEnv is [providers.runpod] pod_env: host-set variables for the pod env at create, never
+	// the job's (the agent builds the job env from the spec alone). Values are never logged.
+	PodEnv map[string]string
 }
 
 // DecodeSettings decodes the provider-specific keys strictly (spec 8.5, 8.7).
@@ -63,6 +66,8 @@ func DecodeSettings(raw map[string]any) (Settings, error) {
 				err = fmt.Errorf("port must be 1..65535")
 			}
 			s.Port = int(n)
+		case "pod_env":
+			s.PodEnv, err = decodePodEnv(raw[k])
 		case "sizes":
 			m, ok := raw[k].(map[string]any)
 			if !ok {

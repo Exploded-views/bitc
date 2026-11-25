@@ -85,10 +85,16 @@ func (p *Provider) createBody(j *provider.JobSpec, as agent.Spec) (map[string]an
 		return nil, err
 	}
 	z := p.set.Sizes[j.SizeKey]
-	env := map[string]string{
+	env := make(map[string]string, len(p.set.PodEnv)+8)
+	for k, v := range p.set.PodEnv { // first: the keys below are the provider's own, and BITC_ and RUNPOD_ names never get here
+		env[k] = v
+	}
+	for k, v := range map[string]string{
 		"BITC_SPEC": enc, "BITC_AGENT_SHA256": j.AgentSHA256,
 		"BITC_DEADLINE": strconv.FormatInt(j.Deadline.Unix(), 10), "BITC_OWNER": j.Owner, "BITC_PROVIDER_TYPE": "runpod",
 		"BITC_API_BASE": strings.TrimRight(p.set.APIBase, "/"),
+	} {
+		env[k] = v
 	}
 	image, start := p.set.Image, agent.Stub(j.AgentURL, j.AgentSHA256)
 	if b := j.AgentBuild; b != nil { // the pod builds the agent in the pinned image (spec 8.4 step 1)

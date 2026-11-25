@@ -250,6 +250,7 @@ only (repo: 78). **narrowable**: others may only narrow it (widening: 78 in a fi
 | `[remote_limits]`, `pools.<p>.remote_limits.size`, `[providers.*]`, `[compat]`, `[[repos]]`, `[test]` | host | — | — |
 | `providers.<t>.fallback_until` | host, narrow=boundary | — (a repo file, env or flag: 78; a repo file's line is `providers.<t>.fallback_until: host-only key`) | host value, never later than the provider's declaration |
 | `providers.<t>.send_env` | host-only | — (a repo file, env or flag: 78; a repo file's line is `providers.<t>.send_env: host-only key`) | host value (`none`, `forwarded` or `forced`) |
+| `providers.<t>.pod_env` | host-only | — (a repo file, env or flag: 78; a repo file's line is `providers.<t>.pod_env: host-only key`) | host value |
 | `providers.<t>.plugin` (`path`, `sha256`, `env_pass`, `secret_files`), core `sizes` of a plugin type | host | — (a repo file: 78; its line is `providers.<t>.plugin: host-only key`) | host value |
 | `[detach]` | host | `wait --timeout` | flag replaces |
 | `[vars]`; `env`, `env_default` (defaults and pools) | project | repo | key by key, **host wins** |
@@ -1366,8 +1367,38 @@ costs and leaks nothing, so no rail applies. Hooks run only here.
 CPU pods; the first remote provider and the only one in M2. Caps: all four. Keys: `image` (needs
 `sh` and curl, wget, apt or apk) and `sizes` required; `api_base` (`https://api.runpod.io`),
 `proxy_domain` (`proxy.runpod.net`), `cloud` (`SECURE`), `disk` (`40GiB`), `port` (`8090`);
-optional `data_center`. `Endpoints` = `api_base` and `*.<proxy_domain>`. M2 mounts no network
+optional `data_center` and `pod_env`. `Endpoints` = `api_base` and `*.<proxy_domain>`. M2 mounts no network
 volume (caches: 16.1).
+
+- **`pod_env`** (host file only; a repo file that sets it is 78): `pod_env = { NAME = "value" }`
+  adds variables to the pod env at create, for the pod's own tooling (a package mirror's cache
+  directory, say). At most 16 entries. A name matches `^[A-Z][A-Z0-9_]{0,63}$` and is none of
+  `PATH`, `HOME`, `SHELL`, `USER`, `PUBLIC_KEY`, `JUPYTER_PASSWORD`, `WGETRC`, `XDG_CONFIG_HOME`, `IFS`,
+  `SYSTEM_WGETRC`, `OPENSSL_CONF`, `OPENSSL_MODULES`, `SSLKEYLOGFILE`, `GLIBC_TUNABLES`,
+  `HOSTALIASES`, `RES_OPTIONS`, `TMPDIR`, `ENV`, `BASH_ENV`, `LOCALDOMAIN` or `PS4`, and does not
+  start with `BITC_`, `RUNPOD_`, `LD_`, `SSH_`, `SSL_`, `GIT_`, `GO`, `CGO_`, `CURL_` or `MALLOC_`
+  nor end with `_PROXY`. The last group (from `XDG_CONFIG_HOME` on, with `MALLOC_`) is refused because those
+  names change how the start stub's shell, git, curl, OpenSSL, the C library or the resolver
+  (`LOCALDOMAIN`, `RES_OPTIONS`, `HOSTALIASES`) behave before the agent clears the environment. A
+  value is a string of at most 256 bytes with no control character (0x00-0x1f, 0x7f) and no `{{`
+  (so it cannot reference a RunPod account secret). A refusal is 78 and names the key, never the value;
+  `bitc config explain` lists the names with the value `<redacted>`. The entries go into the create
+  body's env before the keys below, which they cannot override (the `BITC_` refusal keeps
+  `BITC_OWNER`, the ownership tag, and the other `BITC_*` env keys out of reach; the name prefix
+  and install id are in the pod name, which `pod_env` cannot touch). A value also joins the
+  run's redaction list when its name contains `TOKEN`, `KEY`, `SECRET`, `PASS`, `AUTH` or `CRED`
+  (matched on the upper-case name) and it is at least 8 bytes long. Any other value joins only
+  when it is at least 16 bytes long and does not start with `/`. A shorter value stays out, and so
+  does a short or path-like plain value (`1`, `bfloat16`, `/cache/hf`): as a pattern it would
+  rewrite those strings in every history line and status output, and `redact.Env` drops each env
+  entry that contains a pattern. The name match is a substring match, so `TOKENIZERS_PARALLELISM`
+  (`false`) and `MAX_TOKENS` (`4096`) match too; the 8-byte floor keeps such flags and counts out,
+  and generated credentials are far longer. The trade-off is deliberate: a hand-typed credential
+  under 8 bytes (a short PIN, say) is not masked. That is accepted because the redaction is
+  defence in depth only: no bitc output prints a `pod_env` value, and the job never sees one.
+  The empty value never joins. The entries are the pod's environment, not the job's: the agent
+  builds the job env from the spec alone (8.4), so no `pod_env` entry reaches the command, its setup steps or its
+  services. The create body stays under its 100 KiB check with them counted.
 
 - **API:** REST v2 only (`POST /v2/pods`, `GET /v2/pods`, `GET/DELETE /v2/pods/{id}`, billing for
   `Spend`); create bodies under 100 KiB, checked before sending.
