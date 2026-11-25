@@ -180,7 +180,7 @@ func deleteAny(ctx context.Context, api API, name string) error {
 
 // Raw refuses a create (it would dodge the one-live-Sprite rule); Env.TryCreate is the way.
 func (g guarded) Raw(ctx context.Context, method, path string, q url.Values, body any) (int, []byte) {
-	if method == "POST" && strings.TrimRight(path, "/") == "/v1/sprites" {
+	if strings.EqualFold(method, "POST") && strings.TrimRight(path, "/") == "/v1/sprites" {
 		return 0, nil
 	}
 	return g.API.Raw(ctx, method, path, q, body)
