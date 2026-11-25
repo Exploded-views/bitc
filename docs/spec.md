@@ -125,7 +125,9 @@ record (a job a legacy launcher started, 12): legacy J8/J9 apply, so the last li
 ### 3.3 `status`, `sweep`, `doctor`, `cancel`
 
 - **status** (`--json`: `docs/status.schema.json`): holders (job, slot, pid, cwd, argv, provider,
-  `nested`), waiters, last STARVED reason, groups, memory, per-provider resources, spend, breaker.
+  `nested`), waiters, last STARVED reason, groups, memory (off Linux there is no memory admission:
+  text says `memory: not used on macOS (no memory admission)`, `--json` has `memory.applies: false`),
+  per-provider resources, spend, breaker.
   On Linux without a readable `/proc/locks` (no procfs, an LSM or seccomp denial, gVisor) a lock
   cannot be inspected without taking it, and status never takes one: a slot or group unit that is
   in use as far as its ticket or lock file shows reads `unknown` (text), `"unknown": true` on

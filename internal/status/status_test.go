@@ -294,11 +294,13 @@ func snapshotMemory(t *testing.T, goosName, meminfo string) (Report, string) {
 func memoryJSON(t *testing.T, r Report) map[string]any {
 	t.Helper()
 	b, _ := json.Marshal(r)
-	var m map[string]map[string]any
+	var m struct {
+		Memory map[string]any `json:"memory"`
+	}
 	if err := json.Unmarshal(b, &m); err != nil {
 		t.Fatal(err)
 	}
-	return m["memory"]
+	return m.Memory
 }
 
 // macOS has no memory admission: status says so instead of "unreadable (/proc/meminfo)" (#49).

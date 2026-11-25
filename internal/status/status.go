@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -63,7 +64,12 @@ type Group struct {
 	Unknown []int `json:"unknown,omitempty"`
 }
 
+// goos is the host OS the memory section is reported for; tests override it.
+var goos = runtime.GOOS
+
 type Memory struct {
+	// Applies is false off Linux: there is no memory admission, so the other fields mean nothing.
+	Applies      bool   `json:"applies"`
 	AvailableMiB int64  `json:"available_mib"`
 	Readable     bool   `json:"readable"`
 	Source       string `json:"source"`
@@ -183,8 +189,11 @@ func Snapshot(e *config.Effective, l state.Layout, only []string) Report {
 	if e.Test != nil {
 		root = e.Test.ProcfsRoot
 	}
-	avail, ok, src := admit.ReadMemory(root)
-	r.Memory = Memory{AvailableMiB: avail >> 20, Readable: ok, Source: src, FloorMiB: int64(e.Host.MemoryFloor) >> 20}
+	r.Memory = Memory{Applies: goos == "linux"}
+	if r.Memory.Applies {
+		avail, ok, src := admit.ReadMemory(root)
+		r.Memory = Memory{Applies: true, AvailableMiB: avail >> 20, Readable: ok, Source: src, FloorMiB: int64(e.Host.MemoryFloor) >> 20}
+	}
 	r.Legacy = redactAll(red, admit.LegacyHolders(e.Compat))
 	if RemoteSection != nil {
 		r.Remote = RemoteSection(e)
@@ -314,7 +323,13 @@ func (r Report) Text(w io.Writer) {
 		}
 		fmt.Fprintf(w, "group %s: %d/%d units held%s\n", g.Name, len(g.Held), g.Units, unk)
 	}
-	if r.Memory.Readable {
+	if !r.Memory.Applies {
+		osName := goos
+		if osName == "darwin" {
+			osName = "macOS"
+		}
+		fmt.Fprintf(w, "memory: not used on %s (no memory admission)\n", osName)
+	} else if r.Memory.Readable {
 		fmt.Fprintf(w, "memory: %d MiB available (%s), floor %d MiB\n", r.Memory.AvailableMiB, r.Memory.Source, r.Memory.FloorMiB)
 	} else {
 		fmt.Fprintf(w, "memory: unreadable (%s)\n", r.Memory.Source)
