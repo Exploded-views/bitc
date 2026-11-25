@@ -28,8 +28,8 @@ func TestExplainRedactsPodEnvValues(t *testing.T) {
 	}
 }
 
-// Defence in depth: every pod_env value joins the run's redaction list (e.Secrets), next to the
-// API key, so a stray echo of one is masked by the same redactor.
+// Defence in depth: every pod_env value of 8 bytes or more joins the run's redaction list
+// (e.Secrets), next to the API key, so a stray echo of one is masked by the same redactor.
 func TestPodEnvValuesJoinTheRedactionList(t *testing.T) {
 	pinLinux(t)
 	f := newFixture(t, podEnvHost+"pod_env = { HF_HOME = \"s3cr3t-hf-value\", A_TOKEN = \"s3cr3t-token-value\", EMPTY = \"\" }\n", "")

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -110,8 +109,6 @@ func TestPodEnvValueControlCharacters(t *testing.T) {
 		t.Fatalf("space, tilde and non-ASCII are fine: %v", err)
 	}
 }
-
-func quote(s string) string { return strconv.Quote(s) }
 
 // bodyEnv is the env of the create body a provider built from raw would send.
 func bodyEnv(t *testing.T, raw map[string]any) map[string]string {
