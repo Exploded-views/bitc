@@ -266,3 +266,76 @@ func TestAgeIsMeasuredToTheReportTimeAndNeverNegative(t *testing.T) {
 		t.Errorf("a ticket from the future has age %d", got)
 	}
 }
+
+// snapshotMemory is Snapshot's memory section as a host running goosName would report it, with
+// meminfo (when not "") as the contents of <root>/proc/meminfo.
+func snapshotMemory(t *testing.T, goosName, meminfo string) (Report, string) {
+	t.Helper()
+	old := goos
+	goos = goosName
+	t.Cleanup(func() { goos = old })
+	root := t.TempDir()
+	if meminfo != "" {
+		if err := os.MkdirAll(filepath.Join(root, "proc"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "proc", "meminfo"), []byte(meminfo), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	l, _ := state.Open(filepath.Join(t.TempDir(), "s"))
+	e := &config.Effective{Host: config.Host{MemoryFloor: 6 << 30}, Test: &config.Test{ProcfsRoot: root}}
+	r := Snapshot(e, l, nil)
+	var out bytes.Buffer
+	r.Text(&out)
+	return r, out.String()
+}
+
+func memoryJSON(t *testing.T, r Report) map[string]any {
+	t.Helper()
+	b, _ := json.Marshal(r)
+	var m map[string]map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	return m["memory"]
+}
+
+// macOS has no memory admission: status says so instead of "unreadable (/proc/meminfo)" (#49).
+func TestStatusMemoryIsNotUsedOnDarwin(t *testing.T) {
+	r, text := snapshotMemory(t, "darwin", "")
+	if want := "memory: not used on macOS (no memory admission)\n"; !strings.HasSuffix(text, want) || strings.Contains(text, "unreadable") {
+		t.Errorf("status text should end %q:\n%s", want, text)
+	}
+	if m := memoryJSON(t, r); m["applies"] != false {
+		t.Errorf("status --json memory = %v, want applies:false", m)
+	}
+}
+
+func TestStatusMemoryNamesOtherNonLinuxOSes(t *testing.T) {
+	_, text := snapshotMemory(t, "freebsd", "")
+	if want := "memory: not used on freebsd (no memory admission)\n"; !strings.HasSuffix(text, want) {
+		t.Errorf("status text should end %q:\n%s", want, text)
+	}
+}
+
+func TestStatusMemoryOnLinuxIsUnchanged(t *testing.T) {
+	r, text := snapshotMemory(t, "linux", "MemTotal: 16777216 kB\nMemAvailable: 8388608 kB\n")
+	if want := "memory: 8192 MiB available (MemAvailable), floor 6144 MiB\n"; !strings.HasSuffix(text, want) {
+		t.Errorf("status text should end %q:\n%s", want, text)
+	}
+	m := memoryJSON(t, r)
+	if m["applies"] != true || m["readable"] != true || m["available_mib"] != float64(8192) || m["floor_mib"] != float64(6144) || m["source"] != "MemAvailable" {
+		t.Errorf("status --json memory = %v", m)
+	}
+}
+
+func TestStatusMemoryUnreadableOnLinuxIsStillReported(t *testing.T) {
+	r, text := snapshotMemory(t, "linux", "")
+	if !strings.HasSuffix(text, "memory: unreadable ("+r.Memory.Source+")\n") || !strings.HasSuffix(r.Memory.Source, "proc/meminfo") {
+		t.Errorf("status text should end with memory: unreadable (<src>):\n%s", text)
+	}
+	if m := memoryJSON(t, r); m["applies"] != true || m["readable"] != false {
+		t.Errorf("status --json memory = %v, want applies:true readable:false", m)
+	}
+}
