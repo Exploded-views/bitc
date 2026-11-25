@@ -68,7 +68,7 @@ type Group struct {
 var goos = runtime.GOOS
 
 type Memory struct {
-	// Applies is false off Linux: there is no memory admission, so the other fields mean nothing.
+	// Applies is false off Linux: there is no memory admission, so only FloorMiB (the configured floor) carries a value; the rest are zero.
 	Applies      bool   `json:"applies"`
 	AvailableMiB int64  `json:"available_mib"`
 	Readable     bool   `json:"readable"`

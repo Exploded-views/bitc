@@ -337,7 +337,7 @@ func TestStatusMemoryUnreadableOnLinuxIsStillReported(t *testing.T) {
 	if !strings.HasSuffix(text, "memory: unreadable ("+r.Memory.Source+")\n") || !strings.HasSuffix(r.Memory.Source, "proc/meminfo") {
 		t.Errorf("status text should end with memory: unreadable (<src>):\n%s", text)
 	}
-	if m := memoryJSON(t, r); m["applies"] != true || m["readable"] != false {
-		t.Errorf("status --json memory = %v, want applies:true readable:false", m)
+	if m := memoryJSON(t, r); m["applies"] != true || m["readable"] != false || m["floor_mib"] != float64(6144) {
+		t.Errorf("status --json memory = %v, want applies:true readable:false floor_mib:6144", m)
 	}
 }
