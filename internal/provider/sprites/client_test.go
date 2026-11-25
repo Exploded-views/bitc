@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -406,6 +407,148 @@ func TestPoliciesRefuseWildcardsAndBadValues(t *testing.T) {
 	ok, _ := AllowDomains("github.com")
 	if err := c.ApplyBuildPolicies(ctx, "bitc-a", ok, Resources{LimitMB: 0}); kind(err) != "ineligible" {
 		t.Errorf("zero memory: %v", err)
+	}
+}
+
+const (
+	denyRule     = `{"domain":"*","action":"deny"}`
+	githubAllow  = `{"domain":"github.com","action":"allow"}`
+	ubuntuAllow  = `{"domain":"archive.ubuntu.com","action":"allow"}`
+	denyOnlyBody = `{"rules":[` + denyRule + `]}`
+)
+
+func policyBody(rules ...string) string { return `{"rules":[` + strings.Join(rules, ",") + `]}` }
+
+func TestBuildAndJobPoliciesEndWithOneCatchAllDeny(t *testing.T) {
+	f, c := newFake(t, spritesfake.Options{})
+	ctx := context.Background()
+	if _, err := c.CreateSprite(ctx, "bitc-a", nil); err != nil {
+		t.Fatal(err)
+	}
+	build, _ := AllowDomains("github.com", "archive.ubuntu.com")
+	if err := c.ApplyBuildPolicies(ctx, "bitc-a", build, Resources{LimitMB: 1024}); err != nil {
+		t.Fatal(err)
+	}
+	if net, _ := f.Policies("bitc-a"); net != policyBody(ubuntuAllow, githubAllow, denyRule) {
+		t.Fatalf("build policy: %s", net)
+	}
+	job, _ := AllowDomains("github.com")
+	if err := c.ApplyJobPolicy(ctx, "bitc-a", job); err != nil {
+		t.Fatal(err)
+	}
+	if net, _ := f.Policies("bitc-a"); net != policyBody(githubAllow, denyRule) {
+		t.Fatalf("job policy: %s", net)
+	}
+}
+
+func TestEmptyDomainListIsDenyAll(t *testing.T) {
+	f, c := newFake(t, spritesfake.Options{})
+	ctx := context.Background()
+	_, _ = c.CreateSprite(ctx, "bitc-a", nil)
+	empty, err := AllowDomains()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.ApplyBuildPolicies(ctx, "bitc-a", empty, Resources{LimitMB: 1024}); err != nil {
+		t.Fatal(err)
+	}
+	if net, _ := f.Policies("bitc-a"); net != denyOnlyBody {
+		t.Fatalf("empty build policy: %s", net)
+	}
+	// the zero value is deny-all too: a literal cannot skip the deny
+	if err := c.ApplyJobPolicy(ctx, "bitc-a", NetworkPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if net, _ := f.Policies("bitc-a"); net != denyOnlyBody {
+		t.Fatalf("zero-value job policy: %s", net)
+	}
+}
+
+func TestLiteralPolicyCannotSkipOrForgeTheDeny(t *testing.T) {
+	f, c := newFake(t, spritesfake.Options{})
+	ctx := context.Background()
+	_, _ = c.CreateSprite(ctx, "bitc-a", nil)
+	// a literal of explicit allows still gets the deny appended
+	lit := NetworkPolicy{Rules: []NetRule{{Domain: "github.com", Action: "allow"}}}
+	if err := c.ApplyBuildPolicies(ctx, "bitc-a", lit, Resources{LimitMB: 1024}); err != nil {
+		t.Fatal(err)
+	}
+	if net, _ := f.Policies("bitc-a"); net != policyBody(githubAllow, denyRule) {
+		t.Fatalf("literal policy: %s", net)
+	}
+	// a caller-supplied catch-all or deny is refused, not trusted
+	for _, r := range []NetRule{{Domain: "*", Action: "allow"}, {Domain: "*", Action: "deny"}, {Domain: "github.com", Action: "deny"}} {
+		bad := NetworkPolicy{Rules: []NetRule{{Domain: "github.com", Action: "allow"}, r}}
+		if err := c.ApplyJobPolicy(ctx, "bitc-a", bad); kind(err) != "ineligible" {
+			t.Errorf("%+v: %v", r, err)
+		}
+	}
+	if net, _ := f.Policies("bitc-a"); net != policyBody(githubAllow, denyRule) {
+		t.Fatalf("a refused policy changed the stored one: %s", net)
+	}
+}
+
+func TestStarAllowIsRefusedByName(t *testing.T) {
+	for _, d := range []string{"*", "*.com", "*.*"} {
+		_, err := AllowDomains("github.com", d)
+		if err == nil || !strings.Contains(err.Error(), strconv.Quote(d)) {
+			t.Errorf("AllowDomains(%q): %v", d, err)
+		}
+	}
+}
+
+func TestNetworkVerificationFailsClosed(t *testing.T) {
+	for name, readback := range map[string]string{
+		"missing deny":      policyBody(ubuntuAllow, githubAllow),
+		"extra allow":       policyBody(ubuntuAllow, githubAllow, `{"domain":"evil.example.com","action":"allow"}`, denyRule),
+		"reordered allows":  policyBody(githubAllow, ubuntuAllow, denyRule),
+		"deny first":        policyBody(denyRule, ubuntuAllow, githubAllow),
+		"deny twice":        policyBody(ubuntuAllow, githubAllow, denyRule, denyRule),
+		"allow after deny":  policyBody(ubuntuAllow, denyRule, githubAllow),
+		"wildcard allow":    policyBody(ubuntuAllow, githubAllow, `{"domain":"*","action":"allow"}`),
+		"empty":             `{"rules":[]}`,
+		"not a policy":      `{}`,
+		"deny only (short)": denyOnlyBody,
+	} {
+		t.Run(name, func(t *testing.T) {
+			f, c := newFake(t, spritesfake.Options{})
+			ctx := context.Background()
+			_, _ = c.CreateSprite(ctx, "bitc-a", nil)
+			f.ServeNetworkReadback("bitc-a", readback)
+			build, _ := AllowDomains("github.com", "archive.ubuntu.com")
+			var pm *PolicyMismatchError
+			if err := c.ApplyBuildPolicies(ctx, "bitc-a", build, Resources{LimitMB: 1024}); !errors.As(err, &pm) {
+				t.Fatalf("build: %v", err)
+			}
+			if _, err := c.Exec(ctx, "bitc-a", ExecRequest{Cmd: []string{"true"}}); !errors.Is(err, ErrNotProvisioned) {
+				t.Fatalf("exec after a failed verification: %v", err)
+			}
+			// the job policy fails the same way, after a verified build policy
+			f.ServeNetworkReadback("bitc-a", "")
+			if err := c.ApplyBuildPolicies(ctx, "bitc-a", build, Resources{LimitMB: 1024}); err != nil {
+				t.Fatal(err)
+			}
+			f.ServeNetworkReadback("bitc-a", readback)
+			if err := c.ApplyJobPolicy(ctx, "bitc-a", build); !errors.As(err, &pm) {
+				t.Fatalf("job: %v", err)
+			}
+		})
+	}
+}
+
+func TestNetworkVerificationReadErrorFailsClosed(t *testing.T) {
+	f, c := newFake(t, spritesfake.Options{})
+	ctx := context.Background()
+	_, _ = c.CreateSprite(ctx, "bitc-a", nil)
+	f.Behave("policy-get-500")
+	build, _ := AllowDomains("github.com")
+	err := c.ApplyBuildPolicies(ctx, "bitc-a", build, Resources{LimitMB: 1024})
+	var tr *provider.ErrTransient
+	if !errors.As(err, &tr) {
+		t.Fatalf("got %v", err)
+	}
+	if _, err := c.Exec(ctx, "bitc-a", ExecRequest{Cmd: []string{"true"}}); !errors.Is(err, ErrNotProvisioned) {
+		t.Fatalf("exec after a read error: %v", err)
 	}
 }
 

@@ -118,6 +118,10 @@ func TestFakeRefusesUnknownFieldsAndParameters(t *testing.T) {
 		{"/policy/network", `{"rules":[{"domain":"*","action":"allow"}]}`},
 		{"/policy/network", `{"rules":[{"domain":"github.com","action":"deny"}]}`},
 		{"/policy/network", `{}`},
+		{"/policy/network", `{"rules":[]}`},
+		{"/policy/network", `{"rules":[{"domain":"github.com","action":"allow"}]}`},
+		{"/policy/network", `{"rules":[{"domain":"*","action":"deny"},{"domain":"github.com","action":"allow"}]}`},
+		{"/policy/network", `{"rules":[{"domain":"*","action":"deny"},{"domain":"*","action":"deny"}]}`},
 		{"/policy/resources", `{"memory":{"limit_mb":1024,"autoscale":true}}`},
 		{"/policy/resources", `{"memory":{"limit_mb":0,"autoscale":false}}`},
 		{"/policy/resources", `{"memory":{"limit_mb":1,"autoscale":false,"x":1}}`},
@@ -194,7 +198,7 @@ func TestFakeListPaginatesByToken(t *testing.T) {
 func TestFakeStoresAndServesPolicies(t *testing.T) {
 	f := spritesfake.New(t, spritesfake.Options{})
 	raw(t, f, "POST", "/v1/sprites", `{"name":"a"}`, nil)
-	if code, _ := raw(t, f, "POST", "/v1/sprites/a/policy/network", `{"rules":[{"domain":"github.com","action":"allow"}]}`, nil); code != 200 {
+	if code, _ := raw(t, f, "POST", "/v1/sprites/a/policy/network", `{"rules":[{"domain":"github.com","action":"allow"},{"domain":"*","action":"deny"}]}`, nil); code != 200 {
 		t.Fatalf("set: %d", code)
 	}
 	_, got := raw(t, f, "GET", "/v1/sprites/a/policy/network", ``, nil)
