@@ -48,6 +48,7 @@ type pod struct {
 	dropTail                  bool // drop-log-tail: from BEGIN, out.log/err.log stay unreadable until result.json was fetched
 	beginServed               bool // the BEGIN line was served to a reader (lost-after-begin)
 	resultServed              bool
+	forge                     bool // forge-result: the proxy answers result.json with a forged one
 }
 
 type Fake struct {
@@ -102,7 +103,7 @@ func (f *Fake) URL() string       { return f.api.URL }
 func (f *Fake) ProxyAddr() string { return strings.TrimPrefix(f.proxy.URL, "http://") }
 
 // Behave arms a behaviour: transient-create, transient-create-twice (the same no-capacity answer on a create and on its one retry), create-500-twice, create-429-twice, create-500-after-create (makes the pod, answers 500), unavailable, slow-create,
-// list-500, list-500-after-create (the first list once a pod was made), billing-500, refuse-create (422 with a two-line message), restart-after-begin, restart-after-begin-no-boot (startedAt changes, the agent never boots again: build mode once the agent ref is gone), lost-after-begin, drop-log-tail, forge-result, logs-429-burst (the next 5 log reads answer 429, the first with Retry-After: 1), logs-stall-after-first (once a log line was served, since= queries return nothing, as the live API did 2026-10-23; tail queries still work); or
+// list-500, list-500-after-create (the first list once a pod was made), billing-500, refuse-create (422 with a two-line message), restart-after-begin, restart-after-begin-no-boot (startedAt changes, the agent never boots again: build mode once the agent ref is gone), lost-after-begin, drop-log-tail, forge-result (the next created pod only: every result.json read of it is a forged document), logs-429-burst (the next 5 log reads answer 429, the first with Retry-After: 1), logs-stall-after-first (once a log line was served, since= queries return nothing, as the live API did 2026-10-23; tail queries still work); or
 // "hold <METHOD> <path>" (e.g. "hold POST /v2/pods"): every such call is recorded and does its
 // work (a create makes its pod), then its answer waits until Release or until the client gives
 // up. Race tests use it instead of fixed delays.
@@ -371,6 +372,7 @@ func (f *Fake) create(w http.ResponseWriter, r *http.Request) {
 	f.seq++
 	id := fmt.Sprintf("pod%d", f.seq)
 	p := &pod{ID: id, Name: fmt.Sprint(body["name"]), Created: time.Now().UTC().Format(time.RFC3339), Status: "RUNNING", Started: time.Now().UTC().Format(time.RFC3339Nano), Env: env, testRoot: spec.TestRoot}
+	p.forge = f.take("forge-result")
 	f.pods[id] = p
 	f.bodies = append(f.bodies, body)
 	f.mu.Unlock()
@@ -523,9 +525,6 @@ func (f *Fake) start(p *pod) {
 			drop := strings.HasPrefix(line, agent.MarkExit+" ") && p.dropTail
 			if strings.HasPrefix(line, agent.MarkExit+" ") {
 				p.ended = true
-				if f.take("forge-result") {
-					forge(p)
-				}
 			}
 			if !drop {
 				p.log = append(p.log, logLine{TS: time.Now().UTC().Format(time.RFC3339Nano), Line: line})
@@ -553,14 +552,14 @@ func (f *Fake) start(p *pod) {
 	}()
 }
 
-// forge rewrites result.json with exit 0 and a MAC made with another key.
-func forge(p *pod) {
-	matches, _ := filepath.Glob(filepath.Join(p.testRoot, "run", "*", "result.json"))
-	for _, m := range matches {
-		r := agent.Sign([]byte("a forged key a forged key a forg"), agent.ResultFile{Exit: 0})
-		b, _ := json.Marshal(r)
-		_ = os.WriteFile(m, b, 0o600)
-	}
+// forgedResult is a result.json with exit 0 and a MAC made with another key. A forging pod's proxy
+// answers every result.json read with it, so the forgery does not depend on when the agent's EXIT
+// line reaches this process: the host's state.json poll can see "ended" (and fetch result.json)
+// before that line is scanned, and a genuine result would then verify (issue #65).
+func forgedResult() []byte {
+	r := agent.Sign([]byte("a forged key a forged key a forg"), agent.ResultFile{Exit: 0})
+	b, _ := json.Marshal(r)
+	return b
 }
 
 func (f *Fake) kill(p *pod) {
@@ -663,16 +662,22 @@ func (f *Fake) serveProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f.mu.Lock()
-	withheld := false
+	withheld, forged := false, false
 	switch m[3] {
 	case "/v1/result.json":
 		p.resultServed = true
+		forged = p.forge
 	case "/v1/out.log", "/v1/err.log":
 		withheld = p.dropTail && !p.resultServed // the tail the log stream and the live tail both missed
 	}
 	f.mu.Unlock()
 	if withheld {
 		w.WriteHeader(503)
+		return
+	}
+	if forged {
+		// served without the agent's bearer check: the forgery stands in for a hostile agent
+		_, _ = w.Write(forgedResult())
 		return
 	}
 	port, err := os.ReadFile(filepath.Join(p.testRoot, "port"))
