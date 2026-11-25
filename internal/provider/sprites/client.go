@@ -537,7 +537,10 @@ func (c *Client) advance(name string, to int) {
 	}
 }
 
-func (c *Client) setNetwork(ctx context.Context, name string, p NetworkPolicy) error {
+// setNetwork sets and verifies the network policy. Once the platform may hold a policy that was not
+// verified (any failure after wire succeeded), the Sprite's provisioning state is dropped to
+// polNone: nothing can exec or attach until the build policies and the job policy verify again.
+func (c *Client) setNetwork(ctx context.Context, name string, p NetworkPolicy) (err error) {
 	if err := checkName(name); err != nil {
 		return err
 	}
@@ -545,6 +548,11 @@ func (c *Client) setNetwork(ctx context.Context, name string, p NetworkPolicy) e
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if err != nil {
+			c.drop(name)
+		}
+	}()
 	want := NetworkPolicy{Rules: rules}
 	code, b := c.do(ctx, "POST", c.policyPath(name, "network"), nil, want)
 	if err := mapHTTP(code, b, "set network policy"); err != nil {
@@ -554,11 +562,38 @@ func (c *Client) setNetwork(ctx context.Context, name string, p NetworkPolicy) e
 	if err := mapHTTP(code, b, "get network policy"); err != nil {
 		return err
 	}
-	var got NetworkPolicy
-	if json.Unmarshal(b, &got) != nil || !samePolicy(want, got) {
+	got, ok := decodeStrictPolicy(b)
+	if !ok || !samePolicy(want, got) {
 		return &PolicyMismatchError{Name: name, Policy: "network"}
 	}
 	return nil
+}
+
+// drop lowers a Sprite this client created to polNone.
+func (c *Client) drop(name string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, ok := c.fresh[name]; ok {
+		c.fresh[name] = polNone
+	}
+}
+
+// decodeStrictPolicy reads a policy answer and accepts only exactly what bitc sends: one JSON
+// object whose only key is "rules", each rule only "domain" and "action". Any other key ("include",
+// "default", an exception list on a rule, a trailing document) fails, because it could widen the
+// policy without showing in the rule list. The design doc lists no harmless metadata fields, so
+// none is tolerated; a platform that adds one makes every launch fail closed until it is reviewed.
+func decodeStrictPolicy(b []byte) (NetworkPolicy, bool) {
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.DisallowUnknownFields()
+	var got NetworkPolicy
+	if dec.Decode(&got) != nil {
+		return NetworkPolicy{}, false
+	}
+	if _, err := dec.Token(); err != io.EOF { // trailing data
+		return NetworkPolicy{}, false
+	}
+	return got, true
 }
 
 // samePolicy is exact: the same rules in the same order, the final deny included. Rule order is

@@ -11,9 +11,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Every Sprites network policy bitc sets now ends in a catch-all deny rule
   (`{domain: "*", action: "deny"}`) after the allowed domains, so a domain not on the list is
-  refused instead of allowed by the platform default; no domains means deny-all, and a `*` allow is
-  refused. The policy is read back and must match exactly, rules and order, or the job does not
-  proceed. Sprites jobs stay refused in this release: this only makes the policy itself correct
+  refused instead of allowed by the platform default; no domains means deny-all, and a `*` allow or
+  deny supplied by a caller is refused. The policy is read back and must match exactly, rules and
+  order, with no other field, or the job does not proceed and the Sprite can no longer be exec'd or
+  attached; the probe kit's raw API call cannot set a network policy. Sprites jobs stay refused in this release: this only makes the policy itself correct
   ([#6](https://github.com/Exploded-views/bitc/issues/6)).
 
 ## [0.1.5] - 2026-11-16

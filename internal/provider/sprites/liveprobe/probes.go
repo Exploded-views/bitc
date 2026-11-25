@@ -40,7 +40,7 @@ func AllProbes() []Probe {
 	return []Probe{
 		{ID: 1, Title: "checkpoints over REST; api.sock", Group: gCkpt, Order: 1, Worst: secs(90), Warm: true, Run: probeCheckpointsREST},
 		{ID: 2, Title: "policies survive a restore", Group: gCkpt, Order: 2, Worst: secs(90), Run: probePolicySurvive},
-		{ID: 3, Title: "egress hosts for GitHub and npm", Group: gNet, Order: 1, Worst: secs(150), Run: probeEgress},
+		{ID: 3, Title: "egress hosts for GitHub and npm under deny-all, then allow lists + catch-all deny", Group: gNet, Order: 1, Worst: secs(150), Run: probeEgress},
 		{ID: 4, Title: "privileges policy", Group: gRO, Order: 8, Worst: secs(60), Warm: true, Run: probePrivileges},
 		{ID: 5, Title: "tmpfs and auto checkpoints", Group: gCkpt, Order: 3, Worst: secs(90), Run: probeTmpfsCheckpoints},
 		{ID: 6, Title: "memory and CPU limits", Group: gRes, Order: 1, Worst: secs(240), Run: probeResources},
@@ -413,7 +413,7 @@ func probeDNS(ctx context.Context, e *Env) Outcome {
 		return execErr("dns query", err)
 	}
 	fmt.Fprintf(e.Cfg.Log, "probe 22: queried %s; check the authoritative server's log for it\n", sub)
-	return worst("queried "+sub+" from inside a Sprite under an empty allow policy; OWNER CHECK PENDING: if that name appears in the authoritative server's log, DNS tunnelling is possible (assume it is until checked)",
+	return worst("queried "+sub+" from inside a Sprite under the deny-all policy (no allows, one catch-all deny); OWNER CHECK PENDING: if that name appears in the authoritative server's log, DNS tunnelling is possible (assume it is until checked)",
 		map[string]any{"queried": sub, "result": oneLine(out(r), 120)})
 }
 

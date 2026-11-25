@@ -26,10 +26,18 @@ type OrgInfo struct {
 
 // Raw sends one bounded JSON request to a /v1/ path and returns the status (0 for no answer, and
 // for a path outside /v1/ or with a dot-dot) and the body. It is the probe kit's way to try an
-// endpoint or a body the typed methods do not know.
+// endpoint or a body the typed methods do not know. It never writes a network policy (a POST, PUT
+// or PATCH of .../policy/network answers 0 and sends nothing): setNetwork is the only way, so a
+// policy cannot be set without its final deny and its exact read-back (issue #6).
 func (c *Client) Raw(ctx context.Context, method, path string, q url.Values, body any) (int, []byte) {
 	if !strings.HasPrefix(path, "/v1/") || strings.Contains(path, "..") || strings.ContainsAny(path, "?#") {
 		return 0, nil
+	}
+	switch strings.ToUpper(method) {
+	case "POST", "PUT", "PATCH":
+		if strings.HasSuffix(strings.TrimRight(path, "/"), "/policy/network") {
+			return 0, nil
+		}
 	}
 	return c.do(ctx, method, path, q, body)
 }

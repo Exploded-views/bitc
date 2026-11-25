@@ -509,6 +509,11 @@ func TestNetworkVerificationFailsClosed(t *testing.T) {
 		"empty":             `{"rules":[]}`,
 		"not a policy":      `{}`,
 		"deny only (short)": denyOnlyBody,
+		// a right rule list is not enough: any other key could widen the policy
+		"include defaults":    `{"include":["defaults"],"rules":[` + ubuntuAllow + `,` + githubAllow + `,` + denyRule + `]}`,
+		"default allow":       `{"default":"allow","rules":[` + ubuntuAllow + `,` + githubAllow + `,` + denyRule + `]}`,
+		"extra key on a rule": `{"rules":[` + ubuntuAllow + `,` + githubAllow + `,{"domain":"*","action":"deny","except":["evil.example.com"]}]}`,
+		"trailing document":   policyBody(ubuntuAllow, githubAllow, denyRule) + ` {"include":["defaults"]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			f, c := newFake(t, spritesfake.Options{})
@@ -532,7 +537,68 @@ func TestNetworkVerificationFailsClosed(t *testing.T) {
 			if err := c.ApplyJobPolicy(ctx, "bitc-a", build); !errors.As(err, &pm) {
 				t.Fatalf("job: %v", err)
 			}
+			// a failed job policy leaves nothing that may exec or attach
+			if _, err := c.Exec(ctx, "bitc-a", ExecRequest{Cmd: []string{"true"}}); !errors.Is(err, ErrNotProvisioned) {
+				t.Fatalf("exec after a job-policy mismatch: %v", err)
+			}
+			if _, err := c.Attach(ctx, "bitc-a", AttachOptions{AgentSHA: testSHA, Sudo: true, Payload: []byte("x")}); !errors.Is(err, ErrNotProvisioned) {
+				t.Fatalf("attach after a job-policy mismatch: %v", err)
+			}
 		})
+	}
+}
+
+// A job policy that verified once, then a later one that does not: the Sprite must not stay
+// attachable on the strength of the first (state is dropped, not just not advanced).
+func TestFailedJobPolicyAfterAVerifiedOneRefusesAttachAndExec(t *testing.T) {
+	f, c := newFake(t, spritesfake.Options{})
+	ctx := context.Background()
+	_, _ = c.CreateSprite(ctx, "bitc-a", nil)
+	build, _ := AllowDomains("github.com")
+	if err := c.ApplyBuildPolicies(ctx, "bitc-a", build, Resources{LimitMB: 1024}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.ApplyJobPolicy(ctx, "bitc-a", build); err != nil {
+		t.Fatal(err)
+	}
+	f.ServeNetworkReadback("bitc-a", policyBody(githubAllow))
+	var pm *PolicyMismatchError
+	if err := c.ApplyJobPolicy(ctx, "bitc-a", build); !errors.As(err, &pm) {
+		t.Fatalf("job: %v", err)
+	}
+	if _, err := c.Attach(ctx, "bitc-a", AttachOptions{AgentSHA: testSHA, Sudo: true, Payload: []byte("x")}); !errors.Is(err, ErrNotProvisioned) {
+		t.Fatalf("attach after a job-policy mismatch: %v", err)
+	}
+	if _, err := c.Exec(ctx, "bitc-a", ExecRequest{Cmd: []string{"true"}}); !errors.Is(err, ErrNotProvisioned) {
+		t.Fatalf("exec after a job-policy mismatch: %v", err)
+	}
+	// and the build policies must be applied again before a job policy can be
+	f.ServeNetworkReadback("bitc-a", "")
+	if err := c.ApplyJobPolicy(ctx, "bitc-a", build); !errors.Is(err, ErrNotProvisioned) {
+		t.Fatalf("job policy without a fresh build policy: %v", err)
+	}
+}
+
+func TestSamePolicyIsOrderSensitiveAndExact(t *testing.T) {
+	a := NetRule{Domain: "archive.ubuntu.com", Action: "allow"}
+	b := NetRule{Domain: "github.com", Action: "allow"}
+	p := func(r ...NetRule) NetworkPolicy { return NetworkPolicy{Rules: r} }
+	for name, tc := range map[string]struct {
+		x, y NetworkPolicy
+		want bool
+	}{
+		"equal":           {p(a, b, catchAllDeny), p(a, b, catchAllDeny), true},
+		"reordered":       {p(a, b, catchAllDeny), p(b, a, catchAllDeny), false},
+		"deny not last":   {p(a, b, catchAllDeny), p(a, catchAllDeny, b), false},
+		"shorter":         {p(a, b, catchAllDeny), p(a, b), false},
+		"duplicate":       {p(a, catchAllDeny), p(a, a, catchAllDeny), false},
+		"other action":    {p(a, catchAllDeny), p(NetRule{Domain: a.Domain, Action: "deny"}, catchAllDeny), false},
+		"empty vs nil":    {p(), NetworkPolicy{}, true},
+		"empty vs a deny": {p(), p(catchAllDeny), false},
+	} {
+		if got := samePolicy(tc.x, tc.y); got != tc.want {
+			t.Errorf("%s: samePolicy = %v, want %v", name, got, tc.want)
+		}
 	}
 }
 
