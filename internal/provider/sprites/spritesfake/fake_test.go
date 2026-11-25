@@ -216,6 +216,32 @@ func TestFakeStoresAndServesPolicies(t *testing.T) {
 	}
 }
 
+// ServeNetworkReadback replaces what a GET of the network policy answers until it is cleared with
+// "", and is a no-op for an unknown Sprite; policy-get-500 fails one GET only (#6).
+func TestFakeNetworkReadbackAndPolicyGet500(t *testing.T) {
+	f := spritesfake.New(t, spritesfake.Options{})
+	raw(t, f, "POST", "/v1/sprites", `{"name":"a"}`, nil)
+	if code, _ := raw(t, f, "POST", "/v1/sprites/a/policy/network", `{"rules":[{"domain":"github.com","action":"allow"},{"domain":"*","action":"deny"}]}`, nil); code != 200 {
+		t.Fatalf("set: %d", code)
+	}
+	f.ServeNetworkReadback("a", `{"rules":[{"domain":"example.org","action":"allow"}]}`)
+	f.ServeNetworkReadback("no-such-sprite", `{"rules":[]}`)
+	if _, got := raw(t, f, "GET", "/v1/sprites/a/policy/network", ``, nil); !strings.Contains(got, "example.org") || strings.Contains(got, "github.com") {
+		t.Fatalf("the readback was not served: %s", got)
+	}
+	f.ServeNetworkReadback("a", "")
+	if _, got := raw(t, f, "GET", "/v1/sprites/a/policy/network", ``, nil); !strings.Contains(got, "github.com") {
+		t.Fatalf("clearing the readback did not restore the stored policy: %s", got)
+	}
+	f.Behave("policy-get-500")
+	if code, _ := raw(t, f, "GET", "/v1/sprites/a/policy/network", ``, nil); code != 500 {
+		t.Fatalf("policy-get-500: %d", code)
+	}
+	if code, got := raw(t, f, "GET", "/v1/sprites/a/policy/network", ``, nil); code != 200 || !strings.Contains(got, "github.com") {
+		t.Fatalf("policy-get-500 is once: %d %s", code, got)
+	}
+}
+
 func TestFakeBehavioursAnswerAsDocumented(t *testing.T) {
 	for _, c := range []struct {
 		behave string
