@@ -28,17 +28,17 @@ func TestExplainRedactsPodEnvValues(t *testing.T) {
 	}
 }
 
-// Defence in depth: every pod_env value of 8 bytes or more joins the run's redaction list
-// (e.Secrets), next to the API key, so a stray echo of one is masked by the same redactor.
+// Defence in depth: pod_env values that pass the redaction rule (below) join the run's redaction
+// list (e.Secrets), next to the API key, so a stray echo of one is masked by the same redactor.
 func TestPodEnvValuesJoinTheRedactionList(t *testing.T) {
 	pinLinux(t)
-	f := newFixture(t, podEnvHost+"pod_env = { HF_HOME = \"s3cr3t-hf-value\", A_TOKEN = \"s3cr3t-token-value\", EMPTY = \"\" }\n", "")
+	f := newFixture(t, podEnvHost+"pod_env = { HF_HOME = \"s3cr3t-hf-value-long\", A_TOKEN = \"s3cr3t-token-value\", EMPTY = \"\" }\n", "")
 	e := mustLoad(t, f)
 	got := map[string]bool{}
 	for _, s := range e.Secrets {
 		got[s] = true
 	}
-	for _, want := range []string{"s3cr3t-hf-value", "s3cr3t-token-value"} {
+	for _, want := range []string{"s3cr3t-hf-value-long", "s3cr3t-token-value"} {
 		if !got[want] {
 			t.Errorf("Secrets lacks the pod_env value %q: %v", want, e.Secrets)
 		}
@@ -48,26 +48,50 @@ func TestPodEnvValuesJoinTheRedactionList(t *testing.T) {
 	}
 }
 
-// Only values of 8 bytes or more join the redaction list: a short value such as "1", "true" or "/"
-// would otherwise rewrite those strings in every history line and status output on the host.
-func TestPodEnvShortValuesStayOutOfTheRedactionList(t *testing.T) {
+// The redaction rule: a non-empty value under a credential-like name (TOKEN, KEY, SECRET, PASSWORD,
+// PASS, AUTH, CRED anywhere in the name) always joins the list, whatever its length; any other value
+// joins only at 16 bytes or more and when it does not start with "/". The empty value never joins.
+func TestPodEnvRedactionRule(t *testing.T) {
 	pinLinux(t)
-	const eight, token = "abcdefgh", "hf_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
-	f := newFixture(t, podEnvHost+"pod_env = { ONE = \"1\", TRUE = \"true\", SLASH = \"/\", SEVEN = \"abcdefg\", EIGHT = \""+eight+"\", TOKEN = \""+token+"\", EMPTY = \"\" }\n", "")
-	e := mustLoad(t, f)
-	got := map[string]bool{}
-	for _, s := range e.Secrets {
-		got[s] = true
-	}
-	for _, short := range []string{"", "1", "true", "/", "abcdefg"} {
-		if got[short] {
-			t.Errorf("the value %q is under 8 bytes and must not be a redaction pattern: %q", short, e.Secrets)
-		}
-	}
-	for _, want := range []string{eight, token} {
-		if !got[want] {
-			t.Errorf("Secrets lacks the pod_env value %q: %q", want, e.Secrets)
-		}
+	for _, c := range []struct {
+		name, value string
+		want        bool
+	}{
+		{"HF_TOKEN", "ab", true},
+		{"API_KEY", "x1", true},
+		{"MY_SECRET", "s", true},
+		{"DB_PASSWORD", "pw", true},
+		{"SOME_PASS", "pw", true},
+		{"AUTH_HEADER", "b", true},
+		{"CREDENTIALS", "c", true},
+		{"HF_TOKEN", "", false},
+		{"EMPTY_PASSWORD", "", false},
+		{"HF_HOME", "/cache/hf", false},
+		{"WORKDIR", "/workspace/some/long/path/here", false},
+		{"DTYPE", "bfloat16", false},
+		{"LANG_X", "en_US.UTF-8", false},
+		{"FIFTEEN", "abcdefghijklmno", false},
+		{"SIXTEEN", "abcdefghijklmnop", true},
+		{"MODEL", "meta-llama/Llama-3-8B-Instruct", true},
+		{"ONE", "1", false},
+		{"SLASH", "/", false},
+	} {
+		t.Run(c.name+"="+c.value, func(t *testing.T) {
+			f := newFixture(t, podEnvHost+"pod_env = { "+c.name+" = \""+c.value+"\" }\n", "")
+			e := mustLoad(t, f)
+			got := false
+			for _, s := range e.Secrets {
+				if s == c.value {
+					got = true
+				}
+				if s == "" {
+					t.Errorf("an empty value must not be a redaction pattern: %q", e.Secrets)
+				}
+			}
+			if got != c.want {
+				t.Errorf("%s=%q in Secrets = %v, want %v: %q", c.name, c.value, got, c.want, e.Secrets)
+			}
+		})
 	}
 }
 

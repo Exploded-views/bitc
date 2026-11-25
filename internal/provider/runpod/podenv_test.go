@@ -46,6 +46,7 @@ func TestPodEnvRefusedNames(t *testing.T) {
 		"PATH", "HOME", "SHELL", "USER", "PUBLIC_KEY", "JUPYTER_PASSWORD", "WGETRC", // exact
 		"XDG_CONFIG_HOME", "IFS", "SYSTEM_WGETRC", "OPENSSL_CONF", "OPENSSL_MODULES", "SSLKEYLOGFILE", // exact: read by the start stub's tools
 		"GLIBC_TUNABLES", "HOSTALIASES", "RES_OPTIONS", "TMPDIR", "ENV", "BASH_ENV", "PS4",
+		"LOCALDOMAIN",                               // exact: the resolver's search list
 		"MALLOC_CONF", "MALLOC_PERTURB_", "MALLOC_", // prefix MALLOC_
 		"BITC_OWNER", "BITC_X", "RUNPOD_API_KEY", "RUNPOD_POD_ID", // owner tag, agent keys, scoped key
 		"LD_PRELOAD", "SSH_AUTH_SOCK", "SSL_CERT_FILE", "GIT_SSH_COMMAND", // prefixes
@@ -55,6 +56,13 @@ func TestPodEnvRefusedNames(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			wantPodEnvRefusal(t, podEnvRaw(map[string]any{name: podEnvSecret}), "pod_env."+name)
 		})
+	}
+}
+
+// A near miss of an exact refused name is accepted: the table matches whole names.
+func TestPodEnvNearMissOfRefusedNameIsAccepted(t *testing.T) {
+	if _, err := DecodeSettings(podEnvRaw(map[string]any{"LOCALDOMAINS": "x"})); err != nil {
+		t.Fatalf("LOCALDOMAINS refused: %v", err)
 	}
 }
 

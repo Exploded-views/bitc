@@ -22,7 +22,8 @@ var podEnvRefused = struct{ Exact, Prefixes, Suffixes []string }{
 	Exact: []string{"PATH", "HOME", "SHELL", "USER", "PUBLIC_KEY", "JUPYTER_PASSWORD", "WGETRC",
 		// read by the start stub's shell, git, curl, OpenSSL and the C library before the agent clears the env
 		"XDG_CONFIG_HOME", "IFS", "SYSTEM_WGETRC", "OPENSSL_CONF", "OPENSSL_MODULES", "SSLKEYLOGFILE",
-		"GLIBC_TUNABLES", "HOSTALIASES", "RES_OPTIONS", "TMPDIR", "ENV", "BASH_ENV", "PS4"},
+		"GLIBC_TUNABLES", "HOSTALIASES", "RES_OPTIONS", "TMPDIR", "ENV", "BASH_ENV", "PS4",
+		"LOCALDOMAIN"}, // the resolver's search list
 	Prefixes: []string{
 		"BITC_",   // the agent's boot keys and the BITC_OWNER tag
 		"RUNPOD_", // the pod id, the scoped key and the account secret references

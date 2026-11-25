@@ -14,10 +14,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   entries; names match `^[A-Z][A-Z0-9_]{0,63}$` and may not be `PATH`, `HOME`, `SHELL`, `USER`,
   `PUBLIC_KEY`, `JUPYTER_PASSWORD`, `WGETRC`, `XDG_CONFIG_HOME`, `IFS`, `SYSTEM_WGETRC`,
   `OPENSSL_CONF`, `OPENSSL_MODULES`, `SSLKEYLOGFILE`, `GLIBC_TUNABLES`, `HOSTALIASES`,
-  `RES_OPTIONS`, `TMPDIR`, `ENV`, `BASH_ENV` or `PS4`, start with `BITC_`, `RUNPOD_`, `LD_`,
-  `SSH_`, `SSL_`, `GIT_`, `GO`, `CGO_`, `CURL_` or `MALLOC_`, or end with `_PROXY`; values are
-  at most 256 bytes, with no control character and no `{{`. Values of 8 bytes or more join the
-  run's redaction list. The ownership tag and the other `BITC_` keys cannot be set, the job does not
+  `RES_OPTIONS`, `LOCALDOMAIN`, `TMPDIR`, `ENV`, `BASH_ENV` or `PS4`, start with `BITC_`,
+  `RUNPOD_`, `LD_`, `SSH_`, `SSL_`, `GIT_`, `GO`, `CGO_`, `CURL_` or `MALLOC_`, or end with
+  `_PROXY`; values are at most 256 bytes, with no control character and no `{{`. A non-empty value
+  under a name containing `TOKEN`, `KEY`, `SECRET`, `PASSWORD`, `PASS`, `AUTH` or `CRED` always
+  joins the run's redaction list; any other value joins only at 16 bytes or more and when it does
+  not start with `/`. The ownership tag and the other `BITC_` keys cannot be set, the job does not
   receive the entries, and `bitc config explain` shows the names with `<redacted>`
   ([#47](https://github.com/Exploded-views/bitc/issues/47)).
 
