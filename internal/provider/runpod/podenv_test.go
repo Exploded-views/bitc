@@ -60,15 +60,20 @@ func TestPodEnvRefusedNames(t *testing.T) {
 }
 
 func TestPodEnvNameShape(t *testing.T) {
-	for _, name := range []string{"", "hf_home", "Hf", "1A", "_A", "A-B", "A.B", "A B", "É"} {
+	// The echo stops at the first byte outside [A-Za-z0-9_], marked with "...".
+	for name, echo := range map[string]string{
+		"": `""`, "hf_home": `"hf_home"`, "Hf": `"Hf"`, "1A": `"1A"`, "_A": `"_A"`,
+		"A-B": `"A"...`, "A.B": `"A"...`, "A B": `"A"...`, "É": `""...`,
+	} {
 		t.Run(name, func(t *testing.T) {
-			wantPodEnvRefusal(t, podEnvRaw(map[string]any{name: podEnvSecret}), "pod_env key "+quote(name))
+			wantPodEnvRefusal(t, podEnvRaw(map[string]any{name: podEnvSecret}), "pod_env key "+echo)
 		})
 	}
 }
 
-// An invalid key is echoed at most 32 bytes long and cut at the first "=", with a visible marker
-// when cut, so a pasted NAME=value never prints the value part.
+// An invalid key is echoed at most 32 bytes long and cut at the first byte outside [A-Za-z0-9_]
+// ("=", ":" or a space), with a visible marker when cut, so a pasted NAME=value never prints the
+// value part.
 func TestPodEnvInvalidKeyEchoIsShort(t *testing.T) {
 	long := strings.Repeat("A", 65) // matches the 64-byte limit by one
 	for _, tc := range []struct{ key, want string }{
@@ -77,6 +82,8 @@ func TestPodEnvInvalidKeyEchoIsShort(t *testing.T) {
 		{long, `pod_env key "` + strings.Repeat("A", 32) + `"... must match`},
 		{"a" + strings.Repeat("b", 99), `pod_env key "a` + strings.Repeat("b", 31) + `"... must match`},
 		{"hf_home", `pod_env key "hf_home" must match`},
+		{"HF_TOKEN:hf_" + podEnvSecret, `pod_env key "HF_TOKEN"... must match`},
+		{"HF_TOKEN hf_" + podEnvSecret, `pod_env key "HF_TOKEN"... must match`},
 	} {
 		_, err := DecodeSettings(podEnvRaw(map[string]any{tc.key: "v"}))
 		if err == nil || !strings.Contains(err.Error(), tc.want) {

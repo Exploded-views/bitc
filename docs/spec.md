@@ -1384,9 +1384,10 @@ volume (caches: 16.1).
   `bitc config explain` lists the names with the value `<redacted>`. The entries go into the create
   body's env before the keys below, which they cannot override (the `BITC_` refusal keeps
   `BITC_OWNER`, the ownership tag, and the other `BITC_*` env keys out of reach; the name prefix
-  and install id are in the pod name, which `pod_env` cannot touch). Every value also joins the
-  run's redaction list. They are the pod's
-  environment, not the job's: the agent builds the job env from the spec alone (8.4), so no
+  and install id are in the pod name, which `pod_env` cannot touch). A value of 8 bytes or more
+  also joins the run's redaction list; a shorter one (`1`, `true`, `/`) does not, because it is no
+  credential and as a pattern it would rewrite those strings in every history line and status
+  output. They are the pod's environment, not the job's: the agent builds the job env from the spec alone (8.4), so no
   `pod_env` entry reaches the command, its setup steps or its services. The create body stays under
   its 100 KiB check with them counted.
 

@@ -204,7 +204,9 @@ func decodeProviders(p *problems, e *Effective, file string, sections map[string
 		if pr.APIKey != "" {
 			e.Secrets = append(e.Secrets, pr.APIKey)
 		}
-		// pod_env values are credentials in practice: redact them too (defence in depth).
+		// pod_env values are credentials in practice: redact them too (defence in depth), but only
+		// from 8 bytes up. A short value ("1", "true", "/") is no credential, and as a pattern it
+		// would rewrite those strings in every history line and status output.
 		if pe, ok := pr.Raw["pod_env"].(map[string]any); ok {
 			names := make([]string, 0, len(pe))
 			for n := range pe {
@@ -212,7 +214,7 @@ func decodeProviders(p *problems, e *Effective, file string, sections map[string
 			}
 			sort.Strings(names)
 			for _, n := range names {
-				if s, ok := pe[n].(string); ok && s != "" {
+				if s, ok := pe[n].(string); ok && len(s) >= podEnvRedactMin {
 					e.Secrets = append(e.Secrets, s)
 				}
 			}
@@ -230,6 +232,9 @@ func decodeProviders(p *problems, e *Effective, file string, sections map[string
 		e.Providers[typ] = pr
 	}
 }
+
+// podEnvRedactMin is the shortest pod_env value that joins the run's redaction list.
+const podEnvRedactMin = 8
 
 func str(p *problems, file, key string, v any) string {
 	s, ok := v.(string)

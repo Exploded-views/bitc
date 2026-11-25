@@ -48,6 +48,29 @@ func TestPodEnvValuesJoinTheRedactionList(t *testing.T) {
 	}
 }
 
+// Only values of 8 bytes or more join the redaction list: a short value such as "1", "true" or "/"
+// would otherwise rewrite those strings in every history line and status output on the host.
+func TestPodEnvShortValuesStayOutOfTheRedactionList(t *testing.T) {
+	pinLinux(t)
+	const eight, token = "abcdefgh", "hf_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
+	f := newFixture(t, podEnvHost+"pod_env = { ONE = \"1\", TRUE = \"true\", SLASH = \"/\", SEVEN = \"abcdefg\", EIGHT = \""+eight+"\", TOKEN = \""+token+"\", EMPTY = \"\" }\n", "")
+	e := mustLoad(t, f)
+	got := map[string]bool{}
+	for _, s := range e.Secrets {
+		got[s] = true
+	}
+	for _, short := range []string{"", "1", "true", "/", "abcdefg"} {
+		if got[short] {
+			t.Errorf("the value %q is under 8 bytes and must not be a redaction pattern: %q", short, e.Secrets)
+		}
+	}
+	for _, want := range []string{eight, token} {
+		if !got[want] {
+			t.Errorf("Secrets lacks the pod_env value %q: %q", want, e.Secrets)
+		}
+	}
+}
+
 // Regression guard: a repo (non-host) file that sets pod_env is refused, by key, with no value.
 func TestRepoFileCannotSetPodEnv(t *testing.T) {
 	pinLinux(t)

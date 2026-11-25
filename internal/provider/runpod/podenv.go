@@ -70,13 +70,19 @@ func decodePodEnv(v any) (map[string]string, error) {
 	return out, nil
 }
 
-// podEnvKeyEcho quotes an invalid key for an error: cut at the first "=" (a pasted NAME=value never
-// echoes the value) and at 32 bytes, with "..." after the quote when anything was cut.
+// podEnvKeyEcho quotes an invalid key for an error: cut at the first byte outside [A-Za-z0-9_] (a
+// pasted NAME=value, "NAME: value" or "NAME value" never echoes the value) and at 32 bytes, with
+// "..." after the quote when anything was cut.
 func podEnvKeyEcho(name string) string {
 	const maxEcho = 32
 	cut := false
-	if i := strings.IndexByte(name, '='); i >= 0 {
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if c == '_' || c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' {
+			continue
+		}
 		name, cut = name[:i], true
+		break
 	}
 	if len(name) > maxEcho {
 		name, cut = name[:maxEcho], true
