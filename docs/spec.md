@@ -1393,8 +1393,11 @@ volume (caches: 16.1).
   rewrite those strings in every history line and status output, and `redact.Env` drops each env
   entry that contains a pattern. The name match is a substring match, so `TOKENIZERS_PARALLELISM`
   (`false`) and `MAX_TOKENS` (`4096`) match too; the 8-byte floor keeps such flags and counts out,
-  and generated credentials are far longer. The empty value never joins. The entries are the pod's environment, not the job's: the agent builds the job env from
-  the spec alone (8.4), so no `pod_env` entry reaches the command, its setup steps or its
+  and generated credentials are far longer. The trade-off is deliberate: a hand-typed credential
+  under 8 bytes (a short PIN, say) is not masked. That is accepted because the redaction is
+  defence in depth only: no bitc output prints a `pod_env` value, and the job never sees one.
+  The empty value never joins. The entries are the pod's environment, not the job's: the agent
+  builds the job env from the spec alone (8.4), so no `pod_env` entry reaches the command, its setup steps or its
   services. The create body stays under its 100 KiB check with them counted.
 
 - **API:** REST v2 only (`POST /v2/pods`, `GET /v2/pods`, `GET/DELETE /v2/pods/{id}`, billing for
