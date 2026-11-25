@@ -191,6 +191,42 @@ func TestCreateIsStrictAboutTheV2Shape(t *testing.T) {
 	}
 }
 
+// forge-result arms only the next created pod, and every result.json read of that pod through the
+// proxy is the forged document (exit 0, a MAC under another key), whatever the agent did: the
+// forgery cannot be outrun by a host that fetches result.json early (issue #65). The next pod is
+// proxied as usual (its agent never listens here, so 502).
+func TestForgeResultServesTheForgedDocumentOnEveryRead(t *testing.T) {
+	f := New(t, Options{Bin: toolBin(t, "true")})
+	f.Behave("forge-result")
+	_, forging := createWith(t, f, agent.Spec{Job: "j1", Argv: []string{"true"}}, f.URL())
+	_, plain := createWith(t, f, agent.Spec{Job: "j2", Argv: []string{"true"}}, f.URL())
+	get := func(id string) (int, []byte) {
+		t.Helper()
+		resp, err := http.Get("http://" + f.ProxyAddr() + "/" + id + "-8090/v1/result.json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var b bytes.Buffer
+		_, _ = b.ReadFrom(resp.Body)
+		return resp.StatusCode, b.Bytes()
+	}
+	key := bytes.Repeat([]byte{3}, 32)
+	for i := 0; i < 2; i++ {
+		code, body := get(forging)
+		if code != 200 {
+			t.Fatalf("read %d of the forging pod: status %d", i+1, code)
+		}
+		r, err := agent.VerifyResult(key, body)
+		if err == nil || r.Exit != 0 || r.MAC == "" {
+			t.Fatalf("read %d: want a forged exit-0 result that fails verification, got %+v (err %v)", i+1, r, err)
+		}
+	}
+	if code, body := get(plain); code != 502 {
+		t.Fatalf("the next pod was forged too: %d %s", code, body)
+	}
+}
+
 // toolBin finds a no-op "agent" (true, false): they live in /usr/bin on macOS and /bin on some Linux images.
 func toolBin(t *testing.T, name string) string {
 	t.Helper()
