@@ -28,6 +28,26 @@ func TestExplainRedactsPodEnvValues(t *testing.T) {
 	}
 }
 
+// Defence in depth: every pod_env value joins the run's redaction list (e.Secrets), next to the
+// API key, so a stray echo of one is masked by the same redactor.
+func TestPodEnvValuesJoinTheRedactionList(t *testing.T) {
+	pinLinux(t)
+	f := newFixture(t, podEnvHost+"pod_env = { HF_HOME = \"s3cr3t-hf-value\", A_TOKEN = \"s3cr3t-token-value\", EMPTY = \"\" }\n", "")
+	e := mustLoad(t, f)
+	got := map[string]bool{}
+	for _, s := range e.Secrets {
+		got[s] = true
+	}
+	for _, want := range []string{"s3cr3t-hf-value", "s3cr3t-token-value"} {
+		if !got[want] {
+			t.Errorf("Secrets lacks the pod_env value %q: %v", want, e.Secrets)
+		}
+	}
+	if got[""] {
+		t.Errorf("an empty value must not be a redaction pattern: %q", e.Secrets)
+	}
+}
+
 // Regression guard: a repo (non-host) file that sets pod_env is refused, by key, with no value.
 func TestRepoFileCannotSetPodEnv(t *testing.T) {
 	pinLinux(t)

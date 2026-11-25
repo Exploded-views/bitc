@@ -45,7 +45,7 @@ func decodePodEnv(v any) (map[string]string, error) {
 	out := make(map[string]string, len(m))
 	for _, name := range names {
 		if !podEnvNameRE.MatchString(name) {
-			return nil, fmt.Errorf("pod_env key %s must match ^[A-Z][A-Z0-9_]{0,63}$", strconv.Quote(name))
+			return nil, fmt.Errorf("pod_env key %s must match ^[A-Z][A-Z0-9_]{0,63}$", podEnvKeyEcho(name))
 		}
 		if why := podEnvRefusedName(name); why != "" {
 			return nil, fmt.Errorf("pod_env.%s: %s", name, why)
@@ -56,14 +56,42 @@ func decodePodEnv(v any) (map[string]string, error) {
 			return nil, fmt.Errorf("pod_env.%s must be a string", name)
 		case len(val) > podEnvMaxValue:
 			return nil, fmt.Errorf("pod_env.%s: the value is over %d bytes", name, podEnvMaxValue)
-		case strings.ContainsAny(val, "\r\n"):
-			return nil, fmt.Errorf("pod_env.%s: the value has a line break", name)
+		case hasControlByte(val):
+			return nil, fmt.Errorf("pod_env.%s: the value has a control character", name)
 		case strings.Contains(val, "{{"):
 			return nil, fmt.Errorf("pod_env.%s: the value has {{ (a reference to a RunPod secret is not allowed)", name)
 		}
 		out[name] = val
 	}
 	return out, nil
+}
+
+// podEnvKeyEcho quotes an invalid key for an error: cut at the first "=" (a pasted NAME=value never
+// echoes the value) and at 32 bytes, with "..." after the quote when anything was cut.
+func podEnvKeyEcho(name string) string {
+	const maxEcho = 32
+	cut := false
+	if i := strings.IndexByte(name, '='); i >= 0 {
+		name, cut = name[:i], true
+	}
+	if len(name) > maxEcho {
+		name, cut = name[:maxEcho], true
+	}
+	q := strconv.Quote(name)
+	if cut {
+		q += "..."
+	}
+	return q
+}
+
+// hasControlByte reports a C0 control character (0x00-0x1f) or DEL (0x7f) in s.
+func hasControlByte(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] == 0x7f {
+			return true
+		}
+	}
+	return false
 }
 
 // podEnvRefusedName is why name may not be set, or "".

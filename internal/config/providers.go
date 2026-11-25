@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -202,6 +203,19 @@ func decodeProviders(p *problems, e *Effective, file string, sections map[string
 		}
 		if pr.APIKey != "" {
 			e.Secrets = append(e.Secrets, pr.APIKey)
+		}
+		// pod_env values are credentials in practice: redact them too (defence in depth).
+		if pe, ok := pr.Raw["pod_env"].(map[string]any); ok {
+			names := make([]string, 0, len(pe))
+			for n := range pe {
+				names = append(names, n)
+			}
+			sort.Strings(names)
+			for _, n := range names {
+				if s, ok := pe[n].(string); ok && s != "" {
+					e.Secrets = append(e.Secrets, s)
+				}
+			}
 		}
 		if pt.Validate != nil {
 			for _, m := range pt.Validate(pr) {

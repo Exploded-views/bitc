@@ -250,6 +250,7 @@ only (repo: 78). **narrowable**: others may only narrow it (widening: 78 in a fi
 | `[remote_limits]`, `pools.<p>.remote_limits.size`, `[providers.*]`, `[compat]`, `[[repos]]`, `[test]` | host | — | — |
 | `providers.<t>.fallback_until` | host, narrow=boundary | — (a repo file, env or flag: 78; a repo file's line is `providers.<t>.fallback_until: host-only key`) | host value, never later than the provider's declaration |
 | `providers.<t>.send_env` | host-only | — (a repo file, env or flag: 78; a repo file's line is `providers.<t>.send_env: host-only key`) | host value (`none`, `forwarded` or `forced`) |
+| `providers.<t>.pod_env` | host-only | — (a repo file, env or flag: 78; a repo file's line is `providers.<t>.pod_env: host-only key`) | host value |
 | `providers.<t>.plugin` (`path`, `sha256`, `env_pass`, `secret_files`), core `sizes` of a plugin type | host | — (a repo file: 78; its line is `providers.<t>.plugin: host-only key`) | host value |
 | `[detach]` | host | `wait --timeout` | flag replaces |
 | `[vars]`; `env`, `env_default` (defaults and pools) | project | repo | key by key, **host wins** |
@@ -1374,11 +1375,13 @@ volume (caches: 16.1).
   directory, say). At most 16 entries. A name matches `^[A-Z][A-Z0-9_]{0,63}$` and is none of
   `PATH`, `HOME`, `SHELL`, `USER`, `PUBLIC_KEY`, `JUPYTER_PASSWORD`, `WGETRC`, and does not start
   with `BITC_`, `RUNPOD_`, `LD_`, `SSH_`, `SSL_`, `GIT_`, `GO`, `CGO_` or `CURL_` nor end with
-  `_PROXY`. A value is a string of at most 256 bytes with no line break and no `{{` (so it cannot
+  `_PROXY`. A value is a string of at most 256 bytes with no control character (0x00-0x1f, 0x7f) and no `{{` (so it cannot
   reference a RunPod account secret). A refusal is 78 and names the key, never the value;
   `bitc config explain` lists the names with the value `<redacted>`. The entries go into the create
-  body's env before the keys below, which they cannot override (the `BITC_` refusal also keeps
-  `BITC_OWNER`, and with it name prefix, install id and tag, out of reach). They are the pod's
+  body's env before the keys below, which they cannot override (the `BITC_` refusal keeps
+  `BITC_OWNER`, the ownership tag, and the other `BITC_*` env keys out of reach; the name prefix
+  and install id are in the pod name, which `pod_env` cannot touch). Every value also joins the
+  run's redaction list. They are the pod's
   environment, not the job's: the agent builds the job env from the spec alone (8.4), so no
   `pod_env` entry reaches the command, its setup steps or its services. The create body stays under
   its 100 KiB check with them counted.

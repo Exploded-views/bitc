@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -97,15 +98,22 @@ func TestBinaryJobInheritsOnlyStdFds(t *testing.T) {
 // Regression guard (#47): [providers.runpod] pod_env entries reach the pod's environment, so the
 // agent's own; the job gets exactly spec.Env plus HOME and PATH, none of them.
 func TestPodEnvEntriesNeverReachTheJob(t *testing.T) {
-	f := agenttest.NewFixture(t, "#!/bin/sh\ncat /proc/self/environ | tr '\\0' '\\n' | grep -v '^PWD=' | sort\n")
+	f := agenttest.NewFixture(t, "#!/bin/sh\ncat /proc/self/environ | tr '\\0' '\\n' | sort\n")
 	out, log := runFakePod(t, f, []string{"PATH=" + os.Getenv("PATH"), "HF_HOME=/cache/hf", "POD_ENV_EXTRA=plainly-fake-value"})
 	if !strings.Contains(log, "__BITC_EXIT__ n0nce 0") {
 		t.Fatalf("the job did not run:\n%s", log)
 	}
 	names := make([]string, 0, 3)
+	// The exact set stays asserted (any other leaked name fails it); only the names a /bin/sh
+	// itself exports (dash adds PWD; bash adds PWD, SHLVL and _) are ignored.
 	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
-		names = append(names, strings.SplitN(l, "=", 2)[0])
+		switch name := strings.SplitN(l, "=", 2)[0]; name {
+		case "PWD", "SHLVL", "_":
+		default:
+			names = append(names, name)
+		}
 	}
+	sort.Strings(names)
 	if strings.Join(names, " ") != "A HOME PATH" || strings.Contains(out, "s3cr3t") || strings.Contains(out, "/cache/hf") {
 		t.Fatalf("the job env is not exactly the remote env:\n%s", out)
 	}
