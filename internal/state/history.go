@@ -54,9 +54,6 @@ func cutReason(r string) string {
 	return cutTo(r, maxReason)
 }
 
-// MaxText bounds a history reason (and a command line shown on one line in a text report).
-const MaxText = maxReason
-
 // Shorten cuts s to at most n bytes at a UTF-8 boundary and ends it with the history cut marker,
 // or returns s whole when it is not longer than n.
 func Shorten(s string, n int) string {

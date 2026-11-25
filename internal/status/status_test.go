@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Exploded-views/bitc/internal/admit"
 	"github.com/Exploded-views/bitc/internal/config"
@@ -293,6 +294,35 @@ func TestTextHolderLongArgvIsShortenedWithAMarker(t *testing.T) {
 	got := argvHolderText(t, false, []string{"echo", strings.Repeat("x", 5000)})
 	if !strings.Contains(got, " [truncated]\n") || len(got) > 1000 {
 		t.Errorf("a long argv is not shortened with the marker (%d bytes): %.200q", len(got), got)
+	}
+}
+
+// Every control character, C0 and C1, and the Unicode line breaks print escaped; invalid UTF-8 shows
+// as U+FFFD; a long argv is cut at a rune boundary, within argvMax bytes before escaping, and marked.
+func TestArgvTextEscapesEveryLineBreakAndCutsAtARuneBoundary(t *testing.T) {
+	for in, want := range map[string]string{
+		"a\x00b\x07c\x1fd":      `a\x00b\x07c\x1fd`,
+		"nel\u0085csi\u009bend": `nel\u0085csi\u009bend`,
+		"ls" + string(rune(0x2028)) + "ps" + string(rune(0x2029)) + "end": "ls" + `\u2028ps` + `\u2029end`,
+		"bad\xffbyte":            "bad" + string(utf8.RuneError) + "byte",
+		`back\slash and \n text`: `back\slash and \n text`,
+		"plain é ü 日本":           "plain é ü 日本",
+	} {
+		if got := argvText([]string{in}); got != want {
+			t.Errorf("argvText(%q) = %q, want %q", in, got, want)
+		}
+	}
+	// a 3-byte rune straddles the cut point
+	long := strings.Repeat("x", argvMax-1) + "日" + strings.Repeat("y", 100)
+	got := argvText([]string{long})
+	if !strings.HasSuffix(got, " [truncated]") || !utf8.ValidString(got) || strings.ContainsRune(got, utf8.RuneError) {
+		t.Errorf("cut is not at a rune boundary or not marked: %q", got[len(got)-40:])
+	}
+	if len(got) > argvMax+len(" [truncated]") {
+		t.Errorf("cut text is %d bytes, over argvMax %d plus the marker", len(got), argvMax)
+	}
+	if short := strings.Repeat("z", argvMax); argvText([]string{short}) != short {
+		t.Errorf("an argv of exactly argvMax bytes was cut")
 	}
 }
 
