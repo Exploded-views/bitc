@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Every Sprites network policy bitc sets now ends in a catch-all deny rule
+  (`{domain: "*", action: "deny"}`) after the allowed domains, so a domain not on the list is
+  refused instead of allowed by the platform default; no domains means deny-all, and a `*` allow is
+  refused. The policy is read back and must match exactly, rules and order, or the job does not
+  proceed. Sprites jobs stay refused in this release: this only makes the policy itself correct
+  ([#6](https://github.com/Exploded-views/bitc/issues/6)).
+
 ## [0.1.5] - 2026-11-16
 
 ### Added
