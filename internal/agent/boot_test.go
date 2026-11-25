@@ -94,6 +94,23 @@ func TestBinaryJobInheritsOnlyStdFds(t *testing.T) {
 	}
 }
 
+// Regression guard (#47): [providers.runpod] pod_env entries reach the pod's environment, so the
+// agent's own; the job gets exactly spec.Env plus HOME and PATH, none of them.
+func TestPodEnvEntriesNeverReachTheJob(t *testing.T) {
+	f := agenttest.NewFixture(t, "#!/bin/sh\ncat /proc/self/environ | tr '\\0' '\\n' | grep -v '^PWD=' | sort\n")
+	out, log := runFakePod(t, f, []string{"PATH=" + os.Getenv("PATH"), "HF_HOME=/cache/hf", "POD_ENV_EXTRA=plainly-fake-value"})
+	if !strings.Contains(log, "__BITC_EXIT__ n0nce 0") {
+		t.Fatalf("the job did not run:\n%s", log)
+	}
+	names := make([]string, 0, 3)
+	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+		names = append(names, strings.SplitN(l, "=", 2)[0])
+	}
+	if strings.Join(names, " ") != "A HOME PATH" || strings.Contains(out, "s3cr3t") || strings.Contains(out, "/cache/hf") {
+		t.Fatalf("the job env is not exactly the remote env:\n%s", out)
+	}
+}
+
 func TestBinaryRunsWithAnEmptyEnvironment(t *testing.T) {
 	f := agenttest.NewFixture(t, "#!/bin/sh\necho ran-ok\n")
 	f.Spec.Setup = []agent.Step{{Name: "s", RunAs: "job", Argv: []string{"sh", "-c", "echo step-ok >&2"}}}

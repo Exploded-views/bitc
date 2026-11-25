@@ -90,6 +90,34 @@ func TestK3_CreateBodyShape(t *testing.T) {
 	}
 }
 
+// #47: the create request the fake API receives carries the pod_env entries, and the ownership
+// keys are the provider's own.
+func TestK3_PodEnvInTheCreateBody(t *testing.T) {
+	f := runpodfake.New(t, runpodfake.Options{Bin: harness.Bin})
+	raw := map[string]any{"image": "debian", "api_base": f.URL(), "proxy_domain": f.ProxyAddr(),
+		"pod_env": map[string]any{"HF_HOME": "/cache/hf", "TOKEN_X": "v-1"},
+		"sizes":   map[string]any{"cpu8": map[string]any{"cpu_type": "cpu3c", "vcpu": int64(8), "usd_per_hour": 0.24}}}
+	p, err := runpod.New(&config.Provider{Type: "runpod", NamePrefix: "bitc", APIKey: "sk-test-key-0123", Raw: raw}, &config.Effective{Test: &config.Test{HTTPResults: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runpod.AgentSpec = func(j *provider.JobSpec) agent.Spec {
+		return agent.Spec{Job: j.Job, Nonce: "nn", Unprivileged: true, TestRoot: t.TempDir()}
+	}
+	j := &provider.JobSpec{Job: "j1", Pool: "heavy", SizeKey: "cpu8", Name: "bitc-x", Owner: "tag",
+		AgentURL: "https://example.invalid/bitc", AgentSHA256: strings.Repeat("a", 64), Deadline: time.Now().Add(time.Hour)}
+	if _, err := p.Launch(context.Background(), j); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Bodies()) != 1 {
+		t.Fatalf("%d create requests", len(f.Bodies()))
+	}
+	env := f.Bodies()[0]["env"].(map[string]any)
+	if env["HF_HOME"] != "/cache/hf" || env["TOKEN_X"] != "v-1" || env["BITC_OWNER"] != "tag" || env["BITC_PROVIDER_TYPE"] != "runpod" || len(env) != 9 {
+		t.Fatalf("%v", env)
+	}
+}
+
 func TestRL1_Defaults(t *testing.T) {
 	s, err := runpod.DecodeSettings(map[string]any{"image": "x", "sizes": map[string]any{}})
 	if err != nil || s.APIBase != "https://api.runpod.io" || s.ProxyDomain != "proxy.runpod.net" || s.Port != 8090 {
