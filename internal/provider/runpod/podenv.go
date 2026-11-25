@@ -19,11 +19,15 @@ var podEnvNameRE = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
 
 // podEnvRefused is the refused-name table: the exact names, the prefixes and the suffixes.
 var podEnvRefused = struct{ Exact, Prefixes, Suffixes []string }{
-	Exact: []string{"PATH", "HOME", "SHELL", "USER", "PUBLIC_KEY", "JUPYTER_PASSWORD", "WGETRC"},
+	Exact: []string{"PATH", "HOME", "SHELL", "USER", "PUBLIC_KEY", "JUPYTER_PASSWORD", "WGETRC",
+		// read by the start stub's shell, git, curl, OpenSSL and the C library before the agent clears the env
+		"XDG_CONFIG_HOME", "IFS", "SYSTEM_WGETRC", "OPENSSL_CONF", "OPENSSL_MODULES", "SSLKEYLOGFILE",
+		"GLIBC_TUNABLES", "HOSTALIASES", "RES_OPTIONS", "TMPDIR", "ENV", "BASH_ENV", "PS4"},
 	Prefixes: []string{
 		"BITC_",   // the agent's boot keys and the BITC_OWNER tag
 		"RUNPOD_", // the pod id, the scoped key and the account secret references
 		"LD_", "SSH_", "SSL_", "GIT_", "GO", "CGO_", "CURL_",
+		"MALLOC_", // glibc malloc tuning
 	},
 	Suffixes: []string{"_PROXY"},
 }

@@ -1373,9 +1373,13 @@ volume (caches: 16.1).
 - **`pod_env`** (host file only; a repo file that sets it is 78): `pod_env = { NAME = "value" }`
   adds variables to the pod env at create, for the pod's own tooling (a package mirror's cache
   directory, say). At most 16 entries. A name matches `^[A-Z][A-Z0-9_]{0,63}$` and is none of
-  `PATH`, `HOME`, `SHELL`, `USER`, `PUBLIC_KEY`, `JUPYTER_PASSWORD`, `WGETRC`, and does not start
-  with `BITC_`, `RUNPOD_`, `LD_`, `SSH_`, `SSL_`, `GIT_`, `GO`, `CGO_` or `CURL_` nor end with
-  `_PROXY`. A value is a string of at most 256 bytes with no control character (0x00-0x1f, 0x7f) and no `{{` (so it cannot
+  `PATH`, `HOME`, `SHELL`, `USER`, `PUBLIC_KEY`, `JUPYTER_PASSWORD`, `WGETRC`, `XDG_CONFIG_HOME`, `IFS`,
+  `SYSTEM_WGETRC`, `OPENSSL_CONF`, `OPENSSL_MODULES`, `SSLKEYLOGFILE`, `GLIBC_TUNABLES`,
+  `HOSTALIASES`, `RES_OPTIONS`, `TMPDIR`, `ENV`, `BASH_ENV` or `PS4`, and does not start
+  with `BITC_`, `RUNPOD_`, `LD_`, `SSH_`, `SSL_`, `GIT_`, `GO`, `CGO_`, `CURL_` or `MALLOC_` nor end with
+  `_PROXY`. The last group (from `XDG_CONFIG_HOME` on, with `MALLOC_`) is refused because those
+  names change how the start stub's shell, git, curl, OpenSSL or the C library behave before the
+  agent clears the environment. A value is a string of at most 256 bytes with no control character (0x00-0x1f, 0x7f) and no `{{` (so it cannot
   reference a RunPod account secret). A refusal is 78 and names the key, never the value;
   `bitc config explain` lists the names with the value `<redacted>`. The entries go into the create
   body's env before the keys below, which they cannot override (the `BITC_` refusal keeps

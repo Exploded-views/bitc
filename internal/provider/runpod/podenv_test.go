@@ -45,6 +45,9 @@ func wantPodEnvRefusal(t *testing.T, raw map[string]any, want string) {
 func TestPodEnvRefusedNames(t *testing.T) {
 	for _, name := range []string{
 		"PATH", "HOME", "SHELL", "USER", "PUBLIC_KEY", "JUPYTER_PASSWORD", "WGETRC", // exact
+		"XDG_CONFIG_HOME", "IFS", "SYSTEM_WGETRC", "OPENSSL_CONF", "OPENSSL_MODULES", "SSLKEYLOGFILE", // exact: read by the start stub's tools
+		"GLIBC_TUNABLES", "HOSTALIASES", "RES_OPTIONS", "TMPDIR", "ENV", "BASH_ENV", "PS4",
+		"MALLOC_CONF", "MALLOC_PERTURB_", "MALLOC_", // prefix MALLOC_
 		"BITC_OWNER", "BITC_X", "RUNPOD_API_KEY", "RUNPOD_POD_ID", // owner tag, agent keys, scoped key
 		"LD_PRELOAD", "SSH_AUTH_SOCK", "SSL_CERT_FILE", "GIT_SSH_COMMAND", // prefixes
 		"GOFLAGS", "GOPATH", "GOOGLE_X", "GO", "CGO_ENABLED", "CURL_CA_BUNDLE",
@@ -118,7 +121,7 @@ func bodyEnv(t *testing.T, raw map[string]any) map[string]string {
 }
 
 func TestPodEnvAcceptedNames(t *testing.T) {
-	for _, name := range []string{"A", "HF_HOME", "MY_GOAL", "PROXY", "USERNAME", "HOMEDIR", "PATHS", "GIT", "GITHUB_X", "LD", "SSH", "X9_", strings.Repeat("A", 64)} {
+	for _, name := range []string{"A", "HF_HOME", "MY_GOAL", "PROXY", "USERNAME", "HOMEDIR", "PATHS", "GIT", "GITHUB_X", "LD", "SSH", "X9_", "IFSX", "TMPDIRS", "MALLOC", "XDG_DATA_HOME", "ENVS", "PS4X", strings.Repeat("A", 64)} {
 		raw := podEnvRaw(map[string]any{name: "v"})
 		if _, err := DecodeSettings(raw); err != nil {
 			t.Errorf("%s: %v", name, err)

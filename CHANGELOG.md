@@ -12,8 +12,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `[providers.runpod] pod_env = { NAME = "value" }` adds host-set variables to the RunPod pod's
   environment at create. Host file only (a repository file that sets it is refused), at most 16
   entries; names match `^[A-Z][A-Z0-9_]{0,63}$` and may not be `PATH`, `HOME`, `SHELL`, `USER`,
-  `PUBLIC_KEY`, `JUPYTER_PASSWORD` or `WGETRC`, start with `BITC_`, `RUNPOD_`, `LD_`, `SSH_`,
-  `SSL_`, `GIT_`, `GO`, `CGO_` or `CURL_`, or end with `_PROXY`; values are at most 256 bytes, one
+  `PUBLIC_KEY`, `JUPYTER_PASSWORD`, `WGETRC`, `XDG_CONFIG_HOME`, `IFS`, `SYSTEM_WGETRC`,
+  `OPENSSL_CONF`, `OPENSSL_MODULES`, `SSLKEYLOGFILE`, `GLIBC_TUNABLES`, `HOSTALIASES`,
+  `RES_OPTIONS`, `TMPDIR`, `ENV`, `BASH_ENV` or `PS4`, start with `BITC_`, `RUNPOD_`, `LD_`,
+  `SSH_`, `SSL_`, `GIT_`, `GO`, `CGO_`, `CURL_` or `MALLOC_`, or end with `_PROXY`; values are at most 256 bytes, one
   line, with no `{{`. The ownership tag and the other `BITC_` keys cannot be set, the job does not
   receive the entries, and `bitc config explain` shows the names with `<redacted>`
   ([#47](https://github.com/Exploded-views/bitc/issues/47)).
