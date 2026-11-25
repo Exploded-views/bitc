@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `[providers.runpod] pod_env = { NAME = "value" }` adds host-set variables to the RunPod pod's
+  environment at create. Host file only (a repository file that sets it is refused), at most 16
+  entries; names match `^[A-Z][A-Z0-9_]{0,63}$` and may not be `PATH`, `HOME`, `SHELL`, `USER`,
+  `PUBLIC_KEY`, `JUPYTER_PASSWORD` or `WGETRC`, start with `BITC_`, `RUNPOD_`, `LD_`, `SSH_`,
+  `SSL_`, `GIT_`, `GO`, `CGO_` or `CURL_`, or end with `_PROXY`; values are at most 256 bytes, one
+  line, with no `{{`. The ownership tag and the other `BITC_` keys cannot be set, the job does not
+  receive the entries, and `bitc config explain` shows the names with `<redacted>`
+  ([#47](https://github.com/Exploded-views/bitc/issues/47)).
+
 ## [0.1.5] - 2026-11-16
 
 ### Added

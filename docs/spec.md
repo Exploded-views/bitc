@@ -1366,8 +1366,22 @@ costs and leaks nothing, so no rail applies. Hooks run only here.
 CPU pods; the first remote provider and the only one in M2. Caps: all four. Keys: `image` (needs
 `sh` and curl, wget, apt or apk) and `sizes` required; `api_base` (`https://api.runpod.io`),
 `proxy_domain` (`proxy.runpod.net`), `cloud` (`SECURE`), `disk` (`40GiB`), `port` (`8090`);
-optional `data_center`. `Endpoints` = `api_base` and `*.<proxy_domain>`. M2 mounts no network
+optional `data_center` and `pod_env`. `Endpoints` = `api_base` and `*.<proxy_domain>`. M2 mounts no network
 volume (caches: 16.1).
+
+- **`pod_env`** (host file only; a repo file that sets it is 78): `pod_env = { NAME = "value" }`
+  adds variables to the pod env at create, for the pod's own tooling (a package mirror's cache
+  directory, say). At most 16 entries. A name matches `^[A-Z][A-Z0-9_]{0,63}$` and is none of
+  `PATH`, `HOME`, `SHELL`, `USER`, `PUBLIC_KEY`, `JUPYTER_PASSWORD`, `WGETRC`, and does not start
+  with `BITC_`, `RUNPOD_`, `LD_`, `SSH_`, `SSL_`, `GIT_`, `GO`, `CGO_` or `CURL_` nor end with
+  `_PROXY`. A value is a string of at most 256 bytes with no line break and no `{{` (so it cannot
+  reference a RunPod account secret). A refusal is 78 and names the key, never the value;
+  `bitc config explain` lists the names with the value `<redacted>`. The entries go into the create
+  body's env before the keys below, which they cannot override (the `BITC_` refusal also keeps
+  `BITC_OWNER`, and with it name prefix, install id and tag, out of reach). They are the pod's
+  environment, not the job's: the agent builds the job env from the spec alone (8.4), so no
+  `pod_env` entry reaches the command, its setup steps or its services. The create body stays under
+  its 100 KiB check with them counted.
 
 - **API:** REST v2 only (`POST /v2/pods`, `GET /v2/pods`, `GET/DELETE /v2/pods/{id}`, billing for
   `Spend`); create bodies under 100 KiB, checked before sending.

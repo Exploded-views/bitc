@@ -93,6 +93,12 @@ func Explain(e *Effective, key string) []string {
 		}
 		sort.Strings(keys)
 		for _, rk := range keys {
+			if pe, ok := pr.Raw[rk].(map[string]any); ok && rk == "pod_env" { // names only: the values are never printed
+				for _, n := range sortedKeys(pe) {
+					add(k+"."+rk+"."+n, "<redacted>")
+				}
+				continue
+			}
 			add(k+"."+rk, fmt.Sprintf("%v", pr.Raw[rk]))
 		}
 	}

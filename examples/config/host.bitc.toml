@@ -42,4 +42,5 @@ daily_usd = 25                  # account-wide for this provider account; same v
 max_live = 6
 image = "docker.io/library/debian:bookworm-slim"   # RunPod keys from here down (8.7)
 data_center = "EU-RO-1"
+# pod_env = { HF_HOME = "/work/hf" }          # extra pod env, host file only; never the job's env (8.7)
 sizes = { cpu8 = { cpu_type = "cpu3c", vcpu = 8, usd_per_hour = 0.24 } }
