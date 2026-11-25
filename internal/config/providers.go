@@ -236,14 +236,19 @@ func decodeProviders(p *problems, e *Effective, file string, sections map[string
 // run's redaction list.
 const podEnvRedactMin = 16
 
-// podEnvCredentialWords are the substrings of an upper-case pod_env name that mark a credential.
-var podEnvCredentialWords = []string{"TOKEN", "KEY", "SECRET", "PASSWORD", "PASS", "AUTH", "CRED"}
+// podEnvRedactCredMin is the shortest value, under a credential-like name, that joins the list.
+// The name match is a substring match, so names such as TOKENIZERS_PARALLELISM or MAX_TOKENS
+// carry flags and counts ("false", "4096") that must not become patterns.
+const podEnvRedactCredMin = 8
 
-// podEnvRedacts reports whether the pod_env value joins the run's redaction list. Credentials must
-// always be masked, so a non-empty value under a credential-like name joins whatever its length.
-// Any other value joins only at 16 bytes or more and when it does not start with "/": a short or
-// path-like plain value ("1", "bfloat16", "/cache/hf") would turn ordinary output into <redacted>,
-// and redact.Env drops every env entry that contains a pattern. The empty value never joins.
+// podEnvCredentialWords are the substrings of an upper-case pod_env name that mark a credential.
+var podEnvCredentialWords = []string{"TOKEN", "KEY", "SECRET", "PASS", "AUTH", "CRED"}
+
+// podEnvRedacts reports whether the pod_env value joins the run's redaction list. A value under a
+// credential-like name joins from 8 bytes (generated credentials are far longer). Any other value
+// joins only at 16 bytes or more and when it does not start with "/": a short or path-like plain
+// value ("1", "bfloat16", "/cache/hf") would turn ordinary output into <redacted>, and redact.Env
+// drops every env entry that contains a pattern. The empty value never joins.
 func podEnvRedacts(name, value string) bool {
 	if value == "" {
 		return false
@@ -251,7 +256,7 @@ func podEnvRedacts(name, value string) bool {
 	up := strings.ToUpper(name)
 	for _, w := range podEnvCredentialWords {
 		if strings.Contains(up, w) {
-			return true
+			return len(value) >= podEnvRedactCredMin
 		}
 	}
 	return len(value) >= podEnvRedactMin && !strings.HasPrefix(value, "/")

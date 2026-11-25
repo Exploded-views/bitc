@@ -1375,9 +1375,9 @@ volume (caches: 16.1).
   directory, say). At most 16 entries. A name matches `^[A-Z][A-Z0-9_]{0,63}$` and is none of
   `PATH`, `HOME`, `SHELL`, `USER`, `PUBLIC_KEY`, `JUPYTER_PASSWORD`, `WGETRC`, `XDG_CONFIG_HOME`, `IFS`,
   `SYSTEM_WGETRC`, `OPENSSL_CONF`, `OPENSSL_MODULES`, `SSLKEYLOGFILE`, `GLIBC_TUNABLES`,
-  `HOSTALIASES`, `RES_OPTIONS`, `TMPDIR`, `ENV`, `BASH_ENV`, `LOCALDOMAIN` or `PS4`, and does not start
-  with `BITC_`, `RUNPOD_`, `LD_`, `SSH_`, `SSL_`, `GIT_`, `GO`, `CGO_`, `CURL_` or `MALLOC_` nor end with
-  `_PROXY`. The last group (from `XDG_CONFIG_HOME` on, with `MALLOC_`) is refused because those
+  `HOSTALIASES`, `RES_OPTIONS`, `TMPDIR`, `ENV`, `BASH_ENV`, `LOCALDOMAIN` or `PS4`, and does not
+  start with `BITC_`, `RUNPOD_`, `LD_`, `SSH_`, `SSL_`, `GIT_`, `GO`, `CGO_`, `CURL_` or `MALLOC_`
+  nor end with `_PROXY`. The last group (from `XDG_CONFIG_HOME` on, with `MALLOC_`) is refused because those
   names change how the start stub's shell, git, curl, OpenSSL, the C library or the resolver
   (`LOCALDOMAIN`, `RES_OPTIONS`, `HOSTALIASES`) behave before the agent clears the environment. A
   value is a string of at most 256 bytes with no control character (0x00-0x1f, 0x7f) and no `{{`
@@ -1385,14 +1385,15 @@ volume (caches: 16.1).
   `bitc config explain` lists the names with the value `<redacted>`. The entries go into the create
   body's env before the keys below, which they cannot override (the `BITC_` refusal keeps
   `BITC_OWNER`, the ownership tag, and the other `BITC_*` env keys out of reach; the name prefix
-  and install id are in the pod name, which `pod_env` cannot touch). A non-empty value
-  also joins the run's redaction list when its name contains `TOKEN`, `KEY`, `SECRET`, `PASSWORD`,
-  `PASS`, `AUTH` or `CRED` (matched on the upper-case name), whatever the value's length, so a
-  credential is always masked. Any other value joins only when it is at least 16 bytes long and
-  does not start with `/`; a short or path-like plain value (`1`, `bfloat16`, `/cache/hf`) does
-  not, because as a pattern it would rewrite those strings in every history line and status
-  output, and `redact.Env` drops each env entry that contains a pattern. The empty value never
-  joins. The entries are the pod's environment, not the job's: the agent builds the job env from
+  and install id are in the pod name, which `pod_env` cannot touch). A value also joins the
+  run's redaction list when its name contains `TOKEN`, `KEY`, `SECRET`, `PASS`, `AUTH` or `CRED`
+  (matched on the upper-case name) and it is at least 8 bytes long. Any other value joins only
+  when it is at least 16 bytes long and does not start with `/`. A shorter value stays out, and so
+  does a short or path-like plain value (`1`, `bfloat16`, `/cache/hf`): as a pattern it would
+  rewrite those strings in every history line and status output, and `redact.Env` drops each env
+  entry that contains a pattern. The name match is a substring match, so `TOKENIZERS_PARALLELISM`
+  (`false`) and `MAX_TOKENS` (`4096`) match too; the 8-byte floor keeps such flags and counts out,
+  and generated credentials are far longer. The empty value never joins. The entries are the pod's environment, not the job's: the agent builds the job env from
   the spec alone (8.4), so no `pod_env` entry reaches the command, its setup steps or its
   services. The create body stays under its 100 KiB check with them counted.
 

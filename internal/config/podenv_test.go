@@ -48,22 +48,30 @@ func TestPodEnvValuesJoinTheRedactionList(t *testing.T) {
 	}
 }
 
-// The redaction rule: a non-empty value under a credential-like name (TOKEN, KEY, SECRET, PASSWORD,
-// PASS, AUTH, CRED anywhere in the name) always joins the list, whatever its length; any other value
-// joins only at 16 bytes or more and when it does not start with "/". The empty value never joins.
+// The redaction rule: a value under a credential-like name (TOKEN, KEY, SECRET, PASS, AUTH, CRED
+// anywhere in the name) joins the list from 8 bytes; any other value joins only at 16 bytes or more
+// and when it does not start with "/". The empty value never joins. Short values stay out because
+// names such as TOKENIZERS_PARALLELISM or MAX_TOKENS hold flags and counts ("false", "4096").
 func TestPodEnvRedactionRule(t *testing.T) {
 	pinLinux(t)
 	for _, c := range []struct {
 		name, value string
 		want        bool
 	}{
-		{"HF_TOKEN", "ab", true},
-		{"API_KEY", "x1", true},
-		{"MY_SECRET", "s", true},
-		{"DB_PASSWORD", "pw", true},
-		{"SOME_PASS", "pw", true},
-		{"AUTH_HEADER", "b", true},
-		{"CREDENTIALS", "c", true},
+		{"HF_TOKEN", "ab", false},
+		{"API_KEY", "x1", false},
+		{"MY_SECRET", "s", false},
+		{"DB_PASSWORD", "pw", false},
+		{"SOME_PASS", "pw", false},
+		{"AUTH_HEADER", "b", false},
+		{"CREDENTIALS", "c", false},
+		{"TOKENIZERS_PARALLELISM", "false", false},
+		{"HF_HUB_DISABLE_IMPLICIT_TOKEN", "1", false},
+		{"MAX_TOKENS", "4096", false},
+		{"HF_TOKEN", "abcdefg", false},
+		{"HF_TOKEN", "abcdefgh", true},
+		{"API_KEY", "fake-api-key-for-tests", true},
+		{"DB_PASSWORD", "hunter2hunter2", true},
 		{"HF_TOKEN", "", false},
 		{"EMPTY_PASSWORD", "", false},
 		{"HF_HOME", "/cache/hf", false},
