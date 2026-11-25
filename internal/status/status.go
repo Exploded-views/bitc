@@ -279,7 +279,7 @@ func (r Report) Text(w io.Writer) {
 				continue
 			}
 			if h.Unknown {
-				fmt.Fprintf(w, "  slot %d  unknown  %s  pid %d%s  since %s  %s\n", h.Slot, h.Job, h.Pid, unitsText(h.Units), h.Since, strings.Join(h.Argv, " "))
+				fmt.Fprintf(w, "  slot %d  unknown  %s  pid %d%s  since %s  %s\n", h.Slot, h.Job, h.Pid, unitsText(h.Units), h.Since, argvText(h.Argv))
 				continue
 			}
 			if h.Legacy {
@@ -294,7 +294,7 @@ func (r Report) Text(w io.Writer) {
 			if h.Nested {
 				nested = " nested"
 			}
-			fmt.Fprintf(w, "  slot %d  %s  pid %d%s%s  since %s  %s\n", h.Slot, h.Job, h.Pid, nested, unitsText(h.Units), h.Since, strings.Join(h.Argv, " "))
+			fmt.Fprintf(w, "  slot %d  %s  pid %d%s%s  since %s  %s\n", h.Slot, h.Job, h.Pid, nested, unitsText(h.Units), h.Since, argvText(h.Argv))
 		}
 		for _, q := range p.Waiters {
 			unk := ""
@@ -322,6 +322,29 @@ func (r Report) Text(w io.Writer) {
 	for _, x := range r.Legacy {
 		fmt.Fprintf(w, "legacy: %s\n", x)
 	}
+}
+
+// argvText is a holder's argv on one line: joined, shortened as bitc history shortens a long
+// field (cut mark included), then every control character (newline, tab, CR, ESC, DEL, ...)
+// written as a visible \n, \t, \r or \xNN escape. status --json keeps the exact argv.
+func argvText(argv []string) string {
+	s := state.Shorten(strings.Join(argv, " "), state.MaxText)
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case r < 0x20 || r == 0x7f:
+			fmt.Fprintf(&b, `\x%02x`, r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // unitsText is "  units cpu=3 mem=1" (groups sorted), or "" when none.

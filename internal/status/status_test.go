@@ -279,11 +279,11 @@ func argvHolderText(t *testing.T, unknown bool, argv []string) string {
 func TestTextHolderArgvIsOneLineWithControlCharactersEscaped(t *testing.T) {
 	for _, unknown := range []bool{false, true} {
 		got := argvHolderText(t, unknown, []string{"bash", "-c", "set -e\necho a\tb\rc\x1bd\x7fe"})
-		if n := strings.Count(got, "\n"); n != 2 { // the pool line and one holder line
-			t.Errorf("unknown=%v: want 2 lines, got %d:\n%q", unknown, n, got)
+		if n := strings.Count(got, "\n"); n != 3 { // the pool line, one holder line and the memory line
+			t.Errorf("unknown=%v: want 3 lines, got %d:\n%q", unknown, n, got)
 		}
 		want := `bash -c set -e\necho a\tb\rc\x1bd\x7fe` + "\n"
-		if !strings.HasSuffix(got, want) {
+		if !strings.Contains(got, want) {
 			t.Errorf("unknown=%v: holder line lacks %q:\n%q", unknown, want, got)
 		}
 	}
@@ -291,7 +291,7 @@ func TestTextHolderArgvIsOneLineWithControlCharactersEscaped(t *testing.T) {
 
 func TestTextHolderLongArgvIsShortenedWithAMarker(t *testing.T) {
 	got := argvHolderText(t, false, []string{"echo", strings.Repeat("x", 5000)})
-	if !strings.HasSuffix(got, " [truncated]\n") || len(got) > 1000 {
+	if !strings.Contains(got, " [truncated]\n") || len(got) > 1000 {
 		t.Errorf("a long argv is not shortened with the marker (%d bytes): %.200q", len(got), got)
 	}
 }

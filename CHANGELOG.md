@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `bitc status` text prints each holder on one line: control characters in its command (a newline in a `bash -c` script, a tab, CR, ESC) are escaped as `\n`, `\t`, `\r`, `\x1b`, and a very long command is shortened with ` [truncated]`; `--json` keeps the exact argv ([#50](https://github.com/Exploded-views/bitc/issues/50)).
+
 ## [0.1.5] - 2026-11-16
 
 ### Added
