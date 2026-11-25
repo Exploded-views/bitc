@@ -1,8 +1,8 @@
 # Installing bitc
 
 The current release is [v0.1.3](https://github.com/Exploded-views/bitc/releases/tag/v0.1.3). It
-runs on Linux (amd64 or arm64); the macOS builds (Apple silicon or Intel) run local pools and exec plugins
-([macOS status](#macos-status)).
+runs on Linux (amd64 or arm64); the macOS builds (Apple silicon or Intel) run local pools, exec plugins and the ssh provider as a
+client ([macOS status](#macos-status)).
 
 ## Release binaries
 
@@ -47,20 +47,30 @@ toolchain.
 
 ## macOS status
 
-macOS builds run **local pools and exec plugins**: `run`, `status`, `wait`, `logs` and `cancel` over
-`flock` pools, plus detached jobs, groups, priority lanes, nested holds, `doctor` and `config`.
-A `[providers.<type>]` table with a `plugin` pin loads and runs; memory floors (a pool's `memory`
-key) and the built-in `ssh`, `runpod` and `sprites` tables are refused with exit 78. Tracked in:
+macOS builds run **local pools, exec plugins and the `ssh` provider as a client**: `run`, `status`,
+`wait`, `logs` and `cancel` over `flock` pools, plus detached jobs, groups, priority lanes, nested
+holds, `doctor` and `config`. A `[providers.<type>]` table with a `plugin` pin loads and runs, and
+so does `[providers.ssh]` (both still behind `[host] experimental_remote = true`, as on Linux): the Mac
+sends jobs to your Linux ssh host, and `bitc sweep` and `bitc doctor --remote` work from it.
+Memory floors (a pool's `memory` key) and the `runpod` table are refused with exit 78 (RunPod runs
+on Linux only for now), and `sprites` is refused as on Linux until its egress fix
+([#6](https://github.com/Exploded-views/bitc/issues/6)); `bitc sweep` can still clean up Sprites
+left by 0.1.0. Tracked in:
 
 - [#3](https://github.com/Exploded-views/bitc/issues/3): macOS parity (umbrella);
 - [#4](https://github.com/Exploded-views/bitc/issues/4): macOS as a client to the built-in remote
-  providers (planned for 0.1.6);
+  providers (`ssh` runs on macOS; RunPod stays Linux-only; Sprites stays refused, #6);
 - macOS as a remote build target: planned but not scheduled ([ROADMAP.md](ROADMAP.md)).
 
 Linux-only features, and other differences on macOS:
 
-- the built-in remote providers (`ssh`, `runpod` and `sprites`);
-- the remote agent (`bitc __agent`): one `bitc: ... runs on Linux only` line and exit 69;
+- the `runpod` provider, and every remote host: the ssh host that runs your jobs is Linux (see
+  [ssh-host.md](ssh-host.md));
+- the remote agent (`bitc __agent`): one `bitc: ... runs on Linux only` line and exit 69. The agent
+  runs on the Linux host, and the Mac never runs it. A macOS bitc cannot be its own agent, so the
+  `release` agent source downloads the bare `bitc_<version>_linux_<arch>` asset for the host's
+  architecture and checks it against `checksums.txt`; `build` (with `module_dir`) cross-builds it
+  with `GOOS=linux`; `url` uses the files you name (`paths`), which must be the Linux binaries;
 - the parent-death signal for a local command: on macOS it outlives a bitc that was killed with
   SIGKILL (an exec plugin does not: its shim kills the plugin's process group);
 - the inotify wake-up: a waiting caller re-checks every `poll` (5s by default) instead;

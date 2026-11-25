@@ -51,7 +51,7 @@ The local gate is the mature part. Every remote provider is experimental and off
 
 ## Install
 
-Linux (amd64 or arm64) is the main platform. The macOS builds run local pools and exec plugins
+Linux (amd64 or arm64) is the main platform. The macOS builds run local pools, exec plugins and the ssh provider as a client
 ([macOS status](docs/install.md#macos-status)).
 
 Download a release binary and check it against `checksums.txt`
@@ -282,7 +282,9 @@ so interfaces may still change.
 - **Experimental:** every remote provider. `runpod` was proven live on CPU pods before v0.1.0; a
   live re-proof of the release path is pending. `ssh` and exec plugins are implemented, and the
   [plugin protocol](docs/plugin-protocol.md) may still change.
-- **macOS:** local pools and exec plugins ([macOS status](docs/install.md#macos-status)). A
+- **macOS:** local pools, exec plugins and the `ssh` provider as a client, with the remote agent on
+  your Linux host ([macOS status](docs/install.md#macos-status)); RunPod stays Linux-only and
+  Sprites stays refused ([#6](https://github.com/Exploded-views/bitc/issues/6)). A
   plugin cannot be stopped from gaining privileges through setuid or setgid programs there, as
   Linux does with `no_new_privs`: only run plugins you trust as you would any program run as your
   user.
@@ -291,8 +293,8 @@ so interfaces may still change.
 Open issues that make up the roadmap:
 
 - [#3](https://github.com/Exploded-views/bitc/issues/3), [#4](https://github.com/Exploded-views/bitc/issues/4),
-  [#26](https://github.com/Exploded-views/bitc/issues/26): macOS parity, macOS as a client to the
-  built-in remote providers (exec plugins run on macOS, [#26](https://github.com/Exploded-views/bitc/issues/26))
+  [#26](https://github.com/Exploded-views/bitc/issues/26): macOS parity (exec plugins and the `ssh`
+  client run on macOS; RunPod there is parked)
 - [#10](https://github.com/Exploded-views/bitc/issues/10): IO-pressure admission (`io_pressure_max`)
 
 Planned but not scheduled (macOS as a remote build target, Sprites egress, RunPod placement, the

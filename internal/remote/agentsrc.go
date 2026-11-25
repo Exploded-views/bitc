@@ -24,6 +24,11 @@ import (
 
 var shaRE = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
+// hostGOOS is the OS this bitc runs on; tests stand in another. The release agent is the bare
+// linux binary for the remote's architecture: a Linux bitc of that architecture is its own agent,
+// any other build (a macOS client) downloads the asset and checks it against checksums.txt.
+var hostGOOS = runtime.GOOS
+
 const releaseBase = "https://github.com/Exploded-views/bitc/releases/download"
 
 // AgentSource is where the pod gets its agent (spec 8.4 step 1): a URL to download, or Build,
@@ -108,7 +113,7 @@ func resolveAgentURL(e *config.Effective, core *config.Provider, arch string) (u
 			return "", "", "", &provider.ErrIneligible{Why: "agent.path: " + err.Error()}
 		}
 		return strings.ReplaceAll(core.Agent.URL, "{arch}", arch), sha, path, nil
-	case version.Release == "true" && runtime.GOOS == "linux" && runtime.GOARCH == arch:
+	case version.Release == "true" && hostGOOS == "linux" && runtime.GOARCH == arch:
 		self, err := os.Executable()
 		if err != nil {
 			return "", "", "", err
@@ -302,7 +307,7 @@ func ResolveAgentFile(e *config.Effective, core *config.Provider, arch string) (
 			return "", "", &provider.ErrIneligible{Why: "agent.paths." + arch + ": " + err.Error()}
 		}
 		return sha, path, nil
-	case version.Release == "true" && runtime.GOOS == "linux" && runtime.GOARCH == arch:
+	case version.Release == "true" && hostGOOS == "linux" && runtime.GOARCH == arch:
 		self, err := os.Executable()
 		if err != nil {
 			return "", "", err

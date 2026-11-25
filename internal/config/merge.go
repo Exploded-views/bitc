@@ -81,7 +81,7 @@ func applyHost(p *problems, e *Effective, host layer, env map[string]string, cle
 	// deploy key file (sprites.go).
 	// A cleanup (sweep, doctor --remote) gets sprites as CleanupOnly instead: list, owner check
 	// and delete only, still behind experimental_remote.
-	switch refused := spritesRefused(s, platformGOOS); {
+	switch refused := spritesRefused(s); {
 	case refused && cleanup:
 		e.spritesCleanup = true
 	case refused:
@@ -151,7 +151,7 @@ func applyHost(p *problems, e *Effective, host layer, env map[string]string, cle
 			p.addf("%s: repos[%d].match is required", f, i)
 		}
 		g := RepoGrant(r)
-		if g.DeployKeyFile != "" && !e.spritesRefused && !e.spritesCleanup && platformGOOS == "linux" {
+		if g.DeployKeyFile != "" && !e.spritesRefused && !e.spritesCleanup && len(platformRefusedTypes(s, platformGOOS)) == 0 {
 			g.DeployKeyFile = expandHome(g.DeployKeyFile, env)
 			if why := keyFileProblem(g.DeployKeyFile); why != "" {
 				p.addf("%s: [[repos]] deploy_key_file: %s", f, why)
@@ -223,15 +223,15 @@ func applyHost(p *problems, e *Effective, host layer, env map[string]string, cle
 			e.Test.AllowSprites = *t.AllowSprites
 		}
 	}
-	if platformGOOS != "linux" {
-		// Off Linux only a plugin provider loads (its shim, pin and money rails run on darwin);
-		// every other table is refused for the platform without reading any of its files.
+	if refused := platformRefusedTypes(s, platformGOOS); len(refused) > 0 {
+		// Off Linux a plugin provider and the ssh client load (their shim, pin and money rails run
+		// on darwin, #26, #4; sprites is refused for #6 above); every other table is refused for
+		// the platform without reading any of its files.
+		e.platformRefused = refused
 		kept := map[string]map[string]any{}
 		for t, raw := range s.Providers {
-			if _, isPlugin := raw["plugin"]; isPlugin { // a built-in type with a plugin key is refused by decodeProviders
+			if !slices.Contains(refused, t) {
 				kept[t] = raw
-			} else {
-				e.platformRefused = append(e.platformRefused, t)
 			}
 		}
 		s.Providers = kept
