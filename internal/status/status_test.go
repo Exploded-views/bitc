@@ -266,3 +266,50 @@ func TestAgeIsMeasuredToTheReportTimeAndNeverNegative(t *testing.T) {
 		t.Errorf("a ticket from the future has age %d", got)
 	}
 }
+
+func argvHolderText(t *testing.T, unknown bool, argv []string) string {
+	t.Helper()
+	r := Report{Pools: []Pool{{Name: "work", Slots: 2,
+		Holders: []Holder{{Job: "j", Slot: 1, Pid: 7, Argv: argv, Since: "t", Unknown: unknown}}}}}
+	var out bytes.Buffer
+	r.Text(&out)
+	return out.String()
+}
+
+func TestTextHolderArgvIsOneLineWithControlCharactersEscaped(t *testing.T) {
+	for _, unknown := range []bool{false, true} {
+		got := argvHolderText(t, unknown, []string{"bash", "-c", "set -e\necho a\tb\rc\x1bd\x7fe"})
+		if n := strings.Count(got, "\n"); n != 2 { // the pool line and one holder line
+			t.Errorf("unknown=%v: want 2 lines, got %d:\n%q", unknown, n, got)
+		}
+		want := `bash -c set -e\necho a\tb\rc\x1bd\x7fe` + "\n"
+		if !strings.HasSuffix(got, want) {
+			t.Errorf("unknown=%v: holder line lacks %q:\n%q", unknown, want, got)
+		}
+	}
+}
+
+func TestTextHolderLongArgvIsShortenedWithAMarker(t *testing.T) {
+	got := argvHolderText(t, false, []string{"echo", strings.Repeat("x", 5000)})
+	if !strings.HasSuffix(got, " [truncated]\n") || len(got) > 1000 {
+		t.Errorf("a long argv is not shortened with the marker (%d bytes): %.200q", len(got), got)
+	}
+}
+
+func TestJSONHolderArgvIsExact(t *testing.T) {
+	orig := "a\nb\tc\rd\x1be" + strings.Repeat("y", 5000)
+	argv := []string{"bash", "-c", orig}
+	r := Report{Pools: []Pool{{Name: "work", Slots: 1, Holders: []Holder{{Job: "j", Slot: 1, Pid: 7, Argv: argv, Since: "t"}}}}}
+	b, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := json.Marshal(argv)
+	if !strings.Contains(string(b), `"argv":`+string(want)) {
+		t.Errorf("status --json argv changed: %.300s", b)
+	}
+	r.Text(&bytes.Buffer{})
+	if argv[2] != orig {
+		t.Errorf("Text modified the report's argv")
+	}
+}
