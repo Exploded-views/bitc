@@ -114,7 +114,7 @@ func TestPodEnvEntriesNeverReachTheJob(t *testing.T) {
 		}
 	}
 	sort.Strings(names)
-	if strings.Join(names, " ") != "A HOME PATH" || strings.Contains(out, "s3cr3t") || strings.Contains(out, "/cache/hf") {
+	if strings.Join(names, " ") != "A HOME PATH" || strings.Contains(out, "plainly-fake-value") || strings.Contains(out, "/cache/hf") {
 		t.Fatalf("the job env is not exactly the remote env:\n%s", out)
 	}
 }
