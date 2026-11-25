@@ -189,10 +189,10 @@ func Snapshot(e *config.Effective, l state.Layout, only []string) Report {
 	if e.Test != nil {
 		root = e.Test.ProcfsRoot
 	}
-	r.Memory = Memory{Applies: goos == "linux"}
+	r.Memory = Memory{Applies: goos == "linux", FloorMiB: int64(e.Host.MemoryFloor) >> 20}
 	if r.Memory.Applies {
 		avail, ok, src := admit.ReadMemory(root)
-		r.Memory = Memory{Applies: true, AvailableMiB: avail >> 20, Readable: ok, Source: src, FloorMiB: int64(e.Host.MemoryFloor) >> 20}
+		r.Memory.AvailableMiB, r.Memory.Readable, r.Memory.Source = avail>>20, ok, src
 	}
 	r.Legacy = redactAll(red, admit.LegacyHolders(e.Compat))
 	if RemoteSection != nil {

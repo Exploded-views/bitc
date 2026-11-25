@@ -309,8 +309,8 @@ func TestStatusMemoryIsNotUsedOnDarwin(t *testing.T) {
 	if want := "memory: not used on macOS (no memory admission)\n"; !strings.HasSuffix(text, want) || strings.Contains(text, "unreadable") {
 		t.Errorf("status text should end %q:\n%s", want, text)
 	}
-	if m := memoryJSON(t, r); m["applies"] != false {
-		t.Errorf("status --json memory = %v, want applies:false", m)
+	if m := memoryJSON(t, r); m["applies"] != false || m["readable"] != false || m["available_mib"] != float64(0) || m["source"] != "" || m["floor_mib"] != float64(6144) {
+		t.Errorf("status --json memory = %v, want applies:false readable:false available_mib:0 source:\"\" floor_mib:6144", m)
 	}
 }
 
