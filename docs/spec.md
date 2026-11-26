@@ -125,7 +125,9 @@ record (a job a legacy launcher started, 12): legacy J8/J9 apply, so the last li
 ### 3.3 `status`, `sweep`, `doctor`, `cancel`
 
 - **status** (`--json`: `docs/status.schema.json`): holders (job, slot, pid, cwd, argv, provider,
-  `nested`), waiters, last STARVED reason, groups, memory, per-provider resources, spend, breaker.
+  `nested`), waiters, last STARVED reason, groups, memory (off Linux there is no memory admission:
+  text says `memory: not used on macOS (no memory admission)`, `--json` has `memory.applies: false`),
+  per-provider resources, spend, breaker.
   In text, each holder is one line: its argv is joined, cut after 512 bytes with ` [truncated]`,
   and every control character (C0, DEL, C1) and Unicode line or paragraph separator is escaped
   (`\n`, `\t`, `\r`, `\xNN`, `\uNNNN`). That form is for reading; `--json` keeps the exact argv.
