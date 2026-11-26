@@ -1,21 +1,21 @@
 # Installing bitc
 
-The current release is [v0.1.3](https://github.com/Exploded-views/bitc/releases/tag/v0.1.3). It
+The current release is [v0.1.5](https://github.com/Exploded-views/bitc/releases/tag/v0.1.5). It
 runs on Linux (amd64 or arm64); the macOS builds (Apple silicon or Intel) run local pools and exec plugins
 ([macOS status](#macos-status)).
 
 ## Release binaries
 
-Each release publishes a tarball `bitc_0.1.3_<os>_<arch>.tar.gz` (`<os>` is `linux` or `darwin`,
+Each release publishes a tarball `bitc_0.1.5_<os>_<arch>.tar.gz` (`<os>` is `linux` or `darwin`,
 `<arch>` is `amd64` or `arm64`; it holds `bitc`, `LICENSE` and `README.md`), the bare binary
-`bitc_0.1.3_<os>_<arch>`, and `checksums.txt`. Download an asset and `checksums.txt` and verify the
+`bitc_0.1.5_<os>_<arch>`, and `checksums.txt`. Download an asset and `checksums.txt` and verify the
 asset before use:
 
 ```sh
-curl -LO https://github.com/Exploded-views/bitc/releases/download/v0.1.3/bitc_0.1.3_linux_amd64.tar.gz
-curl -LO https://github.com/Exploded-views/bitc/releases/download/v0.1.3/checksums.txt
-grep bitc_0.1.3_linux_amd64.tar.gz checksums.txt | sha256sum -c -
-tar -xzf bitc_0.1.3_linux_amd64.tar.gz bitc
+curl -LO https://github.com/Exploded-views/bitc/releases/download/v0.1.5/bitc_0.1.5_linux_amd64.tar.gz
+curl -LO https://github.com/Exploded-views/bitc/releases/download/v0.1.5/checksums.txt
+grep bitc_0.1.5_linux_amd64.tar.gz checksums.txt | sha256sum -c -
+tar -xzf bitc_0.1.5_linux_amd64.tar.gz bitc
 install -m 0755 bitc ~/.local/bin/bitc      # or any other directory on your PATH
 bitc version --json
 ```
@@ -23,7 +23,7 @@ bitc version --json
 On macOS, use `shasum -a 256 -c -` in place of `sha256sum -c -`.
 
 `bitc version --json` prints one compact JSON line, for example
-`{"commit":"9bc24e8","config_schema":1,"release":true,"state_schema":1,"version":"0.1.3"}`.
+`{"commit":"e571817","config_schema":1,"release":true,"state_schema":1,"version":"0.1.5"}`.
 `release` is `true` only for release builds. Checksums are unsigned for now; signed checksums are
 planned after 1.0. [RELEASING.md](RELEASING.md) describes what a release contains.
 
@@ -35,7 +35,7 @@ you, with the same checksum checks.
 To build from source you need Go 1.26 or newer (CI tests 1.27.4):
 
 ```sh
-go install github.com/Exploded-views/bitc/cmd/bitc@v0.1.3
+go install github.com/Exploded-views/bitc/cmd/bitc@v0.1.5
 ```
 
 A build made this way reports `"release":false`. That matters only for remote providers: the

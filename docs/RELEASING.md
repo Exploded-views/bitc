@@ -87,6 +87,10 @@ Card. There is no coverage badge: it needs a coverage service.
    - `scripts/dev.sh go install github.com/Exploded-views/bitc/cmd/bitc@v<x.y.z>`, then
      `scripts/dev.sh bitc version`;
    - the tarball's `bitc version`.
+8. Open a docs PR that names the new release as current: the `go install` line in `README.md` and
+   its release-notes link under "Status and roadmap", and in `docs/install.md` the current-release
+   link, the asset names, the download commands, the `go install` line and the
+   `bitc version --json` example (with the release's short commit).
 
 Cosign signing of `checksums.txt` comes after v1.
 

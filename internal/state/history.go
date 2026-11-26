@@ -54,6 +54,15 @@ func cutReason(r string) string {
 	return cutTo(r, maxReason)
 }
 
+// Shorten cuts s to at most n bytes at a UTF-8 boundary and ends it with the history cut marker,
+// or returns s whole when it is not longer than n.
+func Shorten(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return cutTo(s, n)
+}
+
 // cutTo cuts s (without an earlier mark) to at most n bytes at a UTF-8 boundary and marks it.
 func cutTo(s string, n int) string {
 	s = strings.TrimSuffix(s, cutMark)
