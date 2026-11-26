@@ -73,7 +73,22 @@ new Sprite in a separate Fly org, then deletes it.
      only. A tool whose host is not in it is `ErrIneligible`. A repo file can never widen egress
      (spec 10), so tool hosts are never added automatically.
    - The **job** policy, applied before attach, allows `egress_allow` only (GitHub and npm).
-   - Both are explicit lists, never `include: defaults`, never `*`.
+   - Both are explicit lists, never `include: defaults`, never `*` as an allow.
+   - **Every policy ends in one catch-all deny, `{domain: "*", action: "deny"}`, after the allows.**
+     An unmatched domain is allowed by default, so an allow list alone restricts nothing. No
+     domains is deny-all: the policy is exactly that one rule. The deny is added where the policy is
+     sent (`wire` in `setNetwork`), not by the caller, so no policy value can skip it, and a
+     caller-supplied `*` allow or deny is refused. The policy is read back and must equal what was
+     sent, rules and order, deny included; a missing deny, an extra or reordered rule or a read
+     error fails closed and nothing is exec'd or attached (issue #6). The read-back must also carry
+     no key besides `rules` (and no key but `domain` and `action` on a rule): an `include` or a
+     `default` could widen the policy, and no harmless metadata field is known, so none is tolerated.
+   - **Unverified assumptions of this decision (issue #6; checked by Rule E's follow-up probe):**
+     (1) the API accepts the deny's wire shape, `{domain: "*", action: "deny"}`; (2) rules are
+     evaluated so that a final `*` deny catches only what no earlier allow matched (the evaluation
+     order, first match or last match or most specific, is not documented); (3) `GET` returns the
+     rules in the order they were sent, without normalising them. If any is false every Sprites
+     launch fails closed (a 400, or a read-back mismatch), which is safe.
    - The docs say the default is unrestricted, so bitc sets a policy on every Sprite before its
      first exec.
 5. **Cost model.**
@@ -439,6 +454,9 @@ listed + this job's estimate`, with `Spend()` absent (`Caps.Spend = false`).
    payload only (memfd), never on disk. K never leaves the spec.
 6. **Egress** (decision 4):
    - **Job policy:** `egress_allow`, explicit domains. `*` and `include` are rejected (78).
+   - **Final deny (both policies):** the rules sent are the allows, then one
+     `{domain: "*", action: "deny"}`. An empty list is that one rule alone (deny-all). The `GET`
+     check compares the whole ordered rule list, deny included.
    - **Build policy:** `egress_allow` plus `egress_build_allow` plus the agent URL host. Nothing
      else is added.
    - **Setting it.** Set after create and before the first exec, with a `GET` check; the job
@@ -635,9 +653,15 @@ a probe disproves them:
 
 - **Rule E (egress): no Sprites job runs until allow-list enforcement is proven.** Item 3 reached
   `registry.npmjs.org` under an empty allow policy. Either an empty list means allow-all, or the
-  policy was not in force at the exec. The proof is a follow-up probe:
-  - set an allow list of one host and read the policy back;
+  policy was not in force at the exec. Issue #6 assumes the first reading and adds a final `*` deny
+  to every policy. The proof is a follow-up probe:
+  - set an allow list of one host plus the final `{domain: "*", action: "deny"}` and read the
+    policy back;
   - that host must be reachable, and a second host must be refused.
+  - The same first live run also checks the three unverified assumptions of decision 4: the API
+    accepts the deny rule's shape (`action: "deny"`, `domain: "*"`); the rule-evaluation order
+    leaves the allows effective ahead of the final deny; `GET` returns the rules in the order they
+    were sent. It also records any key besides `rules` in the read-back (decision 4 refuses them).
   Until it passes, the provider stays unavailable for jobs.
 - **Rule I (isolation): assume no isolation inside a Sprite.**
   - Exec runs as `sprite` (uid 1001) with passwordless sudo. The privileges policy

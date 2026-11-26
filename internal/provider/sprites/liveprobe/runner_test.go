@@ -122,6 +122,27 @@ func TestRunnerRefusesASecondLiveSprite(t *testing.T) {
 	}
 }
 
+func TestRunnerRefusesARawCreateInAnyMethodCase(t *testing.T) {
+	r := newRig(t, nil)
+	codes := map[string]int{}
+	r.runner(quick(1, gRO, time.Minute, func(ctx context.Context, e *Env) Outcome {
+		for _, m := range []string{"post", "Post", "POST"} {
+			for _, p := range []string{"/v1/sprites", "/v1/sprites/"} {
+				codes[m+" "+p], _ = e.API.Raw(ctx, m, p, nil, map[string]string{"name": e.NextName()})
+			}
+		}
+		return fine(ctx, e)
+	})).Run(context.Background())
+	for k, c := range codes {
+		if c != 0 {
+			t.Errorf("raw create %q was sent: %d", k, c)
+		}
+	}
+	if r.creates() != 1 {
+		t.Fatalf("%d creates reached the server, want 1", r.creates())
+	}
+}
+
 func TestRunnerRefusesANameOutsideItsPrefix(t *testing.T) {
 	r := newRig(t, nil)
 	var err1, err2 error

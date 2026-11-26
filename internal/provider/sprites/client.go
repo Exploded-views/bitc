@@ -427,18 +427,42 @@ func (c *Client) DeleteSprite(ctx context.Context, name string) error {
 	return err
 }
 
-// NetRule is one network policy rule: an explicit domain (exact or "*.d") and an action.
+// NetRule is one network policy rule: a domain and an action. bitc itself only ever sends explicit
+// domains (exact or "*.d") with "allow", then the one final catch-all deny.
 type NetRule struct {
 	Domain string `json:"domain"`
-	Action string `json:"action"` // allow
+	Action string `json:"action"` // allow, or deny for the final catch-all
 }
 
+// catchAllDeny is the last rule of every policy bitc sets: the platform's default for a domain no
+// rule names is allow, so without it the allow list would restrict nothing (issue #6).
+var catchAllDeny = NetRule{Domain: "*", Action: "deny"}
+
 // NetworkPolicy is a list of allowed domains. There is no "include" and no "*" (design decision 4).
+// Rules holds the allows only: the final catch-all deny is not the caller's to supply or to skip,
+// wire() adds it. The zero value is therefore deny-all.
 type NetworkPolicy struct {
 	Rules []NetRule `json:"rules"`
 }
 
-// AllowDomains builds an allow-only policy from explicit domains, sorted and de-duplicated.
+// wire is the policy exactly as it is sent and must be read back: the allows in order, then one
+// catch-all deny. It is the single place the deny is added, and setNetwork the only place a policy
+// is sent, so no NetworkPolicy value, built by AllowDomains or as a literal, can skip it. A rule
+// that is not an explicit allow (a "*", a deny, an include-like value) is refused.
+func (p NetworkPolicy) wire() ([]NetRule, error) {
+	out := make([]NetRule, 0, len(p.Rules)+1)
+	for _, r := range p.Rules {
+		if r.Action != "allow" || !domainRE.MatchString(r.Domain) {
+			return nil, &provider.ErrIneligible{Why: "network policy rule " + strconv.Quote(r.Domain) + " is not an explicit allow"}
+		}
+		out = append(out, r)
+	}
+	return append(out, catchAllDeny), nil
+}
+
+// AllowDomains builds a policy from explicit domains, sorted and de-duplicated. "*" and anything
+// that would match every domain is refused by name. No domains is the deny-all policy; the final
+// catch-all deny is added when the policy is set (see wire).
 func AllowDomains(domains ...string) (NetworkPolicy, error) {
 	set := map[string]bool{}
 	for _, d := range domains {
@@ -513,19 +537,24 @@ func (c *Client) advance(name string, to int) {
 	}
 }
 
-func (c *Client) setNetwork(ctx context.Context, name string, p NetworkPolicy) error {
+// setNetwork sets and verifies the network policy. Once the platform may hold a policy that was not
+// verified (any failure after wire succeeded), the Sprite's provisioning state is dropped to
+// polNone: nothing can exec or attach until the build policies and the job policy verify again.
+func (c *Client) setNetwork(ctx context.Context, name string, p NetworkPolicy) (err error) {
 	if err := checkName(name); err != nil {
 		return err
 	}
-	if len(p.Rules) == 0 {
-		p.Rules = []NetRule{}
+	rules, err := p.wire()
+	if err != nil {
+		return err
 	}
-	for _, r := range p.Rules {
-		if r.Action != "allow" || !domainRE.MatchString(r.Domain) {
-			return &provider.ErrIneligible{Why: "network policy rule " + strconv.Quote(r.Domain) + " is not an explicit allow"}
+	defer func() {
+		if err != nil {
+			c.drop(name)
 		}
-	}
-	code, b := c.do(ctx, "POST", c.policyPath(name, "network"), nil, p)
+	}()
+	want := NetworkPolicy{Rules: rules}
+	code, b := c.do(ctx, "POST", c.policyPath(name, "network"), nil, want)
 	if err := mapHTTP(code, b, "set network policy"); err != nil {
 		return err
 	}
@@ -533,28 +562,48 @@ func (c *Client) setNetwork(ctx context.Context, name string, p NetworkPolicy) e
 	if err := mapHTTP(code, b, "get network policy"); err != nil {
 		return err
 	}
-	var got NetworkPolicy
-	if json.Unmarshal(b, &got) != nil || !samePolicy(p, got) {
+	got, ok := decodeStrictPolicy(b)
+	if !ok || !samePolicy(want, got) {
 		return &PolicyMismatchError{Name: name, Policy: "network"}
 	}
 	return nil
 }
 
-func samePolicy(a, b NetworkPolicy) bool {
-	norm := func(p NetworkPolicy) []string {
-		var s []string
-		for _, r := range p.Rules {
-			s = append(s, r.Action+" "+r.Domain)
-		}
-		sort.Strings(s)
-		return s
+// drop lowers a Sprite this client created to polNone.
+func (c *Client) drop(name string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, ok := c.fresh[name]; ok {
+		c.fresh[name] = polNone
 	}
-	x, y := norm(a), norm(b)
-	if len(x) != len(y) {
+}
+
+// decodeStrictPolicy reads a policy answer and accepts only exactly what bitc sends: one JSON
+// object whose only key is "rules", each rule only "domain" and "action". Any other key ("include",
+// "default", an exception list on a rule, a trailing document) fails, because it could widen the
+// policy without showing in the rule list. The design doc lists no harmless metadata fields, so
+// none is tolerated; a platform that adds one makes every launch fail closed until it is reviewed.
+func decodeStrictPolicy(b []byte) (NetworkPolicy, bool) {
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.DisallowUnknownFields()
+	var got NetworkPolicy
+	if dec.Decode(&got) != nil {
+		return NetworkPolicy{}, false
+	}
+	if _, err := dec.Token(); err != io.EOF { // trailing data
+		return NetworkPolicy{}, false
+	}
+	return got, true
+}
+
+// samePolicy is exact: the same rules in the same order, the final deny included. Rule order is
+// semantics here (the deny must come last), so nothing is sorted or de-duplicated.
+func samePolicy(a, b NetworkPolicy) bool {
+	if len(a.Rules) != len(b.Rules) {
 		return false
 	}
-	for i := range x {
-		if x[i] != y[i] {
+	for i := range a.Rules {
+		if a.Rules[i] != b.Rules[i] {
 			return false
 		}
 	}

@@ -26,6 +26,66 @@ func TestRawSendsOnlyV1Paths(t *testing.T) {
 	}
 }
 
+func TestRawRefusesNetworkPolicyWrites(t *testing.T) {
+	f, c := newFake(t, spritesfake.Options{})
+	ctx := context.Background()
+	if _, err := c.CreateSprite(ctx, "bitc-a", nil); err != nil {
+		t.Fatal(err)
+	}
+	body := map[string]any{"rules": []NetRule{{Domain: "github.com", Action: "allow"}}}
+	for _, m := range []string{"POST", "PUT", "PATCH", "post", "Put"} {
+		for _, p := range []string{"/v1/sprites/bitc-a/policy/network", "/v1/sprites/bitc-a/policy/network/"} {
+			if code, _ := c.Raw(ctx, m, p, nil, body); code != 0 {
+				t.Errorf("Raw %s %s was sent: %d", m, p, code)
+			}
+		}
+	}
+	if net, _ := f.Policies("bitc-a"); strings.Contains(net, "github.com") {
+		t.Fatalf("a Raw write set a network policy: %s", net)
+	}
+	// a read of the policy and a write of another policy are still fine
+	if code, _ := c.Raw(ctx, "GET", "/v1/sprites/bitc-a/policy/network", nil, nil); code != 200 {
+		t.Errorf("Raw GET of the network policy = %d", code)
+	}
+	if code, _ := c.Raw(ctx, "POST", "/v1/sprites/bitc-a/policy/resources", nil, map[string]any{"memory": map[string]any{"limit_mb": 1024, "autoscale": false}}); code != 200 {
+		t.Errorf("Raw POST of the resources policy = %d", code)
+	}
+}
+
+func TestRawRefusesEveryNonReadOfTheNetworkPolicyAfterNormalising(t *testing.T) {
+	f, c := newFake(t, spritesfake.Options{})
+	ctx := context.Background()
+	if _, err := c.CreateSprite(ctx, "bitc-a", nil); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := f.Policies("bitc-a")
+	paths := []string{
+		"/v1/sprites/bitc-a/policy/network",
+		"/v1/sprites/bitc-a/policy//network",
+		"/v1/sprites/bitc-a/policy/./network",
+		"/v1/sprites/bitc-a/policy/network/.",
+		"/v1/sprites/bitc-a/policy/NETWORK",
+		"/v1/sprites/bitc-a/Policy/Network/",
+		"/v1/sprites/bitc-a/policy/network?x=1",
+		"/v1/sprites/bitc-a/policy/network#x",
+	}
+	for _, m := range []string{"DELETE", "delete", "POST", "post", "PUT", "PATCH", "patch", "OPTIONS", "FOO"} {
+		for _, p := range paths {
+			if code, _ := c.Raw(ctx, m, p, nil, map[string]any{"rules": []NetRule{}}); code != 0 {
+				t.Errorf("Raw %s %s was sent: %d", m, p, code)
+			}
+		}
+	}
+	if after, _ := f.Policies("bitc-a"); after != before {
+		t.Fatalf("a Raw call changed the network policy: %s -> %s", before, after)
+	}
+	for _, m := range []string{"GET", "get", "HEAD"} {
+		if code, _ := c.Raw(ctx, m, "/v1/sprites/bitc-a/policy/network", nil, nil); code == 0 {
+			t.Errorf("Raw %s of the network policy was refused", m)
+		}
+	}
+}
+
 func TestOrganizationReadsTheSlug(t *testing.T) {
 	_, c := newFake(t, spritesfake.Options{})
 	o, err := c.Organization(context.Background())
