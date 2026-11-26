@@ -128,6 +128,9 @@ record (a job a legacy launcher started, 12): legacy J8/J9 apply, so the last li
   `nested`), waiters, last STARVED reason, groups, memory (off Linux there is no memory admission:
   text says `memory: not used on macOS (no memory admission)`, `--json` has `memory.applies: false`),
   per-provider resources, spend, breaker.
+  In text, each holder is one line: its argv is joined, cut after 512 bytes with ` [truncated]`,
+  and every control character (C0, DEL, C1) and Unicode line or paragraph separator is escaped
+  (`\n`, `\t`, `\r`, `\xNN`, `\uNNNN`). That form is for reading; `--json` keeps the exact argv.
   On Linux without a readable `/proc/locks` (no procfs, an LSM or seccomp denial, gVisor) a lock
   cannot be inspected without taking it, and status never takes one: a slot or group unit that is
   in use as far as its ticket or lock file shows reads `unknown` (text), `"unknown": true` on

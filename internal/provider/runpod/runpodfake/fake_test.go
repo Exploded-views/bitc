@@ -198,8 +198,21 @@ func TestCreateIsStrictAboutTheV2Shape(t *testing.T) {
 func TestForgeResultServesTheForgedDocumentOnEveryRead(t *testing.T) {
 	f := New(t, Options{Bin: toolBin(t, "true")})
 	f.Behave("forge-result")
-	_, forging := createWith(t, f, agent.Spec{Job: "j1", Argv: []string{"true"}}, f.URL())
-	_, plain := createWith(t, f, agent.Spec{Job: "j2", Argv: []string{"true"}}, f.URL())
+	key := bytes.Repeat([]byte{3}, 32)
+	code, forging := createWith(t, f, agent.Spec{Job: "j1", Argv: []string{"true"}, MacKey: hex.EncodeToString(key)}, f.URL())
+	if code != 201 {
+		t.Fatalf("create of the forging pod: status %d", code)
+	}
+	code, plain := createWith(t, f, agent.Spec{Job: "j2", Argv: []string{"true"}}, f.URL())
+	if code != 201 {
+		t.Fatalf("create of the plain pod: status %d", code)
+	}
+	f.mu.Lock()
+	forgeFlag, plainFlag := f.pods[forging].forge, f.pods[plain].forge
+	f.mu.Unlock()
+	if !forgeFlag || plainFlag {
+		t.Fatalf("forge flags: forging pod %v (want true), plain pod %v (want false)", forgeFlag, plainFlag)
+	}
 	get := func(id string) (int, []byte) {
 		t.Helper()
 		resp, err := http.Get("http://" + f.ProxyAddr() + "/" + id + "-8090/v1/result.json")
@@ -211,7 +224,6 @@ func TestForgeResultServesTheForgedDocumentOnEveryRead(t *testing.T) {
 		_, _ = b.ReadFrom(resp.Body)
 		return resp.StatusCode, b.Bytes()
 	}
-	key := bytes.Repeat([]byte{3}, 32)
 	for i := 0; i < 2; i++ {
 		code, body := get(forging)
 		if code != 200 {
