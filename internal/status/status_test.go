@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Exploded-views/bitc/internal/admit"
 	"github.com/Exploded-views/bitc/internal/config"
@@ -264,5 +265,81 @@ func TestAgeIsMeasuredToTheReportTimeAndNeverNegative(t *testing.T) {
 	}
 	if got := ageS(now, now.Add(5*time.Second).UnixNano()); got != 0 {
 		t.Errorf("a ticket from the future has age %d", got)
+	}
+}
+
+func argvHolderText(t *testing.T, unknown bool, argv []string) string {
+	t.Helper()
+	r := Report{Pools: []Pool{{Name: "work", Slots: 2,
+		Holders: []Holder{{Job: "j", Slot: 1, Pid: 7, Argv: argv, Since: "t", Unknown: unknown}}}}}
+	var out bytes.Buffer
+	r.Text(&out)
+	return out.String()
+}
+
+func TestTextHolderArgvIsOneLineWithControlCharactersEscaped(t *testing.T) {
+	for _, unknown := range []bool{false, true} {
+		got := argvHolderText(t, unknown, []string{"bash", "-c", "set -e\necho a\tb\rc\x1bd\x7fe"})
+		if n := strings.Count(got, "\n"); n != 3 { // the pool line, one holder line and the memory line
+			t.Errorf("unknown=%v: want 3 lines, got %d:\n%q", unknown, n, got)
+		}
+		want := `bash -c set -e\necho a\tb\rc\x1bd\x7fe` + "\n"
+		if !strings.Contains(got, want) {
+			t.Errorf("unknown=%v: holder line lacks %q:\n%q", unknown, want, got)
+		}
+	}
+}
+
+func TestTextHolderLongArgvIsShortenedWithAMarker(t *testing.T) {
+	got := argvHolderText(t, false, []string{"echo", strings.Repeat("x", 5000)})
+	if !strings.Contains(got, " [truncated]\n") || len(got) > 1000 {
+		t.Errorf("a long argv is not shortened with the marker (%d bytes): %.200q", len(got), got)
+	}
+}
+
+// Every control character, C0 and C1, and the Unicode line breaks print escaped; invalid UTF-8 shows
+// as U+FFFD; a long argv is cut at a rune boundary, within argvMax bytes before escaping, and marked.
+func TestArgvTextEscapesEveryLineBreakAndCutsAtARuneBoundary(t *testing.T) {
+	for in, want := range map[string]string{
+		"a\x00b\x07c\x1fd":      `a\x00b\x07c\x1fd`,
+		"nel\u0085csi\u009bend": `nel\u0085csi\u009bend`,
+		"ls" + string(rune(0x2028)) + "ps" + string(rune(0x2029)) + "end": "ls" + `\u2028ps` + `\u2029end`,
+		"bad\xffbyte":            "bad" + string(utf8.RuneError) + "byte",
+		`back\slash and \n text`: `back\slash and \n text`,
+		"plain é ü 日本":           "plain é ü 日本",
+	} {
+		if got := argvText([]string{in}); got != want {
+			t.Errorf("argvText(%q) = %q, want %q", in, got, want)
+		}
+	}
+	// a 3-byte rune straddles the cut point
+	long := strings.Repeat("x", argvMax-1) + "日" + strings.Repeat("y", 100)
+	got := argvText([]string{long})
+	if !strings.HasSuffix(got, " [truncated]") || !utf8.ValidString(got) || strings.ContainsRune(got, utf8.RuneError) {
+		t.Errorf("cut is not at a rune boundary or not marked: %q", got[len(got)-40:])
+	}
+	if len(got) > argvMax+len(" [truncated]") {
+		t.Errorf("cut text is %d bytes, over argvMax %d plus the marker", len(got), argvMax)
+	}
+	if short := strings.Repeat("z", argvMax); argvText([]string{short}) != short {
+		t.Errorf("an argv of exactly argvMax bytes was cut")
+	}
+}
+
+func TestJSONHolderArgvIsExact(t *testing.T) {
+	orig := "a\nb\tc\rd\x1be" + strings.Repeat("y", 5000)
+	argv := []string{"bash", "-c", orig}
+	r := Report{Pools: []Pool{{Name: "work", Slots: 1, Holders: []Holder{{Job: "j", Slot: 1, Pid: 7, Argv: argv, Since: "t"}}}}}
+	b, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := json.Marshal(argv)
+	if !strings.Contains(string(b), `"argv":`+string(want)) {
+		t.Errorf("status --json argv changed: %.300s", b)
+	}
+	r.Text(&bytes.Buffer{})
+	if argv[2] != orig {
+		t.Errorf("Text modified the report's argv")
 	}
 }

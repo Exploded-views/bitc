@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/Exploded-views/bitc/internal/admit"
 	"github.com/Exploded-views/bitc/internal/config"
@@ -279,7 +280,7 @@ func (r Report) Text(w io.Writer) {
 				continue
 			}
 			if h.Unknown {
-				fmt.Fprintf(w, "  slot %d  unknown  %s  pid %d%s  since %s  %s\n", h.Slot, h.Job, h.Pid, unitsText(h.Units), h.Since, strings.Join(h.Argv, " "))
+				fmt.Fprintf(w, "  slot %d  unknown  %s  pid %d%s  since %s  %s\n", h.Slot, h.Job, h.Pid, unitsText(h.Units), h.Since, argvText(h.Argv))
 				continue
 			}
 			if h.Legacy {
@@ -294,7 +295,7 @@ func (r Report) Text(w io.Writer) {
 			if h.Nested {
 				nested = " nested"
 			}
-			fmt.Fprintf(w, "  slot %d  %s  pid %d%s%s  since %s  %s\n", h.Slot, h.Job, h.Pid, nested, unitsText(h.Units), h.Since, strings.Join(h.Argv, " "))
+			fmt.Fprintf(w, "  slot %d  %s  pid %d%s%s  since %s  %s\n", h.Slot, h.Job, h.Pid, nested, unitsText(h.Units), h.Since, argvText(h.Argv))
 		}
 		for _, q := range p.Waiters {
 			unk := ""
@@ -322,6 +323,36 @@ func (r Report) Text(w io.Writer) {
 	for _, x := range r.Legacy {
 		fmt.Fprintf(w, "legacy: %s\n", x)
 	}
+}
+
+// argvMax bounds a holder's joined argv in status text, in bytes (before escaping).
+const argvMax = 512
+
+// argvText is a holder's argv on one line: joined, shortened as bitc history shortens a long
+// field (cut mark included), then every control character written as a visible escape: \n, \t
+// and \r, \xNN for the other C0 controls and DEL, and \uNNNN for the C1 controls (NEL among them)
+// and the Unicode line and paragraph separators. Invalid UTF-8 shows as U+FFFD. The text is for
+// reading, not reversible (a backslash is not escaped): status --json keeps the exact argv.
+func argvText(argv []string) string {
+	s := state.Shorten(strings.Join(argv, " "), argvMax)
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case r < 0x20 || r == 0x7f:
+			fmt.Fprintf(&b, `\x%02x`, r)
+		case unicode.IsControl(r) || r == '\u2028' || r == '\u2029':
+			fmt.Fprintf(&b, `\u%04x`, r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // unitsText is "  units cpu=3 mem=1" (groups sorted), or "" when none.
