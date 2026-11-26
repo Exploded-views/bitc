@@ -98,6 +98,7 @@ type sprite struct {
 	labels        map[string]string
 	dir, overlay  string
 	netPolicy     *json.RawMessage
+	netReadback   *json.RawMessage // when set, GET of the network policy answers this instead
 	resources     *json.RawMessage
 	procs         []*proc
 	sessions      int
@@ -271,6 +272,7 @@ func BuildBitc(t testing.TB) string {
 //	cold-drop-mid-job      the Sprite goes cold when the attach's boot-stdin agent first writes to stdout
 //	no-org                 Sprite responses carry no organization
 //	policy-500             a policy POST answers 500 (the policy is not set)
+//	policy-get-500         a policy GET answers 500
 //	provision-infra-fails  `__agent provision` answers like the agent's infra failure: last line
 //	                       `setup step packages failed: ...`, exit 75
 //	provision-repo-fails   as above for the repo's own failure: `setup step tl failed: ...`, exit 71
@@ -293,7 +295,7 @@ var behaviours = map[string]bool{"429-create": true, "concurrent-limit": true, "
 	"401": true, "create-then-500": true, "create-then-500-lookup-fails": true, "create-500-nothing": true, "policy-get-mismatch": true,
 	"wrong-org": true, "labels-unsupported": true, "delete-500": true, "list-500": true, "drop-exec-socket": true,
 	"exec-upgrade-4xx": true, "exec-upgrade-5xx": true, "exec-upgrade-timeout": true, "cold-drop-mid-job": true, "no-org": true,
-	"policy-500": true, "provision-infra-fails": true, "provision-repo-fails": true, "attach-4xx": true, "attach-timeout": true, "drop-tail": true, "attach-truncate": true, "forge-result": true, "checkpoints-survive-delete": true, "lax-names": true}
+	"policy-500": true, "policy-get-500": true, "provision-infra-fails": true, "provision-repo-fails": true, "attach-4xx": true, "attach-timeout": true, "drop-tail": true, "attach-truncate": true, "forge-result": true, "checkpoints-survive-delete": true, "lax-names": true}
 
 // KnownBehaviour reports whether b is a documented behaviour name.
 func (f *Fake) KnownBehaviour(b string) bool { return behaviours[b] }
@@ -379,6 +381,22 @@ func (f *Fake) Checkpoints(name string) []string {
 		return append([]string(nil), s.ckpts...)
 	}
 	return nil
+}
+
+// ServeNetworkReadback makes every GET of name's network policy answer raw (JSON) instead of the
+// stored policy, to model a platform that applied something other than what was set (a missing
+// deny, an extra allow, reordered rules). "" turns it off.
+func (f *Fake) ServeNetworkReadback(name, raw string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if s := f.sprites[name]; s != nil {
+		if raw == "" {
+			s.netReadback = nil
+			return
+		}
+		m := json.RawMessage(raw)
+		s.netReadback = &m
+	}
 }
 
 // Policies returns the stored network and resources policies as JSON ("" when unset).
@@ -998,10 +1016,17 @@ func (f *Fake) policy(w http.ResponseWriter, method, name, kind string, body []b
 		return
 	}
 	if method == "GET" {
+		if f.take("policy-get-500") {
+			f.mu.Unlock()
+			jsonErr(w, 500, "internal", "try again")
+			return
+		}
 		cur := s.netPolicy
 		empty := json.RawMessage(`{"rules":[]}`)
 		if kind == "resources" {
 			cur, empty = s.resources, json.RawMessage(`{}`)
+		} else if s.netReadback != nil {
+			cur = s.netReadback
 		}
 		if cur == nil || f.take("policy-get-mismatch") {
 			f.mu.Unlock()
@@ -1022,7 +1047,13 @@ func (f *Fake) policy(w http.ResponseWriter, method, name, kind string, body []b
 			jsonErr(w, 400, "bad_request", "invalid network policy")
 			return
 		}
-		for _, r := range p.Rules {
+		// the platform's ordered rules: explicit allows, then exactly one final catch-all deny.
+		// A policy without that deny is refused (an unmatched domain would otherwise be allowed).
+		if n := len(p.Rules); n == 0 || p.Rules[n-1] != (netRule{Domain: "*", Action: "deny"}) {
+			jsonErr(w, 400, "bad_request", "invalid network policy: the last rule must be the catch-all deny")
+			return
+		}
+		for _, r := range p.Rules[:len(p.Rules)-1] {
 			if r.Action != "allow" || !fakeDomainRE.MatchString(r.Domain) {
 				jsonErr(w, 400, "bad_request", "invalid rule: explicit allow domains only")
 				return

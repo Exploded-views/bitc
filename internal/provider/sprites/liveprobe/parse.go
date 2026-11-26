@@ -364,7 +364,7 @@ func summarizeNet(phases []netPhase) Outcome {
 	}
 	ev["needed"] = need
 	if phases[0].Obs.Reach["https registry.npmjs.org"] {
-		return failed("control failed: registry.npmjs.org was reachable under an empty allow policy", ev)
+		return failed("control failed: registry.npmjs.org was reachable under the deny-all policy (no allows, one catch-all deny); the deny is not enforced", ev)
 	}
 	return ok(strings.Join(lines, "; "), ev)
 }

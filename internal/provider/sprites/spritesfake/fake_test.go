@@ -118,6 +118,10 @@ func TestFakeRefusesUnknownFieldsAndParameters(t *testing.T) {
 		{"/policy/network", `{"rules":[{"domain":"*","action":"allow"}]}`},
 		{"/policy/network", `{"rules":[{"domain":"github.com","action":"deny"}]}`},
 		{"/policy/network", `{}`},
+		{"/policy/network", `{"rules":[]}`},
+		{"/policy/network", `{"rules":[{"domain":"github.com","action":"allow"}]}`},
+		{"/policy/network", `{"rules":[{"domain":"*","action":"deny"},{"domain":"github.com","action":"allow"}]}`},
+		{"/policy/network", `{"rules":[{"domain":"*","action":"deny"},{"domain":"*","action":"deny"}]}`},
 		{"/policy/resources", `{"memory":{"limit_mb":1024,"autoscale":true}}`},
 		{"/policy/resources", `{"memory":{"limit_mb":0,"autoscale":false}}`},
 		{"/policy/resources", `{"memory":{"limit_mb":1,"autoscale":false,"x":1}}`},
@@ -194,7 +198,7 @@ func TestFakeListPaginatesByToken(t *testing.T) {
 func TestFakeStoresAndServesPolicies(t *testing.T) {
 	f := spritesfake.New(t, spritesfake.Options{})
 	raw(t, f, "POST", "/v1/sprites", `{"name":"a"}`, nil)
-	if code, _ := raw(t, f, "POST", "/v1/sprites/a/policy/network", `{"rules":[{"domain":"github.com","action":"allow"}]}`, nil); code != 200 {
+	if code, _ := raw(t, f, "POST", "/v1/sprites/a/policy/network", `{"rules":[{"domain":"github.com","action":"allow"},{"domain":"*","action":"deny"}]}`, nil); code != 200 {
 		t.Fatalf("set: %d", code)
 	}
 	_, got := raw(t, f, "GET", "/v1/sprites/a/policy/network", ``, nil)
@@ -209,6 +213,32 @@ func TestFakeStoresAndServesPolicies(t *testing.T) {
 	_, got = raw(t, f, "GET", "/v1/sprites/a/policy/network", ``, nil)
 	if !strings.Contains(got, "github.com") {
 		t.Fatalf("mismatch is once: %s", got)
+	}
+}
+
+// ServeNetworkReadback replaces what a GET of the network policy answers until it is cleared with
+// "", and is a no-op for an unknown Sprite; policy-get-500 fails one GET only (#6).
+func TestFakeNetworkReadbackAndPolicyGet500(t *testing.T) {
+	f := spritesfake.New(t, spritesfake.Options{})
+	raw(t, f, "POST", "/v1/sprites", `{"name":"a"}`, nil)
+	if code, _ := raw(t, f, "POST", "/v1/sprites/a/policy/network", `{"rules":[{"domain":"github.com","action":"allow"},{"domain":"*","action":"deny"}]}`, nil); code != 200 {
+		t.Fatalf("set: %d", code)
+	}
+	f.ServeNetworkReadback("a", `{"rules":[{"domain":"example.org","action":"allow"}]}`)
+	f.ServeNetworkReadback("no-such-sprite", `{"rules":[]}`)
+	if _, got := raw(t, f, "GET", "/v1/sprites/a/policy/network", ``, nil); !strings.Contains(got, "example.org") || strings.Contains(got, "github.com") {
+		t.Fatalf("the readback was not served: %s", got)
+	}
+	f.ServeNetworkReadback("a", "")
+	if _, got := raw(t, f, "GET", "/v1/sprites/a/policy/network", ``, nil); !strings.Contains(got, "github.com") {
+		t.Fatalf("clearing the readback did not restore the stored policy: %s", got)
+	}
+	f.Behave("policy-get-500")
+	if code, _ := raw(t, f, "GET", "/v1/sprites/a/policy/network", ``, nil); code != 500 {
+		t.Fatalf("policy-get-500: %d", code)
+	}
+	if code, got := raw(t, f, "GET", "/v1/sprites/a/policy/network", ``, nil); code != 200 || !strings.Contains(got, "github.com") {
+		t.Fatalf("policy-get-500 is once: %d %s", code, got)
 	}
 }
 
