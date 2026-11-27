@@ -91,6 +91,21 @@ func TestStubInstallPassesTheURLLiterally(t *testing.T) {
 	}
 }
 
+func TestStubInstallComparesTheSumLiterally(t *testing.T) {
+	dir := t.TempDir()
+	bin, dest := filepath.Join(dir, "bin"), filepath.Join(dir, "dest")
+	_ = os.MkdirAll(bin, 0o755)
+	payload := "#!/bin/sh\necho agent-ran\n"
+	_ = os.WriteFile(filepath.Join(bin, "curl"), []byte("#!/bin/sh\nout=\nwhile [ $# -gt 1 ]; do if [ \"$1\" = -o ]; then out=$2; fi; shift; done\nprintf '%s' '"+payload+"' > \"$out\"\n"), 0o755)
+	// the sum is a harmless marker; sh must not expand it to the real sum
+	cmd := exec.Command("sh", "-c", StubInstall("https://x.invalid/bitc", "$BITC_SUM_MARK"))
+	cmd.Env = []string{"PATH=" + bin + ":/usr/bin:/bin:/sbin", "BITC_INSTALL_DIR=" + dest, "BITC_SUM_MARK=" + sha256hex([]byte(payload))}
+	out, err := cmd.CombinedOutput()
+	if _, serr := os.Stat(filepath.Join(dest, "bitc")); err == nil || !strings.Contains(string(out), "sha256 mismatch") || serr == nil {
+		t.Fatalf("err %v, out %q, stat err %v", err, out, serr)
+	}
+}
+
 func TestStubInstallRefusesAWrongShaAndInstallsNothing(t *testing.T) {
 	out, b, err := installRun(t, strings.Repeat("0", 64))
 	if err == nil || len(b) != 0 || !strings.Contains(out, "sha256 mismatch") {
