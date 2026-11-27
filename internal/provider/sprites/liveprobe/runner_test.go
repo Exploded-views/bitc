@@ -342,12 +342,15 @@ func TestGuardedRawRefusesCreateSpellings(t *testing.T) {
 				failures = append(failures, fmt.Sprintf("%s %s: code %d, %d request(s) reached the fake", c.method, c.path, code, len(r.f.Calls())-before))
 			}
 		}
-		for _, c := range []struct{ method, path string }{
-			{"GET", "/v1/sprites"},
-			{"POST", "/v1/sprites/" + e.Sprite + "/policy/resources"},
+		for _, c := range []struct {
+			method, path string
+			body         any
+		}{
+			{"GET", "/v1/sprites", nil},
+			{"POST", "/v1/sprites/" + e.Sprite + "/policy/resources", map[string]any{"memory": map[string]any{"limit_mb": 1024, "autoscale": false}}},
 		} {
 			before := len(r.f.Calls())
-			e.API.Raw(ctx, c.method, c.path, nil, nil)
+			e.API.Raw(ctx, c.method, c.path, nil, c.body)
 			if len(r.f.Calls()) != before+1 {
 				failures = append(failures, fmt.Sprintf("%s %s: must reach the fake, calls %d -> %d", c.method, c.path, before, len(r.f.Calls())))
 			}

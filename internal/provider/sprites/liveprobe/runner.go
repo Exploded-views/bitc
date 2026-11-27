@@ -81,18 +81,42 @@ func (r *Runner) nextName() string {
 // ---- the Sprite book
 
 func (r *Runner) register(name string) error {
+	_, err := r.registerRec(name)
+	return err
+}
+
+// registerRec is register that hands back the record it appended, so the caller can undo exactly
+// that record (unregisterRec) and no other.
+func (r *Runner) registerRec(name string) (*SpriteRec, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if !strings.HasPrefix(name, NamePrefix+r.cfg.RunID+"-") {
-		return fmt.Errorf("liveprobe: Sprite name %q does not start with %s%s-", name, NamePrefix, r.cfg.RunID)
+		return nil, fmt.Errorf("liveprobe: Sprite name %q does not start with %s%s-", name, NamePrefix, r.cfg.RunID)
 	}
 	if len(r.live) >= MaxLive {
-		return ErrSecondSprite
+		return nil, ErrSecondSprite
 	}
 	rec := &SpriteRec{Name: name, Created: r.now()}
 	r.live[name] = rec
 	r.recs = append(r.recs, rec)
-	return nil
+	return rec, nil
+}
+
+// unregisterRec removes one record, matched by pointer and never by name: the live entry only when
+// it is that record, and that record from recs. An earlier record of the same name (a Sprite the
+// run deleted) keeps its Deleted time and DeleteOK.
+func (r *Runner) unregisterRec(rec *SpriteRec) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.live[rec.Name] == rec {
+		delete(r.live, rec.Name)
+	}
+	for i, x := range r.recs {
+		if x == rec {
+			r.recs = append(r.recs[:i], r.recs[i+1:]...)
+			return
+		}
+	}
 }
 
 // unregister drops a Sprite that was definitely not created.
@@ -121,6 +145,83 @@ func (r *Runner) isLive(name string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.live[name] != nil
+}
+
+// isKnown reports whether the run ever registered name, live or deleted.
+func (r *Runner) isKnown(name string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.knownLocked(name)
+}
+
+func (r *Runner) knownLocked(name string) bool {
+	for _, rec := range r.recs {
+		if rec.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// gate lets a typed call through when name is live in the book (live) or known to it (otherwise).
+// A refusal is recorded for the running probe, sends nothing and is an ErrIneligible.
+func (r *Runner) gate(method, name string, liveOnly bool) error {
+	if liveOnly && r.isLive(name) || !liveOnly && r.isKnown(name) {
+		return nil
+	}
+	what := "live in the run"
+	if !liveOnly {
+		what = "known to the run"
+	}
+	r.refuse(method + " " + name + " (not " + what + ")")
+	return &provider.ErrIneligible{Why: "guard: " + method + " on a Sprite that is not " + what}
+}
+
+// gateRun is gate for Run and Exec: a live Sprite, and MaxRunAfterDisconnect within its cap.
+func (r *Runner) gateRun(method, name string, req sprites.ExecRequest) error {
+	if err := r.gate(method, name, true); err != nil {
+		return err
+	}
+	if req.MaxRunAfterDisconnect > MaxRunAfterDisconnect {
+		r.refuse(method + " " + name + " (MaxRunAfterDisconnect over " + MaxRunAfterDisconnect.String() + ")")
+		return &provider.ErrIneligible{Why: "guard: " + method + " with MaxRunAfterDisconnect over " + MaxRunAfterDisconnect.String()}
+	}
+	return nil
+}
+
+// definiteNonCreate reports whether a restore's error means the Sprite was surely not recreated:
+// a 404 (ErrNotFound), a 401, 402 or 403 (ErrUnavailable), another 4xx or a refusal before sending
+// (ErrIneligible). Any other error (429, quota, 5xx, a network error, a timeout) may have recreated it.
+func definiteNonCreate(err error) bool {
+	var inel *provider.ErrIneligible
+	var un *provider.ErrUnavailable
+	return errors.Is(err, sprites.ErrNotFound) || errors.As(err, &inel) || errors.As(err, &un)
+}
+
+// tryRestore is Env.TryRestore. Three cases, chosen from the book: an unknown name is a guard
+// refusal; a live name is a plain restore (no register, no unregister); a name the run deleted is
+// registered first, because a restore may recreate the Sprite, and kept unless the restore surely
+// did not.
+func (r *Runner) tryRestore(ctx context.Context, name, id string) error {
+	r.mu.Lock()
+	live, known := r.live[name] != nil, r.knownLocked(name)
+	r.mu.Unlock()
+	switch {
+	case live:
+		return r.api.RestoreCheckpoint(ctx, name, id)
+	case !known:
+		r.refuse("TryRestore " + name + " (not known to the run)")
+		return &provider.ErrIneligible{Why: "guard: TryRestore on a Sprite that is not known to the run"}
+	}
+	rec, err := r.registerRec(name)
+	if err != nil {
+		return err
+	}
+	err = r.api.RestoreCheckpoint(ctx, name, id)
+	if err != nil && definiteNonCreate(err) {
+		r.unregisterRec(rec)
+	}
+	return err
 }
 
 // spentSeconds is Sprite time from each create to its confirmed delete (or now).
@@ -174,6 +275,98 @@ func (g guarded) DeleteSprite(ctx context.Context, name string) error {
 func (g guarded) RawDeleteSprite(ctx context.Context, name string) (int, []byte) {
 	g.r.refuse("DELETE /v1/sprites/" + name + " (RawDeleteSprite)")
 	return 0, nil
+}
+
+// The typed writes need a live Sprite of the run. A refusal sends nothing, fails the probe that
+// asked and answers ErrIneligible.
+
+func (g guarded) ApplyBuildPolicies(ctx context.Context, name string, build sprites.NetworkPolicy, res sprites.Resources) error {
+	if err := g.r.gate("ApplyBuildPolicies", name, true); err != nil {
+		return err
+	}
+	return g.API.ApplyBuildPolicies(ctx, name, build, res)
+}
+
+func (g guarded) ApplyJobPolicy(ctx context.Context, name string, job sprites.NetworkPolicy) error {
+	if err := g.r.gate("ApplyJobPolicy", name, true); err != nil {
+		return err
+	}
+	return g.API.ApplyJobPolicy(ctx, name, job)
+}
+
+func (g guarded) Run(ctx context.Context, name string, req sprites.ExecRequest, stdin []byte) (sprites.ExecResult, error) {
+	if err := g.r.gateRun("Run", name, req); err != nil {
+		return sprites.ExecResult{}, err
+	}
+	return g.API.Run(ctx, name, req, stdin)
+}
+
+func (g guarded) Exec(ctx context.Context, name string, req sprites.ExecRequest) (*sprites.Session, error) {
+	if err := g.r.gateRun("Exec", name, req); err != nil {
+		return nil, err
+	}
+	return g.API.Exec(ctx, name, req)
+}
+
+func (g guarded) CreateCheckpoint(ctx context.Context, name, comment string) (sprites.Checkpoint, error) {
+	if err := g.r.gate("CreateCheckpoint", name, true); err != nil {
+		return sprites.Checkpoint{}, err
+	}
+	return g.API.CreateCheckpoint(ctx, name, comment)
+}
+
+// RestoreCheckpoint is live-only like the other writes; a restore of a Sprite the run deleted is
+// Env.TryRestore.
+func (g guarded) RestoreCheckpoint(ctx context.Context, name, id string) error {
+	if err := g.r.gate("RestoreCheckpoint", name, true); err != nil {
+		return err
+	}
+	return g.API.RestoreCheckpoint(ctx, name, id)
+}
+
+func (g guarded) DeleteCheckpoint(ctx context.Context, name, id string) error {
+	if err := g.r.gate("DeleteCheckpoint", name, true); err != nil {
+		return err
+	}
+	return g.API.DeleteCheckpoint(ctx, name, id)
+}
+
+func (g guarded) FSWrite(ctx context.Context, name, path string, data []byte) error {
+	if err := g.r.gate("FSWrite", name, true); err != nil {
+		return err
+	}
+	return g.API.FSWrite(ctx, name, path, data)
+}
+
+// The typed reads: GetSprite and FSRead can wake a Sprite, so they need a live one; ListCheckpoints
+// and GetCheckpoint may also read a Sprite the run deleted (probe 25 asks what survived).
+
+func (g guarded) GetSprite(ctx context.Context, name string) (sprites.Sprite, error) {
+	if err := g.r.gate("GetSprite", name, true); err != nil {
+		return sprites.Sprite{}, err
+	}
+	return g.API.GetSprite(ctx, name)
+}
+
+func (g guarded) FSRead(ctx context.Context, name, path string, w io.Writer) (int64, error) {
+	if err := g.r.gate("FSRead", name, true); err != nil {
+		return 0, err
+	}
+	return g.API.FSRead(ctx, name, path, w)
+}
+
+func (g guarded) ListCheckpoints(ctx context.Context, name string) ([]sprites.Checkpoint, error) {
+	if err := g.r.gate("ListCheckpoints", name, false); err != nil {
+		return nil, err
+	}
+	return g.API.ListCheckpoints(ctx, name)
+}
+
+func (g guarded) GetCheckpoint(ctx context.Context, name, id string) (sprites.Checkpoint, error) {
+	if err := g.r.gate("GetCheckpoint", name, false); err != nil {
+		return sprites.Checkpoint{}, err
+	}
+	return g.API.GetCheckpoint(ctx, name, id)
 }
 
 // refuse records a guard refusal for the running probe and logs it.
@@ -241,26 +434,36 @@ var nameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 // rule; Env.TryCreate is the way), normalising the method and path (any case, doubled slashes,
 // dot segments). Then a read goes through unless it is under a Sprite that is not live in the book
 // (or carries a body or a method-override query), and a write goes through only on the fixed
-// table of rawWriteAllowed. Every refusal answers 0, sends nothing and fails the probe.
+// table of rawWriteRoute, with a body that passes checkTableBody. Every refusal answers 0, sends nothing and fails the probe.
 func (g guarded) Raw(ctx context.Context, method, p string, q url.Values, body any) (int, []byte) {
 	if strings.EqualFold(method, "POST") && strings.EqualFold(path.Clean(p), "/v1/sprites") {
 		g.r.refuse(strings.ToUpper(method) + " " + p)
 		return 0, nil
 	}
-	if !g.r.rawAllowed(method, p, q, body) {
+	send, ok := g.r.rawAllowed(method, p, q, body)
+	if !ok {
 		g.r.refuse(strings.ToUpper(method) + " " + p)
 		return 0, nil
 	}
-	return g.API.Raw(ctx, method, p, q, body)
+	return g.API.Raw(ctx, method, p, q, send)
 }
 
-// rawAllowed decides a raw request after the create check. The client below it already refuses
-// any path that is not /v1/ plus plain segments, so the path is not cleaned here.
-func (r *Runner) rawAllowed(method, p string, q url.Values, body any) bool {
+// rawAllowed decides a raw request after the create check and returns the body to send. The client
+// below it already refuses any path that is not /v1/ plus plain segments, so the path is not cleaned
+// here. A write's body is the checked re-marshal (checkTableBody), never the caller's value.
+func (r *Runner) rawAllowed(method, p string, q url.Values, body any) (any, bool) {
 	if strings.EqualFold(method, "GET") || strings.EqualFold(method, "HEAD") {
-		return r.rawReadAllowed(p, q, body)
+		return body, r.rawReadAllowed(p, q, body)
 	}
-	return r.rawWriteAllowed(method, p, q)
+	route := r.rawWriteRoute(method, p, q)
+	if route == "" {
+		return nil, false
+	}
+	checked, ok := checkTableBody(route, body)
+	if !ok {
+		return nil, false
+	}
+	return checked, true
 }
 
 // spritesSeg reports whether a segment after /v1 is the Sprites collection in any spelling a
@@ -289,28 +492,37 @@ func (r *Runner) rawReadAllowed(p string, q url.Values, body any) bool {
 	return true
 }
 
-// rawWriteAllowed is the write table: PUT and PATCH /v1/sprites/{s}, POST
-// /v1/sprites/{s}/policy/privileges and /v1/sprites/{s}/policy/resources, with {s} a live book
-// name that is a valid Sprite name, and no query. Literal segments are byte-exact; the method
-// compare ignores case.
-func (r *Runner) rawWriteAllowed(method, p string, q url.Values) bool {
+// rawWriteRoute is the write table: PUT and PATCH /v1/sprites/{s} (routeSprite), POST
+// /v1/sprites/{s}/policy/privileges (routePrivileges) and /v1/sprites/{s}/policy/resources
+// (routeResources), with {s} a live book name that is a valid Sprite name, and no query. Literal
+// segments are byte-exact; the method compare ignores case. It answers "" for anything else.
+func (r *Runner) rawWriteRoute(method, p string, q url.Values) string {
 	if len(q) > 0 {
-		return false
+		return ""
 	}
 	segs := strings.Split(p, "/")
 	if len(segs) < 4 || segs[0] != "" || segs[1] != "v1" || segs[2] != "sprites" {
-		return false
+		return ""
 	}
 	if !nameRE.MatchString(segs[3]) || !r.isLive(segs[3]) {
-		return false
+		return ""
 	}
 	switch strings.ToUpper(method) {
 	case "PUT", "PATCH":
-		return len(segs) == 4
+		if len(segs) == 4 {
+			return routeSprite
+		}
 	case "POST":
-		return len(segs) == 6 && segs[4] == "policy" && (segs[5] == "privileges" || segs[5] == "resources")
+		if len(segs) == 6 && segs[4] == "policy" {
+			switch segs[5] {
+			case "privileges":
+				return routePrivileges
+			case "resources":
+				return routeResources
+			}
+		}
 	}
-	return false
+	return ""
 }
 
 func (r *Runner) tryCreate(ctx context.Context, name string, labels map[string]string) (int, []byte) {
@@ -346,7 +558,7 @@ func (r *Runner) newEnv(name string) *Env {
 	cfg := r.cfg
 	cfg.Log = r.log
 	return &Env{API: guarded{r.api, r}, Cfg: cfg, Sprite: name, Marker: r.marker, State: map[string]any{},
-		now: r.now, sleep: r.cfg.Sleep, tryCreate: r.tryCreate, nextName: r.nextName,
+		now: r.now, sleep: r.cfg.Sleep, tryCreate: r.tryCreate, tryRestore: r.tryRestore, nextName: r.nextName,
 		deleteSelf: func(ctx context.Context) error { return guarded{r.api, r}.DeleteSprite(ctx, name) }}
 }
 
