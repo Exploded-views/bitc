@@ -9,6 +9,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The Sprites probe kit's raw request refuses a path containing `;` and sends nothing, as it already does for `?` and `#`.
 - The Sprites probe kit's one-live-Sprite guard now cleans a raw request's path and ignores its case before refusing a create, so a spelling such as `/v1//sprites`, `/v1/./sprites` or `/v1/Sprites` is refused too ([#74](https://github.com/Exploded-views/bitc/issues/74)).
 - A remote tool URL with whitespace or a control character is now refused when the config is loaded (exit 78), as the agent URL is.
 - An agent URL with whitespace or a control character is now refused when the config is loaded (exit 78). The download and install stubs also single-quote the expected sha256, as the build stub does.

@@ -26,14 +26,14 @@ type OrgInfo struct {
 }
 
 // Raw sends one bounded JSON request to a /v1/ path and returns the status (0 for no answer, and
-// for a path outside /v1/ or with a dot-dot) and the body. It is the probe kit's way to try an
-// endpoint or a body the typed methods do not know. It never changes a network policy: any method
-// other than GET and HEAD (in any case) on a path that, lowercased and cleaned of //, /./ and a
-// trailing /., contains /policy/network answers 0 and sends nothing. setNetwork is the only way to
-// write one, so a policy cannot be set or reset without its final deny and its exact read-back
-// (issue #6).
+// for a path outside /v1/, with a dot-dot, or with a ?, # or ;) and the body. It is the probe
+// kit's way to try an endpoint or a body the typed methods do not know. It never changes a network
+// policy: any method other than GET and HEAD (in any case) on a path that, lowercased and cleaned
+// of //, /./ and a trailing /., contains /policy/network answers 0 and sends nothing. setNetwork is
+// the only way to write one, so a policy cannot be set or reset without its final deny and its
+// exact read-back (issue #6).
 func (c *Client) Raw(ctx context.Context, method, p string, q url.Values, body any) (int, []byte) {
-	if !strings.HasPrefix(p, "/v1/") || strings.Contains(p, "..") || strings.ContainsAny(p, "?#") {
+	if !strings.HasPrefix(p, "/v1/") || strings.Contains(p, "..") || strings.ContainsAny(p, "?#;") {
 		return 0, nil
 	}
 	switch strings.ToUpper(method) {
