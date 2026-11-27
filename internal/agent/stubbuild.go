@@ -18,7 +18,7 @@ func shq(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'
 // shreds the key at once, checks out and verifies commit, builds with the recipe in
 // buildrecipe.sh, and execs the result only if its sha256 equals sum, under umask 022 (the stub
 // itself runs under 077 for the key; the agent must create 0755 dirs the job user can traverse). BITC_STUB_DIR is for the
-// stub's own unit test only. BITC_DEPLOY_KEY is unset once the key file is written and is given back only on the agent's exec line.
+// stub's own unit test only. BITC_DEPLOY_KEY is moved into an unexported shell variable and unset before the key file is written, and is given back only on the agent's exec line.
 func StubBuild(cloneURL, ref, commit, sum string) string {
 	return fmt.Sprintf(`set -eu
 PATH=$PATH:/usr/local/go/bin

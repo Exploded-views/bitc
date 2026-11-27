@@ -116,12 +116,12 @@ func TestAG14_BuildStubKeepsTheDeployKeyOutOfCheckoutAndBuild(t *testing.T) {
 		case strings.HasPrefix(line, "git-deploykey "):
 			f := strings.Fields(line)
 			seen[f[len(f)-1]] = true
-			if strings.Contains(line, "set") {
+			if len(f) > 1 && f[1] == "set" { // field 1 is ${BITC_DEPLOY_KEY+set}, empty when unset
 				t.Errorf("git saw BITC_DEPLOY_KEY: %q", line)
 			}
 		case strings.HasPrefix(line, "go-deploykey"):
 			goLines++
-			if strings.Contains(line, "set") {
+			if f := strings.Fields(line); len(f) > 1 && f[1] == "set" {
 				t.Errorf("go saw BITC_DEPLOY_KEY: %q", line)
 			}
 		}
