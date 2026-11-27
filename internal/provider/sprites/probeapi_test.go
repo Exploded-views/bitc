@@ -26,6 +26,43 @@ func TestRawSendsOnlyV1Paths(t *testing.T) {
 	}
 }
 
+func TestRawAllowsOnlyPlainSegments(t *testing.T) {
+	f, c := newFake(t, spritesfake.Options{})
+	ctx := context.Background()
+	refused := []string{
+		"/v1/sprites%00", "/v1/%73prites", "/v1/sprites\x00", "/v1/sprites\x7f", "/v1/spr ites",
+		"/v1/sprites,x", "/v1/sprites=x", "/v1/sprites&x", "/v1/sprites+x", "/v1/sprites$x",
+		"/v1/sprites@x", "/v1/sprites:create", "/v1/sprites!", "/v1/sprites'x", "/v1/sprites(x)",
+		"/v1/sprites*", "/v1/spr" + string(rune(0x00e9)) + "tes", "/v1//sprites", "/v1/sprites/",
+		"/v1/./sprites", "/v1/sprites/.",
+	}
+	for _, m := range []string{"GET", "POST"} {
+		for _, p := range refused {
+			before := len(f.Calls())
+			code, _ := c.Raw(ctx, m, p, nil, nil)
+			if code != 0 {
+				t.Errorf("Raw %s %q answered %d, want 0", m, p, code)
+			}
+			if n := len(f.Calls()); n != before {
+				t.Errorf("Raw %s %q sent %d request(s)", m, p, n-before)
+			}
+		}
+	}
+	for _, p := range []string{
+		"/v1/sprites", "/v1/regions", "/v1/sprites/bitc-a",
+		"/v1/sprites/bitc-a/checkpoints/ck-1.v2_x~y", "/v1/sprites/Bad_name.x",
+	} {
+		before := len(f.Calls())
+		code, _ := c.Raw(ctx, "GET", p, nil, nil)
+		if code == 0 {
+			t.Errorf("Raw GET %q answered 0, want a status", p)
+		}
+		if n := len(f.Calls()); n != before+1 {
+			t.Errorf("Raw GET %q sent %d request(s), want 1", p, n-before)
+		}
+	}
+}
+
 func TestRawRefusesSemicolonPaths(t *testing.T) {
 	f, c := newFake(t, spritesfake.Options{})
 	ctx := context.Background()

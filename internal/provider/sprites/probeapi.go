@@ -25,15 +25,31 @@ type OrgInfo struct {
 	Raw  json.RawMessage
 }
 
+var rawSegRE = regexp.MustCompile(`^[A-Za-z0-9._~-]+$`)
+
+// rawPathOK reports whether p is /v1/ followed by non-empty segments of plain characters, none of
+// them "." or "..".
+func rawPathOK(p string) bool {
+	if !strings.HasPrefix(p, "/v1/") || strings.Contains(p, "..") {
+		return false
+	}
+	for _, s := range strings.Split(p[1:], "/") {
+		if s == "." || s == ".." || !rawSegRE.MatchString(s) {
+			return false
+		}
+	}
+	return true
+}
+
 // Raw sends one bounded JSON request to a /v1/ path and returns the status (0 for no answer, and
-// for a path outside /v1/, with a dot-dot, or with a ?, # or ;) and the body. It is the probe
-// kit's way to try an endpoint or a body the typed methods do not know. It never changes a network
-// policy: any method other than GET and HEAD (in any case) on a path that, lowercased and cleaned
-// of //, /./ and a trailing /., contains /policy/network answers 0 and sends nothing. setNetwork is
-// the only way to write one, so a policy cannot be set or reset without its final deny and its
-// exact read-back (issue #6).
+// for a path that is not /v1/ followed by non-empty segments of letters, digits, '.', '_', '~' and
+// '-', none of them . or ..) and the body. It is the probe kit's way to try an endpoint or a body
+// the typed methods do not know. It never changes a network policy: any method other than GET and
+// HEAD (in any case) on a path that, lowercased and cleaned of //, /./ and a trailing /., contains
+// /policy/network answers 0 and sends nothing. setNetwork is the only way to write one, so a
+// policy cannot be set or reset without its final deny and its exact read-back (issue #6).
 func (c *Client) Raw(ctx context.Context, method, p string, q url.Values, body any) (int, []byte) {
-	if !strings.HasPrefix(p, "/v1/") || strings.Contains(p, "..") || strings.ContainsAny(p, "?#;") {
+	if !rawPathOK(p) {
 		return 0, nil
 	}
 	switch strings.ToUpper(method) {
