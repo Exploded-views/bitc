@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,6 +59,133 @@ func TestDeleteAnyDeletesOddNames(t *testing.T) {
 		if st := r.f.Status(name); st != "" {
 			t.Errorf("deleteAny(%q): the Sprite is still live (status %q)", name, st)
 		}
+	}
+}
+
+func TestDeleteAnyConfirmsAFallback404(t *testing.T) {
+	const name = NamePrefix + "t1-a b"
+	ctx := context.Background()
+	cases := []struct {
+		name string
+		run  func(t *testing.T, r *rig)
+	}{
+		{"404 but still listed", func(t *testing.T, r *rig) {
+			odd := []string{
+				NamePrefix + "t1-a b",
+				NamePrefix + "t1-a;b",
+				NamePrefix + "t1-a%b",
+				NamePrefix + "t1-a?b",
+				NamePrefix + "t1-a#b",
+				NamePrefix + "t1-caf" + string(rune(0x00e9)),
+				NamePrefix + "t1-A_B",
+			}
+			for _, n := range odd {
+				r.f.AddSprite(n, r.f.Org(), r.clock.Now())
+				r.f.Behave("delete-404-keep")
+				err := deleteAny(ctx, r.c, n)
+				if err == nil || !strings.Contains(err.Error(), n) {
+					t.Fatalf("deleteAny(%q) = %v, want an error naming it", n, err)
+				}
+				if r.f.Status(n) == "" {
+					t.Fatalf("%q is gone, the fake should have kept it", n)
+				}
+				if err := deleteAny(ctx, r.c, n); err != nil {
+					t.Fatalf("second deleteAny(%q) = %v, want nil", n, err)
+				}
+				if st := r.f.Status(n); st != "" {
+					t.Fatalf("%q is still live (status %q)", n, st)
+				}
+			}
+		}},
+		{"the list asks only for the kit prefix", func(t *testing.T, r *rig) {
+			r.f.AddSprite(name, r.f.Org(), r.clock.Now())
+			r.f.Behave("delete-404-keep")
+			if err := deleteAny(ctx, r.c, name); err == nil {
+				t.Fatal("deleteAny = nil, want an error")
+			}
+			var lists []string
+			for _, c := range r.f.Calls() {
+				if c.Method == "GET" && c.Path == "/v1/sprites" {
+					lists = append(lists, c.RawQuery)
+				}
+			}
+			if len(lists) != 1 {
+				t.Fatalf("%d list calls, want 1: %v", len(lists), lists)
+			}
+			q, err := url.ParseQuery(lists[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := q["prefix"]; len(got) != 1 || got[0] != NamePrefix {
+				t.Fatalf("list prefix = %q, want exactly %q", got, NamePrefix)
+			}
+		}},
+		{"real 404", func(t *testing.T, r *rig) {
+			if err := deleteAny(ctx, r.c, name); err != nil {
+				t.Fatalf("deleteAny = %v, want nil", err)
+			}
+		}},
+		{"404 and a prefix neighbour", func(t *testing.T, r *rig) {
+			r.f.AddSprite(name+"c", r.f.Org(), r.clock.Now())
+			if err := deleteAny(ctx, r.c, name); err != nil {
+				t.Fatalf("deleteAny = %v, want nil (a prefix neighbour is not the name)", err)
+			}
+			if r.f.Status(name+"c") == "" {
+				t.Fatal("the neighbour was deleted")
+			}
+		}},
+		{"404 for a name outside the kit prefix", func(t *testing.T, r *rig) {
+			const other = "other-a b"
+			r.f.AddSprite(other, r.f.Org(), r.clock.Now())
+			r.f.Behave("delete-404-keep")
+			if err := deleteAny(ctx, r.c, other); err == nil {
+				t.Fatal("deleteAny = nil, want an error: the 404 cannot be confirmed")
+			}
+			if r.f.Status(other) == "" {
+				t.Fatal("the Sprite is gone, it should still be live")
+			}
+			for _, c := range r.f.Calls() {
+				if c.Method == "GET" && c.Path == "/v1/sprites" {
+					t.Fatalf("a list was sent: %+v", c)
+				}
+			}
+		}},
+		{"404 and the list fails", func(t *testing.T, r *rig) {
+			r.f.AddSprite(name, r.f.Org(), r.clock.Now())
+			r.f.BehaveN("delete-404-keep", 1)
+			r.f.BehaveN("list-500", 1)
+			if err := deleteAny(ctx, r.c, name); err == nil {
+				t.Fatal("deleteAny = nil, want an error: the 404 could not be confirmed")
+			}
+			if r.f.Status(name) == "" {
+				t.Fatal("the Sprite is gone, it should still be live")
+			}
+		}},
+		{"2xx sends no list", func(t *testing.T, r *rig) {
+			r.f.AddSprite(name, r.f.Org(), r.clock.Now())
+			if err := deleteAny(ctx, r.c, name); err != nil {
+				t.Fatalf("deleteAny = %v, want nil", err)
+			}
+			if st := r.f.Status(name); st != "" {
+				t.Fatalf("the Sprite is still live (status %q)", st)
+			}
+			afterDelete := false
+			for _, c := range r.f.Calls() {
+				if c.Method == "DELETE" {
+					afterDelete = true
+					continue
+				}
+				if afterDelete && c.Method == "GET" && c.Path == "/v1/sprites" {
+					t.Fatalf("a list was sent after the 2xx delete: %+v", c)
+				}
+			}
+			if !afterDelete {
+				t.Fatal("no DELETE was recorded")
+			}
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) { c.run(t, newRig(t, nil)) })
 	}
 }
 
