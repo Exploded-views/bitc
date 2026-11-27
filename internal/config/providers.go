@@ -157,9 +157,9 @@ func decodeProviders(p *problems, e *Effective, file string, sections map[string
 					pr.Agent.Source = enum(p, file, key+".agent.source", &s, "release", "release", "url", "build")
 				}
 				pr.Agent.URL, _ = m["url"].(string)
-					if hasSpaceOrControl(pr.Agent.URL) {
-						p.addf("%s: %s.agent.url must not contain whitespace or control characters", file, key)
-					}
+				if hasSpaceOrControl(pr.Agent.URL) {
+					p.addf("%s: %s.agent.url must not contain whitespace or control characters", file, key)
+				}
 				pr.Agent.Path, _ = m["path"].(string)
 				pr.Agent.Commit, _ = m["commit"].(string)
 				pr.Agent.Image, _ = m["image"].(string)
