@@ -1192,12 +1192,16 @@ func (f *Fake) recreate(name string) *sprite {
 	f.seq++
 	s := &sprite{id: fmt.Sprintf("sp%d", f.seq), name: name, org: f.o.Org, created: time.Now().UTC(), status: "running",
 		tasks: map[string]task{}, lastActive: time.Now()}
-	s.dir = filepath.Join(f.root, name)
+	// the directory is named by the fake-made id, never by name: the name is request data
+	s.dir = filepath.Join(f.root, s.id)
 	s.overlay = filepath.Join(s.dir, "overlay")
 	if err := os.MkdirAll(filepath.Join(s.overlay, ".sprite"), 0o755); err != nil {
 		return nil
 	}
 	for _, k := range f.survivors[name] {
+		if k == "" || k == "." || strings.Contains(k, "..") || strings.ContainsAny(k, "/\\") {
+			continue
+		}
 		dst := filepath.Join(s.dir, "checkpoints", k)
 		if err := os.MkdirAll(dst, 0o755); err != nil {
 			return nil
