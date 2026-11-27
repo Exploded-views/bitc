@@ -9,6 +9,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A remote tool URL with whitespace or a control character is now refused when the config is loaded (exit 78), as the agent URL is.
 - An agent URL with whitespace or a control character is now refused when the config is loaded (exit 78). The download and install stubs also single-quote the expected sha256, as the build stub does.
 - The download and install stubs pass the agent URL to curl and wget exactly as configured: it is single-quoted for sh, so a $ or a backtick in it is not expanded.
 - The start stubs no longer pass the deploy key or the RunPod API key to the tools they run (the agent download, its checksum, and the build stub's checkout and build): both are unset before the stub's first command and given back only to the agent they exec ([#73](https://github.com/Exploded-views/bitc/issues/73)).

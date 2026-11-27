@@ -622,6 +622,9 @@ func repoRemote(p *problems, file string, r *repoRemoteSchema) *RepoRemote {
 		if !sha256RE.MatchString(t.SHA256) || !strings.HasPrefix(t.URL, "https://") {
 			p.addf("%s: remote.tools[%d] needs an https url and a 64-hex sha256", file, i)
 		}
+		if hasSpaceOrControl(t.URL) {
+			p.addf("%s: remote.tools[%d].url must not contain whitespace or control characters", file, i)
+		}
 		out.Tools = append(out.Tools, Tool{Name: t.Name, Arch: firstNonEmpty(t.Arch, "amd64"), URL: t.URL, SHA256: t.SHA256})
 	}
 	for i, s := range r.Setup {
