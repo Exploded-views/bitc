@@ -64,6 +64,10 @@ type Report struct {
 	Leftovers   []string // Sprites the final sweep found
 	Preexisting []string // Sprites of an earlier run found and deleted before the first create
 	Fatal       string   // a failure that stopped the run before any probe
+
+	// GuardRefusals counts the raw requests (and RawDeleteSprite calls) the guard refused; each
+	// one failed the probe that sent it.
+	GuardRefusals int
 }
 
 // Probe is one item of design section 9.

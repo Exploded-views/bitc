@@ -74,8 +74,8 @@ func TestGuardedRawDeleteRefused(t *testing.T) {
 	if code != 0 || after != before {
 		t.Fatalf("guarded RawDeleteSprite answered %d and sent %d request(s), want 0 and none", code, after-before)
 	}
-	if rep.Exit != ExitOK {
-		t.Fatalf("exit %d, want %d", rep.Exit, ExitOK)
+	if rep.Exit != ExitProbe {
+		t.Fatalf("exit %d, want %d: the refusal fails the probe", rep.Exit, ExitProbe)
 	}
 	if got := r.f.Live(); len(got) != 0 {
 		t.Fatalf("Sprites left: %v", got)
@@ -164,8 +164,8 @@ func TestRunnerRefusesASecondLiveSprite(t *testing.T) {
 	if r.creates() != 1 {
 		t.Fatalf("%d creates reached the server, want 1", r.creates())
 	}
-	if rep.Exit != ExitOK {
-		t.Fatalf("exit %d", rep.Exit)
+	if rep.Exit != ExitProbe {
+		t.Fatalf("exit %d, want %d: the refused raw create fails the probe", rep.Exit, ExitProbe)
 	}
 }
 
@@ -216,7 +216,7 @@ func TestGuardedRawRefusesCreateSpellings(t *testing.T) {
 		}
 		for _, c := range []struct{ method, path string }{
 			{"GET", "/v1/sprites"},
-			{"POST", "/v1/sprites/" + e.Sprite + "/checkpoint"},
+			{"POST", "/v1/sprites/" + e.Sprite + "/policy/resources"},
 		} {
 			before := len(r.f.Calls())
 			e.API.Raw(ctx, c.method, c.path, nil, nil)
@@ -232,8 +232,8 @@ func TestGuardedRawRefusesCreateSpellings(t *testing.T) {
 	if r.creates() != 1 {
 		t.Fatalf("%d creates reached the server, want 1", r.creates())
 	}
-	if rep.Exit != ExitOK {
-		t.Fatalf("exit %d", rep.Exit)
+	if rep.Exit != ExitProbe {
+		t.Fatalf("exit %d, want %d: the refused creates fail the probe", rep.Exit, ExitProbe)
 	}
 }
 

@@ -130,6 +130,9 @@ func WriteMarkdown(w io.Writer, rep Report) {
 		fmt.Fprintf(w, "| %s | %s | %s | %v | %.0f |\n", s.Name, s.Created.UTC().Format("15:04:05"), del, s.DeleteOK, s.Seconds)
 	}
 	fmt.Fprintf(w, "\nTotal spend: $%.4f\n", rep.Spent)
+	if rep.GuardRefusals > 0 {
+		fmt.Fprintf(w, "\nGuard refusals: %d (each failed the probe that sent it)\n", rep.GuardRefusals)
+	}
 	if len(rep.Preexisting) > 0 {
 		fmt.Fprintf(w, "\nEarlier-run Sprites found and deleted before the first create: %s\n", strings.Join(rep.Preexisting, ", "))
 	}
