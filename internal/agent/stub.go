@@ -8,9 +8,10 @@ import (
 
 // Stub is the start script (spec 8.4 step 1): fetch the agent with curl or wget (else install
 // curl), verify its sha256, exec it. It keeps the spec env for stage 1 but runs its own tools
-// under a fixed PATH. BITC_STUB_DIR is for the stub's own unit test only.
+// under a fixed PATH. BITC_STUB_DIR is for the stub's own unit test only. BITC_DEPLOY_KEY and RUNPOD_API_KEY are moved into unexported shell variables and unset at once, and are given back only on the agent's exec line.
 func Stub(url, sum string) string {
 	return fmt.Sprintf(`set -eu
+bitc_dk=${BITC_DEPLOY_KEY-}; bitc_rk=${RUNPOD_API_KEY-}; unset BITC_DEPLOY_KEY RUNPOD_API_KEY
 P=/usr/sbin:/usr/bin:/sbin:/bin
 d=${BITC_STUB_DIR:-/root/.bitc-agent}; mkdir -p "$d"; chmod 700 "$d"; f=$d/bitc
 get() { if command -v curl >/dev/null 2>&1; then OUT=$f curl -fsSL --proto =https -o "$f" %[1]q
@@ -19,7 +20,7 @@ get || { if command -v apt-get >/dev/null 2>&1; then env -i PATH=$P apt-get upda
  elif command -v apk >/dev/null 2>&1; then env -i PATH=$P apk add -q --no-cache curl ca-certificates; fi; get; }
 s=$(sha256sum "$f" 2>/dev/null || busybox sha256sum "$f"); s=${s%%%% *}
 [ "$s" = %[2]q ] || { echo "bitc agent: sha256 mismatch" >&2; exit 1; }
-chmod 700 "$f"; exec "$f" __agent
+chmod 700 "$f"; BITC_DEPLOY_KEY=$bitc_dk RUNPOD_API_KEY=$bitc_rk exec "$f" __agent
 `, url, sum)
 }
 
