@@ -311,6 +311,8 @@ rows = [
   { id = "AG11", task = "agent-build", ported = "TestAG11_BuildAgentCommitMissingLocallyIsIneligible", desc = "a build agent commit absent from the work tree's repository makes the remote attempt ineligible (the job falls back)" },
   { id = "AG12", task = "agent-build", ported = "TestAG12_SweepRemovesAStaleAgentRef", desc = "sweep deletes an agent ref older than 3h (a crashed host or failed delete) and leaves a fresh one" },
   { id = "AG13", task = "agent-build", ported = "TestAG13_BuildStubExecsTheAgentWithUmask022", desc = "the build stub restores umask 022 before it execs the verified agent (the stub runs under 077 for the key; the agent creates job-user-traversable dirs)" },
+  { id = "AG14", task = "agent-build", ported = "TestAG14_BuildStubKeepsTheDeployKeyOutOfCheckoutAndBuild", desc = "the build stub unsets BITC_DEPLOY_KEY before it writes the key file, so no git step and no go build sees it (issue 73)" },
+  { id = "AG15", task = "agent-build", ported = "TestAG15_BuildStubGivesTheDeployKeyToTheAgent", desc = "the build stub gives BITC_DEPLOY_KEY back only on the agent's exec line, so the agent still boots with the key (issue 73)" },
 
   # RS: results server (one row per reference block)
   { id = "RS1", task = "2.2a", ported = "TestRS1_ServesOnlyTheResultFilesWithTheBearer", desc = "the results server serves out.log, err.log, artifacts.tar.gz, result.json and state.json under /v1 only with the bearer" },
