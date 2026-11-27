@@ -258,6 +258,8 @@ rows = [
   { id = "RB3", task = "2.5", ported = "TestRB3_BuiltInKnownHostsPinTheForgeOnly", desc = "the built-in known hosts pin the forge's host keys and nothing else" },
   { id = "RB4", task = "2.2b", ported = "TestRB4_ToolsArePinned", desc = "every tool the pod downloads is pinned by sha256" },
   { id = "RB5", task = "1.1", dropped = "the image is host configuration, not behaviour", desc = "pods boot one project's CI image" },
+  { id = "RB6", task = "2.2b", ported = "TestRB6_StubKeepsTheKeysFromItsFetchAndChecksumTools", desc = "the download stub keeps BITC_DEPLOY_KEY and RUNPOD_API_KEY from curl and sha256sum and gives both only to the agent it execs (issue 73)" },
+  { id = "RB7", task = "2.2b", ported = "TestRB7_StubKeepsTheKeysFromWgetToo", desc = "the download stub keeps both keys from wget and sha256sum too, on the wget path" },
 
   # RE: pod side (one row per reference block)
   { id = "RE1", task = "2.2b", ported = "TestRE1_BootFetchCheckoutMarkers", desc = "the agent boots, fetches the ref, checks out the sha and brackets the command's output with BEGIN and EXIT markers" },
@@ -313,6 +315,7 @@ rows = [
   { id = "AG13", task = "agent-build", ported = "TestAG13_BuildStubExecsTheAgentWithUmask022", desc = "the build stub restores umask 022 before it execs the verified agent (the stub runs under 077 for the key; the agent creates job-user-traversable dirs)" },
   { id = "AG14", task = "agent-build", ported = "TestAG14_BuildStubKeepsTheDeployKeyOutOfCheckoutAndBuild", desc = "the build stub unsets BITC_DEPLOY_KEY before it writes the key file, so no git step and no go build sees it (issue 73)" },
   { id = "AG15", task = "agent-build", ported = "TestAG15_BuildStubGivesTheDeployKeyToTheAgent", desc = "the build stub gives BITC_DEPLOY_KEY back only on the agent's exec line, so the agent still boots with the key (issue 73)" },
+  { id = "AG16", task = "agent-build", ported = "TestAG16_BuildStubKeepsTheRunPodKeyFromCheckoutAndBuildAndGivesItToTheAgent", desc = "the build stub keeps RUNPOD_API_KEY from git and go and gives it back only on the agent's exec line (issue 73)" },
 
   # RS: results server (one row per reference block)
   { id = "RS1", task = "2.2a", ported = "TestRS1_ServesOnlyTheResultFilesWithTheBearer", desc = "the results server serves out.log, err.log, artifacts.tar.gz, result.json and state.json under /v1 only with the bearer" },

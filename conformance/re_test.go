@@ -43,6 +43,76 @@ func TestRB2_StubVerifiesTheAgent(t *testing.T) {
 	}
 }
 
+// runStubKeys runs the download stub with fake deploy and RunPod keys in its env. fetch is the
+// fetch tool's name (curl or wget) and body the shim's own script after its key log line; the
+// sha256sum shim logs the same way. With onlyShims the PATH holds nothing but the shim dir (so a
+// real curl cannot be found), with plain mkdir and chmod wrappers in it. The agent payload prints
+// the lengths of the two keys it was given.
+func runStubKeys(t *testing.T, fetch, body string, onlyShims bool) (out, log string) {
+	t.Helper()
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin")
+	_ = os.MkdirAll(bin, 0o755)
+	shim := func(name, script string) {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"+script), 0o755); err != nil { //nolint:gosec // a test shim
+			t.Fatal(err)
+		}
+	}
+	payload := "#!/bin/sh\necho agent-keys ${#BITC_DEPLOY_KEY} ${#RUNPOD_API_KEY}\n"
+	keys := func(tool string) string {
+		return `echo "` + tool + `-keys ${BITC_DEPLOY_KEY+set}dk ${RUNPOD_API_KEY+set}rk" >> "$LOG"` + "\n"
+	}
+	shim(fetch, keys(fetch)+strings.ReplaceAll(body, "PAYLOAD", payload))
+	shim("sha256sum", keys("sha")+"exec /usr/bin/sha256sum \"$@\"\n")
+	path := bin + ":/usr/bin:/bin"
+	if onlyShims {
+		shim("mkdir", "exec /bin/mkdir \"$@\"\n")
+		shim("chmod", "exec /bin/chmod \"$@\"\n")
+		path = bin
+	}
+	c := exec.Command("sh", "-c", agent.Stub("https://x.invalid/bitc", sha256Hex(payload)))
+	c.Env = []string{"PATH=" + path, "BITC_STUB_DIR=" + dir, "LOG=" + filepath.Join(dir, "log"),
+		"BITC_DEPLOY_KEY=fake-deploy-key-for-tests", "RUNPOD_API_KEY=fake-runpod-key"}
+	b, err := c.CombinedOutput()
+	l, _ := os.ReadFile(filepath.Join(dir, "log"))
+	if err != nil {
+		t.Fatalf("%v: %s\n%s", err, b, l)
+	}
+	return string(b), string(l)
+}
+
+// checkStubKeys asserts the agent got both keys whole and the fetch and checksum tools saw neither.
+func checkStubKeys(t *testing.T, fetch, out, log string) {
+	t.Helper()
+	if !strings.Contains("\n"+out, "\nagent-keys 25 15\n") {
+		t.Errorf("the agent must get both keys whole (agent-keys 25 15):\n%s\n%s", out, log)
+	}
+	for _, tool := range []string{fetch, "sha"} {
+		n := 0
+		for _, line := range strings.Split(log, "\n") {
+			if strings.HasPrefix(line, tool+"-keys ") {
+				n++
+				if line != tool+"-keys dk rk" {
+					t.Errorf("%s saw a key: %q", tool, line)
+				}
+			}
+		}
+		if n != 1 {
+			t.Errorf("want one %s-keys line, got %d:\n%s", tool, n, log)
+		}
+	}
+}
+
+func TestRB6_StubKeepsTheKeysFromItsFetchAndChecksumTools(t *testing.T) {
+	out, log := runStubKeys(t, "curl", "printf '%s' 'PAYLOAD' > \"$OUT\"\n", false)
+	checkStubKeys(t, "curl", out, log)
+}
+
+func TestRB7_StubKeepsTheKeysFromWgetToo(t *testing.T) {
+	out, log := runStubKeys(t, "wget", "while [ $# -gt 0 ]; do [ \"$1\" = -O ] && o=$2; shift; done\nprintf '%s' 'PAYLOAD' > \"$o\"\n", true)
+	checkStubKeys(t, "wget", out, log)
+}
+
 func TestRB4_ToolsArePinned(t *testing.T) {
 	h := harness.New(t)
 	h.HostConfig("[pools.heavy]\n")
