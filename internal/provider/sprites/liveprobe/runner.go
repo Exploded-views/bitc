@@ -200,7 +200,9 @@ func (r *Runner) resetRefusals() {
 
 // deleteAny deletes name through the client; when the client refuses the name as invalid (the
 // server may still have accepted it, which is what probe 13 looks for) it sends a raw DELETE
-// that escapes the name once. 2xx and 404 both mean the Sprite is gone.
+// that escapes the name once. A 2xx means the Sprite is gone. A 404 is confirmed by listing the
+// name first, because a server whose delete route rejects an odd name it accepted at create can
+// answer 404 for a Sprite that still runs: a Sprite still listed, or a list that fails, is an error.
 func deleteAny(ctx context.Context, api API, name string) error {
 	err := api.DeleteSprite(ctx, name)
 	var inel *provider.ErrIneligible
@@ -208,10 +210,22 @@ func deleteAny(ctx context.Context, api API, name string) error {
 		return err
 	}
 	code, _ := api.RawDeleteSprite(ctx, name)
-	if code >= 200 && code < 300 || code == 404 {
+	if code >= 200 && code < 300 {
 		return nil
 	}
-	return fmt.Errorf("raw delete of %q answered %d", name, code)
+	if code != 404 {
+		return fmt.Errorf("raw delete of %q answered %d", name, code)
+	}
+	listed, lerr := api.ListSprites(ctx, name)
+	if lerr != nil {
+		return fmt.Errorf("raw delete of %q answered 404 and that could not be confirmed: %w", name, lerr)
+	}
+	for _, s := range listed {
+		if s.Name == name {
+			return fmt.Errorf("raw delete of %q answered 404 but the Sprite is still listed", name)
+		}
+	}
+	return nil
 }
 
 // nameRE is the client's Sprite name rule (the client keeps its own copy unexported).

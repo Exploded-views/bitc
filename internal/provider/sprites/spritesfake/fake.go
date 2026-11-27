@@ -266,6 +266,7 @@ func BuildBitc(t testing.TB) string {
 //	wrong-org              Sprite responses name another organization
 //	labels-unsupported     a create carrying labels answers 400 (unknown field labels)
 //	delete-500             DELETE of a Sprite answers 500 and does nothing
+//	delete-404-keep        DELETE of a Sprite answers 404 and leaves the Sprite in place
 //	list-500               GET /v1/sprites answers 500
 //	drop-exec-socket       the exec upgrade is answered 101 and the socket is then cut
 //	exec-upgrade-4xx       the exec upgrade is answered 400 (before 101)
@@ -297,7 +298,7 @@ var behaviours = map[string]bool{"429-create": true, "concurrent-limit": true, "
 	"401": true, "create-then-500": true, "create-then-500-lookup-fails": true, "create-500-nothing": true, "policy-get-mismatch": true,
 	"wrong-org": true, "labels-unsupported": true, "delete-500": true, "list-500": true, "drop-exec-socket": true,
 	"exec-upgrade-4xx": true, "exec-upgrade-5xx": true, "exec-upgrade-timeout": true, "cold-drop-mid-job": true, "no-org": true,
-	"policy-500": true, "policy-get-500": true, "provision-infra-fails": true, "provision-repo-fails": true, "attach-4xx": true, "attach-timeout": true, "drop-tail": true, "attach-truncate": true, "forge-result": true, "checkpoints-survive-delete": true, "lax-names": true}
+	"policy-500": true, "policy-get-500": true, "provision-infra-fails": true, "provision-repo-fails": true, "attach-4xx": true, "attach-timeout": true, "drop-tail": true, "attach-truncate": true, "forge-result": true, "checkpoints-survive-delete": true, "lax-names": true, "delete-404-keep": true}
 
 // KnownBehaviour reports whether b is a documented behaviour name.
 func (f *Fake) KnownBehaviour(b string) bool { return behaviours[b] }
@@ -948,6 +949,11 @@ func (f *Fake) one(w http.ResponseWriter, method, name string) {
 	if method == "DELETE" && f.take("delete-500") {
 		f.mu.Unlock()
 		jsonErr(w, 500, "internal", "try again")
+		return
+	}
+	if method == "DELETE" && f.take("delete-404-keep") {
+		f.mu.Unlock()
+		jsonErr(w, 404, "not_found", "no such sprite")
 		return
 	}
 	s := f.sprites[name]

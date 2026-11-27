@@ -285,6 +285,25 @@ func TestRouteRefusedReads(t *testing.T) {
 	}
 }
 
+// TestRouteUpperCaseV1ReadIsNotSent: the client's rawPathOK needs a lower-case /v1/ prefix, so it,
+// not the guard, refuses an upper-case /V1/ read: it answers 0 and nothing reaches the fake.
+func TestRouteUpperCaseV1ReadIsNotSent(t *testing.T) {
+	r := newRig(t, nil)
+	var code, sent int
+	rep := r.runner(quick(1, gRO, time.Minute, func(ctx context.Context, e *Env) Outcome {
+		before := len(r.f.Calls())
+		code, _ = e.API.Raw(ctx, "GET", "/V1/sprites/"+notInBook, nil, nil)
+		sent = len(r.f.Calls()) - before
+		return fine(ctx, e)
+	})).Run(context.Background())
+	if code != 0 || sent != 0 {
+		t.Errorf("GET /V1/sprites/...: answered %d and sent %d request(s), want 0 and none", code, sent)
+	}
+	if res := result(t, rep.Report, 1); res.Status != Answered {
+		t.Errorf("probe result: %+v", res)
+	}
+}
+
 // ---- probe regression
 
 func TestRouteTheDefaultPlanIsNeverRefused(t *testing.T) {
