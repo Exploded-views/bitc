@@ -64,6 +64,33 @@ func TestStubInstallPlacesTheVerifiedAgentAndRunsNothing(t *testing.T) {
 	}
 }
 
+func TestStubInstallPassesTheURLLiterally(t *testing.T) {
+	const url = "https://x.invalid/a$BITC_URL_MARK/b``c/d'e"
+	dir := t.TempDir()
+	bin, dest, log := filepath.Join(dir, "bin"), filepath.Join(dir, "dest"), filepath.Join(dir, "log")
+	_ = os.MkdirAll(bin, 0o755)
+	payload := "#!/bin/sh\necho agent-ran\n"
+	_ = os.WriteFile(filepath.Join(bin, "curl"), []byte("#!/bin/sh\nout=\nfor a in \"$@\"; do echo \"curl-arg $a\" >> \"$LOG\"; done\nwhile [ $# -gt 1 ]; do if [ \"$1\" = -o ]; then out=$2; fi; shift; done\nprintf '%s' '"+payload+"' > \"$out\"\n"), 0o755)
+	cmd := exec.Command("sh", "-c", StubInstall(url, sha256hex([]byte(payload))))
+	cmd.Env = []string{"PATH=" + bin + ":/usr/bin:/bin:/sbin", "BITC_INSTALL_DIR=" + dest, "LOG=" + log, "BITC_URL_MARK=expanded"}
+	if o, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("%v: %s", err, o)
+	}
+	b, _ := os.ReadFile(log)
+	n := 0
+	for _, line := range strings.Split(string(b), "\n") {
+		if line == "curl-arg "+url {
+			n++
+		}
+		if strings.Contains(line, "expanded") {
+			t.Errorf("the URL was expanded: %q", line)
+		}
+	}
+	if n != 1 {
+		t.Errorf("want exactly one line %q, got %d:\n%s", "curl-arg "+url, n, b)
+	}
+}
+
 func TestStubInstallRefusesAWrongShaAndInstallsNothing(t *testing.T) {
 	out, b, err := installRun(t, strings.Repeat("0", 64))
 	if err == nil || len(b) != 0 || !strings.Contains(out, "sha256 mismatch") {

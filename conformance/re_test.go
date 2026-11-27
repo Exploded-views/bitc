@@ -113,6 +113,72 @@ func TestRB7_StubKeepsTheKeysFromWgetToo(t *testing.T) {
 	checkStubKeys(t, "wget", out, log)
 }
 
+// rbURL is a URL with a $ and a variable name, an empty pair of backticks (no command runs) and a
+// single quote. If the stub lets sh expand it, BITC_URL_MARK turns into "expanded" and the
+// backticks vanish.
+const rbURL = "https://x.invalid/a$BITC_URL_MARK/b``c/d'e"
+
+// runStubURL runs the download stub for rbURL with BITC_URL_MARK=expanded in its env and returns
+// the lines the fetch tool (curl or wget) logged, one per argument as "<tool>-arg <arg>". With
+// onlyShims the PATH holds nothing but the shim dir, so a real curl cannot be found.
+func runStubURL(t *testing.T, fetch, body string, onlyShims bool) string {
+	t.Helper()
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin")
+	_ = os.MkdirAll(bin, 0o755)
+	shim := func(name, script string) {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"+script), 0o755); err != nil { //nolint:gosec // a test shim
+			t.Fatal(err)
+		}
+	}
+	payload := "#!/bin/sh\necho agent-ran\n"
+	logArgs := `for a in "$@"; do echo "` + fetch + `-arg $a" >> "$LOG"; done` + "\n"
+	shim(fetch, logArgs+strings.ReplaceAll(body, "PAYLOAD", payload))
+	path := bin + ":/usr/bin:/bin"
+	if onlyShims {
+		shim("sha256sum", "exec /usr/bin/sha256sum \"$@\"\n")
+		shim("mkdir", "exec /bin/mkdir \"$@\"\n")
+		shim("chmod", "exec /bin/chmod \"$@\"\n")
+		path = bin
+	}
+	c := exec.Command("sh", "-c", agent.Stub(rbURL, sha256Hex(payload)))
+	c.Env = []string{"PATH=" + path, "BITC_STUB_DIR=" + dir, "LOG=" + filepath.Join(dir, "log"), "BITC_URL_MARK=expanded"}
+	b, err := c.CombinedOutput()
+	l, _ := os.ReadFile(filepath.Join(dir, "log"))
+	if err != nil {
+		t.Fatalf("%v: %s\n%s", err, b, l)
+	}
+	return string(l)
+}
+
+// checkStubURL asserts the fetch tool got the URL as exactly one argument, unchanged.
+func checkStubURL(t *testing.T, fetch, log string) {
+	t.Helper()
+	want := fetch + "-arg " + rbURL
+	n := 0
+	for _, line := range strings.Split(log, "\n") {
+		if line == want {
+			n++
+		}
+		if strings.HasPrefix(line, fetch+"-arg ") && strings.Contains(line, "expanded") {
+			t.Errorf("the URL was expanded: %q", line)
+		}
+	}
+	if n != 1 {
+		t.Errorf("want exactly one line %q, got %d:\n%s", want, n, log)
+	}
+}
+
+func TestRB8_StubPassesTheURLLiterallyToCurl(t *testing.T) {
+	log := runStubURL(t, "curl", "printf '%s' 'PAYLOAD' > \"$OUT\"\n", false)
+	checkStubURL(t, "curl", log)
+}
+
+func TestRB9_StubPassesTheURLLiterallyToWget(t *testing.T) {
+	log := runStubURL(t, "wget", "while [ $# -gt 0 ]; do [ \"$1\" = -O ] && o=$2; shift; done\nprintf '%s' 'PAYLOAD' > \"$o\"\n", true)
+	checkStubURL(t, "wget", log)
+}
+
 func TestRB4_ToolsArePinned(t *testing.T) {
 	h := harness.New(t)
 	h.HostConfig("[pools.heavy]\n")
