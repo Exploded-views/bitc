@@ -35,6 +35,53 @@ func TestRunnerDeletesTheSpriteWhenAProbeFailsOrPanics(t *testing.T) {
 	}
 }
 
+func TestDeleteAnyDeletesOddNames(t *testing.T) {
+	r := newRig(t, nil)
+	names := []string{
+		"bitcproof-t1-a b",
+		"bitcproof-t1-a,b",
+		"bitcproof-t1-a:b",
+		"bitcproof-t1-a@b",
+		"bitcproof-t1-a%b",
+		"bitcproof-t1-caf" + string(rune(0x00e9)),
+		"bitcproof-t1-A_B.c",
+		"bitcproof-t1-a;b",
+		"bitcproof-t1-a?b",
+		"bitcproof-t1-a#b",
+	}
+	for _, name := range names {
+		r.f.AddSprite(name, r.f.Org(), r.clock.Now())
+		err := deleteAny(context.Background(), r.c, name)
+		if err != nil {
+			t.Errorf("deleteAny(%q) = %v, want nil", name, err)
+		}
+		if st := r.f.Status(name); st != "" {
+			t.Errorf("deleteAny(%q): the Sprite is still live (status %q)", name, st)
+		}
+	}
+}
+
+func TestGuardedRawDeleteRefused(t *testing.T) {
+	r := newRig(t, nil)
+	var code int
+	var before, after int
+	rep := r.runner(quick(1, gRO, time.Minute, func(ctx context.Context, e *Env) Outcome {
+		before = len(r.f.Calls())
+		code, _ = e.API.RawDeleteSprite(ctx, e.Sprite)
+		after = len(r.f.Calls())
+		return fine(ctx, e)
+	})).Run(context.Background())
+	if code != 0 || after != before {
+		t.Fatalf("guarded RawDeleteSprite answered %d and sent %d request(s), want 0 and none", code, after-before)
+	}
+	if rep.Exit != ExitOK {
+		t.Fatalf("exit %d, want %d", rep.Exit, ExitOK)
+	}
+	if got := r.f.Live(); len(got) != 0 {
+		t.Fatalf("Sprites left: %v", got)
+	}
+}
+
 func TestRunnerDeletesTheSpriteOnCancel(t *testing.T) {
 	r := newRig(t, nil)
 	ctx, cancel := context.WithCancel(context.Background())

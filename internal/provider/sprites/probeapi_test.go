@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Exploded-views/bitc/internal/provider/sprites/spritesfake"
 )
@@ -23,6 +24,36 @@ func TestRawSendsOnlyV1Paths(t *testing.T) {
 	}
 	if code, _ := c.Raw(context.Background(), "GET", "/v1/../x", nil, nil); code != 0 {
 		t.Fatalf("Raw accepted a dot-dot path: %d", code)
+	}
+}
+
+func TestRawDeleteSpriteEscapesOnce(t *testing.T) {
+	f, c := newFake(t, spritesfake.Options{})
+	ctx := context.Background()
+	for _, name := range []string{"a b%c", "a;b", "a,b", "a+b", "a?b", "a#b", "a" + "\x01" + "b"} {
+		f.AddSprite(name, f.Org(), time.Now())
+		code, _ := c.RawDeleteSprite(ctx, name)
+		if code < 200 || code > 299 {
+			t.Errorf("RawDeleteSprite(%q) answered %d, want 2xx", name, code)
+			continue
+		}
+		calls := f.Calls()
+		last := calls[len(calls)-1]
+		if last.Method != "DELETE" || last.Path != "/v1/sprites/"+name {
+			t.Errorf("RawDeleteSprite(%q): last call = %s %q", name, last.Method, last.Path)
+		}
+		if want := "/v1/sprites/" + url.PathEscape(name); last.Escaped != want {
+			t.Errorf("RawDeleteSprite(%q): sent %q, want %q", name, last.Escaped, want)
+		}
+	}
+	for _, name := range []string{"", ".", "..", "a/b"} {
+		before := len(f.Calls())
+		if code, _ := c.RawDeleteSprite(ctx, name); code != 0 {
+			t.Errorf("RawDeleteSprite(%q) answered %d, want 0", name, code)
+		}
+		if n := len(f.Calls()); n != before {
+			t.Errorf("RawDeleteSprite(%q) sent %d request(s)", name, n-before)
+		}
 	}
 }
 

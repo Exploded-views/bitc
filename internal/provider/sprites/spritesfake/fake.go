@@ -74,6 +74,8 @@ type ExecContext struct {
 type Call struct {
 	Method, Path, RawQuery, Auth string
 	Body                         []byte
+	// Escaped is the path as sent on the wire (Path is the decoded form).
+	Escaped string
 }
 
 // ExecCall is one recorded exec upgrade: the query and every stdin byte the client sent.
@@ -698,7 +700,7 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 		body, _ = io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	}
 	f.mu.Lock()
-	f.calls = append(f.calls, Call{Method: r.Method, Path: r.URL.Path, RawQuery: r.URL.RawQuery, Auth: r.Header.Get("Authorization"), Body: body})
+	f.calls = append(f.calls, Call{Method: r.Method, Path: r.URL.Path, Escaped: r.URL.EscapedPath(), RawQuery: r.URL.RawQuery, Auth: r.Header.Get("Authorization"), Body: body})
 	unauth := r.Header.Get("Authorization") != "Bearer "+f.o.Token || f.take("401")
 	f.mu.Unlock()
 	if unauth {

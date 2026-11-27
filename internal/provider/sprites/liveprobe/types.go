@@ -110,6 +110,7 @@ type API interface {
 	Run(ctx context.Context, name string, r sprites.ExecRequest, stdin []byte) (sprites.ExecResult, error)
 	Exec(ctx context.Context, name string, r sprites.ExecRequest) (*sprites.Session, error)
 	Raw(ctx context.Context, method, path string, q url.Values, body any) (int, []byte)
+	RawDeleteSprite(ctx context.Context, name string) (int, []byte)
 	Organization(ctx context.Context) (sprites.OrgInfo, error)
 	ListConnections(ctx context.Context) ([]string, error)
 	ListCheckpoints(ctx context.Context, name string) ([]sprites.Checkpoint, error)
