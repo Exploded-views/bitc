@@ -45,11 +45,14 @@ func runStubBuildPayload(t *testing.T, payload, sum string) (out, log, dir strin
 		}
 	}
 	shim("git", `echo "git $*" >> "$LOG"
+sub=$(while [ $# -gt 0 ]; do case "$1" in -c) shift 2;; *) echo "$1"; break;; esac; done)
+echo "git-deploykey ${BITC_DEPLOY_KEY+set} $sub" >> "$LOG"
 case "$*" in *" fetch "*) k=$(ls "$BITC_STUB_DIR"/*/key 2>/dev/null | head -1); echo "keymode $(stat -c %a "$k") dirmode $(stat -c %a "$(dirname "$k")")" >> "$LOG";; esac
 case "$*" in *rev-parse*) echo `+tbCommit+`;; esac
 exit 0
 `)
 	shim("go", `echo "go $*" >> "$LOG"
+echo "go-deploykey ${BITC_DEPLOY_KEY+set}" >> "$LOG"
 echo "env CGO_ENABLED=$CGO_ENABLED GOFLAGS=$GOFLAGS GOTOOLCHAIN=$GOTOOLCHAIN" >> "$LOG"
 echo "key $(ls "$BITC_STUB_DIR"/*/key 2>/dev/null | wc -l) cwd $(pwd | sed 's|.*/||')" >> "$LOG"
 while [ $# -gt 0 ]; do [ "$1" = -o ] && o=$2; shift; done
@@ -98,6 +101,46 @@ func TestAG13_BuildStubExecsTheAgentWithUmask022(t *testing.T) {
 	out, log, _, code := runStubBuildPayload(t, payload, sha256Hex(payload))
 	if code != 0 || !strings.Contains(out, "agent-umask 0022") {
 		t.Fatalf("the agent must run under umask 022 (job dirs the job user traverses), code %d: %q\n%s", code, out, log)
+	}
+}
+
+func TestAG14_BuildStubKeepsTheDeployKeyOutOfCheckoutAndBuild(t *testing.T) {
+	out, log, _, code := runStubBuild(t, sha256Hex("#!/bin/sh\necho agent-ran \"$@\"\n"))
+	if code != 0 {
+		t.Fatalf("code %d: %q\n%s", code, out, log)
+	}
+	seen := map[string]bool{}
+	goLines := 0
+	for _, line := range strings.Split(log, "\n") {
+		switch {
+		case strings.HasPrefix(line, "git-deploykey "):
+			f := strings.Fields(line)
+			seen[f[len(f)-1]] = true
+			if strings.Contains(line, "set") {
+				t.Errorf("git saw BITC_DEPLOY_KEY: %q", line)
+			}
+		case strings.HasPrefix(line, "go-deploykey"):
+			goLines++
+			if strings.Contains(line, "set") {
+				t.Errorf("go saw BITC_DEPLOY_KEY: %q", line)
+			}
+		}
+	}
+	for _, sub := range []string{"init", "fetch", "checkout", "rev-parse"} {
+		if !seen[sub] {
+			t.Errorf("no git-deploykey line for git %s:\n%s", sub, log)
+		}
+	}
+	if goLines != 1 {
+		t.Errorf("want one go-deploykey line, got %d:\n%s", goLines, log)
+	}
+}
+
+func TestAG15_BuildStubGivesTheDeployKeyToTheAgent(t *testing.T) {
+	payload := "#!/bin/sh\necho agent-deploykey-len ${#BITC_DEPLOY_KEY}\n"
+	out, log, _, code := runStubBuildPayload(t, payload, sha256Hex(payload))
+	if code != 0 || !strings.Contains(out, "agent-deploykey-len 15") {
+		t.Fatalf("the agent must get the deploy key, code %d: %q\n%s", code, out, log)
 	}
 }
 
