@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/url"
 	"path"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -45,6 +46,11 @@ type Runner struct {
 	live    map[string]*SpriteRec
 	n       int
 	results []Result
+
+	// refusals is the running probe's guard refusals ("METHOD path"); runProbe resets it before
+	// the probe and reads it after. refusalTotal counts them all for the report.
+	refusals     []string
+	refusalTotal int
 }
 
 // NewRunner builds a runner over api (the unguarded client). probes is usually AllProbes().
@@ -164,8 +170,33 @@ func (g guarded) DeleteSprite(ctx context.Context, name string) error {
 }
 
 // RawDeleteSprite is refused: only deleteAny (which is handed the unguarded API) may raw-delete,
-// so a probe cannot skip confirmDeleted.
-func (g guarded) RawDeleteSprite(ctx context.Context, name string) (int, []byte) { return 0, nil }
+// so a probe cannot skip confirmDeleted. The refusal fails the probe that asked.
+func (g guarded) RawDeleteSprite(ctx context.Context, name string) (int, []byte) {
+	g.r.refuse("DELETE /v1/sprites/" + name + " (RawDeleteSprite)")
+	return 0, nil
+}
+
+// refuse records a guard refusal for the running probe and logs it.
+func (r *Runner) refuse(what string) {
+	r.mu.Lock()
+	r.refusals = append(r.refusals, what)
+	r.refusalTotal++
+	r.mu.Unlock()
+	r.logf("guard refused %s", what)
+}
+
+// takeRefusals returns the refusals recorded since resetRefusals.
+func (r *Runner) takeRefusals() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.refusals...)
+}
+
+func (r *Runner) resetRefusals() {
+	r.mu.Lock()
+	r.refusals = nil
+	r.mu.Unlock()
+}
 
 // deleteAny deletes name through the client; when the client refuses the name as invalid (the
 // server may still have accepted it, which is what probe 13 looks for) it sends a raw DELETE
@@ -183,14 +214,83 @@ func deleteAny(ctx context.Context, api API, name string) error {
 	return fmt.Errorf("raw delete of %q answered %d", name, code)
 }
 
-// Raw refuses a create (it would dodge the one-live-Sprite rule); Env.TryCreate is the way.
-// It normalises the method and path first (any case, doubled slashes, dot segments), so no
-// spelling of the create slips past.
+// nameRE is the client's Sprite name rule (the client keeps its own copy unexported).
+var nameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+
+// Raw is default-deny for writes. It refuses a create first (it would dodge the one-live-Sprite
+// rule; Env.TryCreate is the way), normalising the method and path (any case, doubled slashes,
+// dot segments). Then a read goes through unless it is under a Sprite that is not live in the book
+// (or carries a body or a method-override query), and a write goes through only on the fixed
+// table of rawWriteAllowed. Every refusal answers 0, sends nothing and fails the probe.
 func (g guarded) Raw(ctx context.Context, method, p string, q url.Values, body any) (int, []byte) {
 	if strings.EqualFold(method, "POST") && strings.EqualFold(path.Clean(p), "/v1/sprites") {
+		g.r.refuse(strings.ToUpper(method) + " " + p)
+		return 0, nil
+	}
+	if !g.r.rawAllowed(method, p, q, body) {
+		g.r.refuse(strings.ToUpper(method) + " " + p)
 		return 0, nil
 	}
 	return g.API.Raw(ctx, method, p, q, body)
+}
+
+// rawAllowed decides a raw request after the create check. The client below it already refuses
+// any path that is not /v1/ plus plain segments, so the path is not cleaned here.
+func (r *Runner) rawAllowed(method, p string, q url.Values, body any) bool {
+	if strings.EqualFold(method, "GET") || strings.EqualFold(method, "HEAD") {
+		return r.rawReadAllowed(p, q, body)
+	}
+	return r.rawWriteAllowed(method, p, q)
+}
+
+// spritesSeg reports whether a segment after /v1 is the Sprites collection in any spelling a
+// server might route to it: "sprites" ignoring case, or that followed by "." or "~".
+func spritesSeg(s string) bool {
+	l := strings.ToLower(s)
+	return l == "sprites" || strings.HasPrefix(l, "sprites.") || strings.HasPrefix(l, "sprites~")
+}
+
+func (r *Runner) rawReadAllowed(p string, q url.Values, body any) bool {
+	if body != nil {
+		return false
+	}
+	for k := range q {
+		switch strings.ToLower(k) {
+		case "_method", "method", "x-http-method-override":
+			return false
+		}
+	}
+	if strings.HasPrefix(p, "/v1/") {
+		segs := strings.Split(p[1:], "/")
+		if len(segs) >= 3 && spritesSeg(segs[1]) {
+			return r.isLive(segs[2])
+		}
+	}
+	return true
+}
+
+// rawWriteAllowed is the write table: PUT and PATCH /v1/sprites/{s}, POST
+// /v1/sprites/{s}/policy/privileges and /v1/sprites/{s}/policy/resources, with {s} a live book
+// name that is a valid Sprite name, and no query. Literal segments are byte-exact; the method
+// compare ignores case.
+func (r *Runner) rawWriteAllowed(method, p string, q url.Values) bool {
+	if len(q) > 0 {
+		return false
+	}
+	segs := strings.Split(p, "/")
+	if len(segs) < 4 || segs[0] != "" || segs[1] != "v1" || segs[2] != "sprites" {
+		return false
+	}
+	if !nameRE.MatchString(segs[3]) || !r.isLive(segs[3]) {
+		return false
+	}
+	switch strings.ToUpper(method) {
+	case "PUT", "PATCH":
+		return len(segs) == 4
+	case "POST":
+		return len(segs) == 6 && segs[4] == "policy" && (segs[5] == "privileges" || segs[5] == "resources")
+	}
+	return false
 }
 
 func (r *Runner) tryCreate(ctx context.Context, name string, labels map[string]string) (int, []byte) {
@@ -412,17 +512,21 @@ func (r *Runner) runProbe(ctx context.Context, p Probe, env *Env, hasSprite bool
 	pctx, cancel := context.WithTimeout(ctx, p.Worst)
 	defer cancel()
 	t0 := r.now()
+	r.resetRefusals()
+	panicked := false
 	out := func() (o Outcome) {
 		defer func() {
 			if v := recover(); v != nil {
+				panicked = true
 				o = Outcome{Status: Error, Finding: fmt.Sprintf("probe panicked: %v", v)}
 			}
 		}()
 		return p.Run(pctx, env)
 	}()
 	dt := r.now().Sub(t0).Seconds()
+	interrupted := ctx.Err() != nil
 	switch {
-	case ctx.Err() != nil:
+	case interrupted:
 		out = Outcome{Status: Error, Finding: "interrupted: the run was cancelled or hit the wall-clock cap", Evidence: out.Evidence}
 	case pctx.Err() != nil && out.Status == Error:
 		out.Finding += " (cut at the probe's declared worst case " + p.Worst.String() + ")"
@@ -431,6 +535,23 @@ func (r *Runner) runProbe(ctx context.Context, p Probe, env *Env, hasSprite bool
 	case Answered, AssumeWorst, Skipped, Error:
 	default:
 		out = Outcome{Status: Error, Finding: "probe returned no status", Evidence: out.Evidence}
+	}
+	// A guard refusal answered the probe 0 and nothing else, so only this record can fail it. It is
+	// applied last: an interruption or a panic finding stays first, and the probe's evidence stays.
+	if refs := r.takeRefusals(); len(refs) > 0 {
+		f := "guard refused " + refs[0]
+		if len(refs) > 1 {
+			f += fmt.Sprintf(" (+%d more)", len(refs)-1)
+		}
+		if interrupted || panicked {
+			f = out.Finding + "; " + f
+		}
+		ev := map[string]any{}
+		for k, v := range out.Evidence {
+			ev[k] = v
+		}
+		ev["guard_refusals"] = refs
+		out = Outcome{Status: Error, Finding: f, Evidence: ev}
 	}
 	res := Result{ID: p.ID, Status: out.Status, Finding: out.Finding, Evidence: out.Evidence}
 	if hasSprite {
@@ -465,6 +586,7 @@ func (r *Runner) finalize(rep *Report) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	rep.Results = append([]Result(nil), r.results...)
+	rep.GuardRefusals = r.refusalTotal
 	var total float64
 	for _, rec := range r.recs {
 		c := *rec
