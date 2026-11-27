@@ -61,6 +61,11 @@ while [ $# -gt 0 ]; do [ "$1" = -o ] && o=$2; shift; done
 printf '%s' '`+payload+`' > "$o"
 `)
 	shim("ssh", "exit 1\n")
+	for _, tool := range []string{"mkdir", "chmod", "rm"} { // log key markers (never values), then run the real tool
+		shim(tool, `echo "fs-keys ${BITC_DEPLOY_KEY+set}dk ${RUNPOD_API_KEY+set}rk `+tool+`" >> "$LOG"
+exec /bin/`+tool+` "$@"
+`)
+	}
 	cmd := exec.Command("sh", "-c", agent.StubBuild(tbClone, tbRef, tbCommit, sum))
 	cmd.Env = []string{"PATH=" + bin + ":/usr/bin:/bin", "BITC_STUB_DIR=" + filepath.Join(dir, "stub"), "LOG=" + filepath.Join(dir, "log"),
 		"BITC_DEPLOY_KEY=SECRET-KEY-BODY", "RUNPOD_API_KEY=fake-runpod-key", "BITC_KNOWN_HOSTS=github.example ssh-ed25519 AAAA"}
@@ -180,6 +185,31 @@ func TestAG16_BuildStubKeepsTheRunPodKeyFromCheckoutAndBuildAndGivesItToTheAgent
 	out, log, _, code = runStubBuildPayload(t, payload, sha256Hex(payload))
 	if code != 0 || !strings.Contains(out, "agent-runpodkey-len 15") {
 		t.Fatalf("the agent must get the RunPod key, code %d: %q\n%s", code, out, log)
+	}
+}
+
+// The stub's own setup (mkdir, chmod, rm of its dirs) runs after both keys are unset too: the unset
+// is the first thing the stub does.
+func TestAG17_BuildStubUnsetsBothKeysBeforeItsFirstCommand(t *testing.T) {
+	out, log, _, code := runStubBuild(t, sha256Hex("#!/bin/sh\necho agent-ran \"$@\"\n"))
+	if code != 0 {
+		t.Fatalf("code %d: %q\n%s", code, out, log)
+	}
+	seen := map[string]bool{}
+	for _, line := range strings.Split(log, "\n") {
+		f := strings.Fields(line)
+		if len(f) != 4 || f[0] != "fs-keys" {
+			continue
+		}
+		seen[f[3]] = true
+		if f[1] != "dk" || f[2] != "rk" { // "setdk" or "setrk" means the tool saw a key
+			t.Errorf("%s saw a key: %q", f[3], line)
+		}
+	}
+	for _, tool := range []string{"mkdir", "chmod", "rm"} {
+		if !seen[tool] {
+			t.Errorf("no fs-keys line for %s:\n%s", tool, log)
+		}
 	}
 }
 
