@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"math"
 	"time"
-	"unicode/utf8"
 )
 
 // The caps of a table write's body. They are the values the probes send and the guard's own
@@ -85,7 +84,7 @@ func whole(v any, hi int) bool {
 	return ok && !math.IsNaN(f) && !math.IsInf(f, 0) && f == math.Trunc(f) && f >= 1 && f <= float64(hi)
 }
 
-// PUT and PATCH /v1/sprites/{s}: labels (only bitc, a string of at most 16 characters) and config
+// PUT and PATCH /v1/sprites/{s}: labels (only bitc, a string of 1 to 16 bytes) and config
 // (only ram_mb and cpus).
 func checkSpriteBody(m map[string]any) bool {
 	if !onlyKeys(m, "labels", "config") {
@@ -97,7 +96,8 @@ func checkSpriteBody(m map[string]any) bool {
 			return false
 		}
 		s, ok := l["bitc"].(string)
-		if !ok || utf8.RuneCountInString(s) > 16 {
+		// 1 to 16 bytes: labels are ASCII, so bytes and characters agree
+		if !ok || len(s) < 1 || len(s) > 16 {
 			return false
 		}
 	}
@@ -140,13 +140,12 @@ func checkResourcesBody(m map[string]any) bool {
 	if !ok || !onlyKeys(mm, "limit_mb", "autoscale") {
 		return false
 	}
-	if v, has := mm["limit_mb"]; has && !whole(v, MaxLimitMB) {
+	// both keys are required: a platform could default a missing autoscale to true
+	if !whole(mm["limit_mb"], MaxLimitMB) {
 		return false
 	}
-	if v, has := mm["autoscale"]; has {
-		if b, ok := v.(bool); !ok || b {
-			return false
-		}
+	if b, ok := mm["autoscale"].(bool); !ok || b {
+		return false
 	}
 	return true
 }

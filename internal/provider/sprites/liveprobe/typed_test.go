@@ -409,6 +409,8 @@ func TestTableBodiesTheProbesSendAreAccepted(t *testing.T) {
 		{"resources 1024", postRes(mem(two("limit_mb", "autoscale", 1024, false)))},
 		{"resources 16384", postRes(mem(two("limit_mb", "autoscale", 16384, false)))},
 		{"resources 1", postRes(mem(two("limit_mb", "autoscale", 1, false)))},
+		{"PUT a 16-character label", putSprite(lbl(kv("bitc", strings.Repeat("v", 16))))},
+		{"PUT a 1-character label", putSprite(lbl(kv("bitc", "1")))},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -492,6 +494,9 @@ func TestTableBodiesAreRefused(t *testing.T) {
 		{name: "resources autoscale true", req: postRes(mem(two("limit_mb", "autoscale", 1024, true)))},
 		{name: "resources autoscale true alone", req: postRes(mem(kv("autoscale", true)))},
 		{name: "resources autoscale as a string", req: postRes(mem(two("limit_mb", "autoscale", 1024, "false")))},
+		{name: "resources no autoscale", req: postRes(mem(kv("limit_mb", 1024)))},
+		{name: "resources no limit_mb", req: postRes(mem(kv("autoscale", false)))},
+		{name: "PUT an empty label value", req: putSprite(lbl(kv("bitc", "")))},
 		{name: "resources empty memory", req: postRes(mem(map[string]any{}))},
 		{name: "resources {}", req: postRes(map[string]any{})},
 		{name: "resources a string body", req: postRes("memory")},
