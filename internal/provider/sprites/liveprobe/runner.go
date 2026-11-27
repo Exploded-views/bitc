@@ -200,9 +200,12 @@ func (r *Runner) resetRefusals() {
 
 // deleteAny deletes name through the client; when the client refuses the name as invalid (the
 // server may still have accepted it, which is what probe 13 looks for) it sends a raw DELETE
-// that escapes the name once. A 2xx means the Sprite is gone. A 404 is confirmed by listing the
-// name first, because a server whose delete route rejects an odd name it accepted at create can
-// answer 404 for a Sprite that still runs: a Sprite still listed, or a list that fails, is an error.
+// that escapes the name once. A 2xx means the Sprite is gone. A 404 is confirmed by listing
+// the kit's Sprites (the server's prefix filter only ever sees the plain NamePrefix, never the odd
+// name) and matching the name exactly, because a server whose delete route rejects an odd name it
+// accepted at create can answer 404 for a Sprite that still runs: a Sprite still listed, or a list
+// that fails, is an error. A name outside NamePrefix cannot be found by that list, so its 404 is an
+// error too.
 func deleteAny(ctx context.Context, api API, name string) error {
 	err := api.DeleteSprite(ctx, name)
 	var inel *provider.ErrIneligible
@@ -216,7 +219,10 @@ func deleteAny(ctx context.Context, api API, name string) error {
 	if code != 404 {
 		return fmt.Errorf("raw delete of %q answered %d", name, code)
 	}
-	listed, lerr := api.ListSprites(ctx, name)
+	if !strings.HasPrefix(name, NamePrefix) {
+		return fmt.Errorf("raw delete of %q answered 404 and that cannot be confirmed: the name is outside the kit prefix", name)
+	}
+	listed, lerr := api.ListSprites(ctx, NamePrefix)
 	if lerr != nil {
 		return fmt.Errorf("raw delete of %q answered 404 and that could not be confirmed: %w", name, lerr)
 	}
