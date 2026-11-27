@@ -362,6 +362,27 @@ func TestAR12_ReleaseConfigBuildsBothArchsStaticallyWithRawBinaries(t *testing.T
 	}
 }
 
+func TestAR14_AgentURLWithWhitespaceOrControlCharactersIsRefused(t *testing.T) {
+	// each escape is TOML basic-string syntax, decoded by the config loader
+	for name, esc := range map[string]string{
+		"space": ` `, "tab": `\t`, "newline": `\n`, "carriage return": `\r`,
+		"DEL": `\u007F`, "NEL": `\u0085`, "NBSP": ` `, "em space": ` `,
+	} {
+		h := harness.New(t)
+		h.HostConfig(arHostHead + `agent = { source = "url", url = "https://h.invalid/bitc` + esc + `x", path = "/a" }` + "\n")
+		r := h.Run("config", "check")
+		if r.Code != 78 || !strings.Contains(r.Stderr, "agent.url must not contain whitespace or control characters") {
+			t.Errorf("%s: %+v", name, r)
+		}
+	}
+	// only whitespace and control characters are refused: shell metacharacters and {arch} still pass
+	h := harness.New(t)
+	h.HostConfig(arHostHead + `agent = { source = "url", url = "https://h.invalid/a$b` + "``" + `c'd-{arch}", paths = { amd64 = "/a" } }` + "\n")
+	if r := h.Run("config", "check"); r.Code != 0 {
+		t.Errorf("metacharacters: %+v", r)
+	}
+}
+
 func TestAR13_DoctorRemoteExits78ForAnUnusableModuleDir(t *testing.T) {
 	dir, _ := srcTree(t)
 	h := harness.New(t)

@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"golang.org/x/sys/unix"
 )
@@ -48,6 +49,11 @@ var providerTypes = map[string]ProviderType{}
 
 // RegisterProviderType adds or replaces a provider type (called from provider packages' init).
 func RegisterProviderType(name string, t ProviderType) { providerTypes[name] = t }
+
+// hasSpaceOrControl reports whether s holds a whitespace or control rune.
+func hasSpaceOrControl(s string) bool {
+	return strings.IndexFunc(s, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0
+}
 
 func decodeProviders(p *problems, e *Effective, file string, sections map[string]map[string]any, env map[string]string) {
 	for typ, raw := range sections {
@@ -151,6 +157,9 @@ func decodeProviders(p *problems, e *Effective, file string, sections map[string
 					pr.Agent.Source = enum(p, file, key+".agent.source", &s, "release", "release", "url", "build")
 				}
 				pr.Agent.URL, _ = m["url"].(string)
+				if hasSpaceOrControl(pr.Agent.URL) {
+					p.addf("%s: %s.agent.url must not contain whitespace or control characters", file, key)
+				}
 				pr.Agent.Path, _ = m["path"].(string)
 				pr.Agent.Commit, _ = m["commit"].(string)
 				pr.Agent.Image, _ = m["image"].(string)

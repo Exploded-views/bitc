@@ -179,6 +179,22 @@ func TestRB9_StubPassesTheURLLiterallyToWget(t *testing.T) {
 	checkStubURL(t, "wget", log)
 }
 
+func TestRB10_StubComparesTheSumLiterally(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin")
+	_ = os.MkdirAll(bin, 0o755)
+	payload := "#!/bin/sh\necho agent-ran\n"
+	_ = os.WriteFile(filepath.Join(bin, "curl"), []byte("#!/bin/sh\nprintf '%s' '"+payload+"' > \"$OUT\"\n"), 0o755) //nolint:gosec // a test shim
+	// the sum is a harmless marker; with the variable set to the real sum, a sum that sh expands
+	// would verify, and a sum compared literally never does
+	c := exec.Command("sh", "-c", agent.Stub("https://x.invalid/bitc", "$BITC_SUM_MARK"))
+	c.Env = []string{"PATH=" + bin + ":/usr/bin:/bin", "BITC_STUB_DIR=" + dir, "BITC_SUM_MARK=" + sha256Hex(payload)}
+	out, err := c.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "bitc agent: sha256 mismatch") || strings.Contains(string(out), "agent-ran") {
+		t.Fatalf("err %v, out %q", err, out)
+	}
+}
+
 func TestRB4_ToolsArePinned(t *testing.T) {
 	h := harness.New(t)
 	h.HostConfig("[pools.heavy]\n")

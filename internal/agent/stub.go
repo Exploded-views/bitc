@@ -19,9 +19,9 @@ get() { if command -v curl >/dev/null 2>&1; then OUT=$f curl -fsSL --proto =http
 get || { if command -v apt-get >/dev/null 2>&1; then env -i PATH=$P apt-get update -qq && env -i PATH=$P apt-get install -y -qq curl ca-certificates
  elif command -v apk >/dev/null 2>&1; then env -i PATH=$P apk add -q --no-cache curl ca-certificates; fi; get; }
 s=$(sha256sum "$f" 2>/dev/null || busybox sha256sum "$f"); s=${s%%%% *}
-[ "$s" = %[2]q ] || { echo "bitc agent: sha256 mismatch" >&2; exit 1; }
+[ "$s" = %[2]s ] || { echo "bitc agent: sha256 mismatch" >&2; exit 1; }
 chmod 700 "$f"; BITC_DEPLOY_KEY=$bitc_dk RUNPOD_API_KEY=$bitc_rk exec "$f" __agent
-`, shq(url), sum)
+`, shq(url), shq(sum))
 }
 
 func sha256hex(b []byte) string { s := sha256.Sum256(b); return hex.EncodeToString(s[:]) }
@@ -41,8 +41,8 @@ get() { if command -v curl >/dev/null 2>&1; then curl -fsSL --proto =https -o "$
 get || { if command -v apt-get >/dev/null 2>&1; then env -i PATH=$P apt-get update -qq && env -i PATH=$P apt-get install -y -qq curl ca-certificates
  elif command -v apk >/dev/null 2>&1; then env -i PATH=$P apk add -q --no-cache curl ca-certificates; fi; get; }
 s=$(sha256sum "$f" 2>/dev/null || busybox sha256sum "$f"); s=${s%%%% *}
-[ "$s" = %[2]q ] || { echo "bitc agent: sha256 mismatch" >&2; exit 1; }
+[ "$s" = %[2]s ] || { echo "bitc agent: sha256 mismatch" >&2; exit 1; }
 t=${BITC_INSTALL_DIR:-/opt/bitc/bin}; mkdir -p "$t"; chmod 755 "$t"
 chmod 755 "$f"; mv "$f" "$t/bitc"
-`, shq(url), sum)
+`, shq(url), shq(sum))
 }
