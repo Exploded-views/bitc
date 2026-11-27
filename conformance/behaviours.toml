@@ -260,6 +260,8 @@ rows = [
   { id = "RB5", task = "1.1", dropped = "the image is host configuration, not behaviour", desc = "pods boot one project's CI image" },
   { id = "RB6", task = "2.2b", ported = "TestRB6_StubKeepsTheKeysFromItsFetchAndChecksumTools", desc = "the download stub keeps BITC_DEPLOY_KEY and RUNPOD_API_KEY from curl and sha256sum and gives both only to the agent it execs (issue 73)" },
   { id = "RB7", task = "2.2b", ported = "TestRB7_StubKeepsTheKeysFromWgetToo", desc = "the download stub keeps both keys from wget and sha256sum too, on the wget path" },
+  { id = "RB8", task = "2.2b", ported = "TestRB8_StubPassesTheURLLiterallyToCurl", desc = "the download stub hands the agent URL to curl exactly as configured: a $ or a backtick in it is not expanded by sh" },
+  { id = "RB9", task = "2.2b", ported = "TestRB9_StubPassesTheURLLiterallyToWget", desc = "the download stub hands the agent URL to wget exactly as configured, on the wget path" },
 
   # RE: pod side (one row per reference block)
   { id = "RE1", task = "2.2b", ported = "TestRE1_BootFetchCheckoutMarkers", desc = "the agent boots, fetches the ref, checks out the sha and brackets the command's output with BEGIN and EXIT markers" },

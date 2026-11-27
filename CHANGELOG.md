@@ -9,6 +9,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The download and install stubs pass the agent URL to curl and wget exactly as configured: it is single-quoted for sh, so a $ or a backtick in it is not expanded.
 - The start stubs no longer pass the deploy key or the RunPod API key to the tools they run (the agent download, its checksum, and the build stub's checkout and build): both are unset before the stub's first command and given back only to the agent they exec ([#73](https://github.com/Exploded-views/bitc/issues/73)).
 - The build agent's start stub no longer leaves the deploy key in the environment of the checkout and the build: it unsets BITC_DEPLOY_KEY before it writes the key file and gives the key back only to the agent it execs ([#73](https://github.com/Exploded-views/bitc/issues/73)).
 - `status` on macOS says `memory: not used on macOS (no memory admission)` instead of `memory: unreadable (/proc/meminfo)`, and `status --json` gains `memory.applies` (false off Linux) ([#49](https://github.com/Exploded-views/bitc/issues/49)).
