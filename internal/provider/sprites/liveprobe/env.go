@@ -26,6 +26,7 @@ type Env struct {
 	sleep      func(ctx context.Context, d time.Duration) error
 	tryCreate  func(ctx context.Context, name string, labels map[string]string) (int, []byte)
 	deleteSelf func(ctx context.Context) error
+	tryRestore func(ctx context.Context, name, id string) error
 	nextName   func() string
 }
 
@@ -45,6 +46,14 @@ func (e *Env) NextName() string { return e.nextName() }
 // Sprite is registered first: if it exists afterwards the caller deletes it before the next create.
 func (e *Env) TryCreate(ctx context.Context, name string, labels map[string]string) (int, []byte) {
 	return e.tryCreate(ctx, name, labels)
+}
+
+// TryRestore restores checkpoint id of name, which may be a Sprite this run deleted: the restore
+// may recreate it, so the name is put back in the Sprite book first (it then counts as live, in
+// spend and in the one-live rule) and stays there unless the restore surely made nothing. A name
+// the run never registered is a guard refusal, and a live name is a plain restore.
+func (e *Env) TryRestore(ctx context.Context, name, id string) error {
+	return e.tryRestore(ctx, name, id)
 }
 
 // DeleteSelf deletes the group's Sprite now (probe 25 needs it gone).

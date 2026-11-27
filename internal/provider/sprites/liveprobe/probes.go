@@ -114,7 +114,7 @@ func probeExecUser(ctx context.Context, e *Env) Outcome {
 		mx = max(mx, d)
 	}
 	o.LatAvg, o.LatMax = total/n, mx
-	_, err = e.API.Run(ctx, e.Sprite, sprites.ExecRequest{Cmd: []string{"true"}, MaxRunAfterDisconnect: 30 * time.Second}, nil)
+	_, err = e.API.Run(ctx, e.Sprite, sprites.ExecRequest{Cmd: []string{"true"}, MaxRunAfterDisconnect: MaxRunAfterDisconnect}, nil)
 	o.MaxRunAfterAccepted = err == nil
 	if err != nil {
 		o.MaxRunErr = errText(err)
@@ -295,11 +295,11 @@ func probeResources(ctx context.Context, e *Env) Outcome {
 	o.AllocMB = min(o.LimitMB+256, 17*1024)
 	r, err := e.Root(ctx, allocScript(o.AllocMB), nil)
 	o.Alloc = allocVerdict(string(r.Stdout), err)
-	o.CPUSetCode, o.CPUSetBody = e.rawJSON(ctx, "PUT", "/v1/sprites/"+e.Sprite, map[string]any{"config": map[string]any{"ram_mb": 2048, "cpus": 2}})
+	o.CPUSetCode, o.CPUSetBody = e.rawJSON(ctx, "PUT", "/v1/sprites/"+e.Sprite, map[string]any{"config": map[string]any{"ram_mb": MaxRAMMB, "cpus": MaxCPUs}})
 	if r, err := e.Sh(ctx, resScript, nil); err == nil {
 		o.After = parseResources(string(r.Stdout))
 	}
-	o.Big, _ = e.rawJSON(ctx, "POST", pol, body(16384))
+	o.Big, _ = e.rawJSON(ctx, "POST", pol, body(MaxLimitMB))
 	if r, err := e.Sh(ctx, resScript, nil); err == nil {
 		o.BigMemTotalKB = parseResources(string(r.Stdout)).MemTotalKB
 	}
@@ -594,7 +594,7 @@ func probeRetention(ctx context.Context, e *Env) Outcome {
 	for _, id := range append(append([]string{}, o.IDs...), cname) {
 		_, gerr := e.API.GetCheckpoint(ctx, name, id)
 		o.GetCodes[id] = codeOf(gerr)
-		rerr := e.API.RestoreCheckpoint(ctx, name, id)
+		rerr := e.TryRestore(ctx, name, id)
 		o.Restore[id] = codeOf(rerr)
 	}
 	if left, err := e.API.ListSprites(ctx, name); err == nil {

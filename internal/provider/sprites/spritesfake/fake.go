@@ -289,6 +289,9 @@ func BuildBitc(t testing.TB) string {
 //	lax-names              a create accepts any name (the API might not reject what the client calls invalid)
 //	checkpoints-survive-delete  the next Sprite delete leaves its checkpoints listable and
 //	                       readable by id (the worst case of probe 9.25); restore stays 404
+//	restore-recreates      a restore of a surviving checkpoint (checkpoints-survive-delete) on a deleted
+//	                       name recreates the Sprite, fresh, with the surviving checkpoints listed again
+//	restore-500            a checkpoint restore answers 500 and does nothing
 //
 // An unknown name fails the test. The attach-* behaviours spare every other exec, so the
 // provisioning before the attach is untouched.
@@ -298,7 +301,8 @@ var behaviours = map[string]bool{"429-create": true, "concurrent-limit": true, "
 	"401": true, "create-then-500": true, "create-then-500-lookup-fails": true, "create-500-nothing": true, "policy-get-mismatch": true,
 	"wrong-org": true, "labels-unsupported": true, "delete-500": true, "list-500": true, "drop-exec-socket": true,
 	"exec-upgrade-4xx": true, "exec-upgrade-5xx": true, "exec-upgrade-timeout": true, "cold-drop-mid-job": true, "no-org": true,
-	"policy-500": true, "policy-get-500": true, "provision-infra-fails": true, "provision-repo-fails": true, "attach-4xx": true, "attach-timeout": true, "drop-tail": true, "attach-truncate": true, "forge-result": true, "checkpoints-survive-delete": true, "lax-names": true, "delete-404-keep": true}
+	"policy-500": true, "policy-get-500": true, "provision-infra-fails": true, "provision-repo-fails": true, "attach-4xx": true, "attach-timeout": true, "drop-tail": true, "attach-truncate": true, "forge-result": true, "checkpoints-survive-delete": true, "lax-names": true, "delete-404-keep": true,
+	"restore-recreates": true, "restore-500": true}
 
 // KnownBehaviour reports whether b is a documented behaviour name.
 func (f *Fake) KnownBehaviour(b string) bool { return behaviours[b] }
@@ -1171,12 +1175,63 @@ func (f *Fake) ckptOne(w http.ResponseWriter, method, name, id string) {
 	w.WriteHeader(204)
 }
 
+// survived reports whether checkpoint id of a deleted Sprite was kept (callers hold f.mu).
+func (f *Fake) survived(name, id string) bool {
+	for _, k := range f.survivors[name] {
+		if k == id {
+			return true
+		}
+	}
+	return false
+}
+
+// recreate makes a fresh Sprite (new id, new overlay) under a deleted name, as a restore that
+// recreates it would. survivors is not consumed: the new Sprite lists the surviving checkpoints
+// again (as empty directories). Callers hold f.mu; nil means the fake's disk failed.
+func (f *Fake) recreate(name string) *sprite {
+	f.seq++
+	s := &sprite{id: fmt.Sprintf("sp%d", f.seq), name: name, org: f.o.Org, created: time.Now().UTC(), status: "running",
+		tasks: map[string]task{}, lastActive: time.Now()}
+	// the directory is named by the fake-made id, never by name: the name is request data
+	s.dir = filepath.Join(f.root, s.id)
+	s.overlay = filepath.Join(s.dir, "overlay")
+	if err := os.MkdirAll(filepath.Join(s.overlay, ".sprite"), 0o755); err != nil {
+		return nil
+	}
+	for _, k := range f.survivors[name] {
+		if k == "" || k == "." || strings.Contains(k, "..") || strings.ContainsAny(k, "/\\") {
+			continue
+		}
+		dst := filepath.Join(s.dir, "checkpoints", k)
+		if err := os.MkdirAll(dst, 0o755); err != nil {
+			return nil
+		}
+		s.ckpts = append(s.ckpts, dst)
+	}
+	f.startSock(s)
+	f.sprites[name] = s
+	return s
+}
+
 // ckptRestore puts the checkpoint's files back: the overlay is emptied (but for /.sprite) and the
 // checkpoint copied in. The policies are kept (the model of probe 9.2's best case).
 func (f *Fake) ckptRestore(w http.ResponseWriter, name, id string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.take("restore-500") {
+		jsonErr(w, 500, "internal", "try again")
+		return
+	}
 	s := f.sprites[name]
+	if s == nil && f.survived(name, id) && f.take("restore-recreates") && !f.closed {
+		s = f.recreate(name)
+		if s == nil {
+			jsonErr(w, 500, "internal", "fake disk")
+			return
+		}
+		writeJSON(w, 200, map[string]bool{"ok": true})
+		return
+	}
 	if s == nil || s.static {
 		jsonErr(w, 404, "not_found", "no such sprite")
 		return
