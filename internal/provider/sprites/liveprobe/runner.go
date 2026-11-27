@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -179,11 +180,13 @@ func deleteAny(ctx context.Context, api API, name string) error {
 }
 
 // Raw refuses a create (it would dodge the one-live-Sprite rule); Env.TryCreate is the way.
-func (g guarded) Raw(ctx context.Context, method, path string, q url.Values, body any) (int, []byte) {
-	if strings.EqualFold(method, "POST") && strings.TrimRight(path, "/") == "/v1/sprites" {
+// It normalises the method and path first (any case, doubled slashes, dot segments), so no
+// spelling of the create slips past.
+func (g guarded) Raw(ctx context.Context, method, p string, q url.Values, body any) (int, []byte) {
+	if strings.EqualFold(method, "POST") && strings.EqualFold(path.Clean(p), "/v1/sprites") {
 		return 0, nil
 	}
-	return g.API.Raw(ctx, method, path, q, body)
+	return g.API.Raw(ctx, method, p, q, body)
 }
 
 func (r *Runner) tryCreate(ctx context.Context, name string, labels map[string]string) (int, []byte) {

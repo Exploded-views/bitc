@@ -143,6 +143,53 @@ func TestRunnerRefusesARawCreateInAnyMethodCase(t *testing.T) {
 	}
 }
 
+func TestGuardedRawRefusesCreateSpellings(t *testing.T) {
+	r := newRig(t, nil)
+	refused := []struct{ method, path string }{
+		{"POST", "/v1/sprites"},
+		{"POST", "/v1/sprites/"},
+		{"post", "/v1/sprites"},
+		{"Post", "/v1/sprites"},
+		{"POST", "/v1//sprites"},
+		{"POST", "//v1/sprites"},
+		{"POST", "/v1/./sprites"},
+		{"POST", "/v1/sprites/."},
+		{"POST", "/v1/Sprites"},
+		{"POST", "/v1/SPRITES"},
+		{"post", "/v1//Sprites/"},
+	}
+	var failures []string
+	rep := r.runner(quick(1, gRO, time.Minute, func(ctx context.Context, e *Env) Outcome {
+		for _, c := range refused {
+			before := len(r.f.Calls())
+			code, _ := e.API.Raw(ctx, c.method, c.path, nil, map[string]string{"name": e.NextName()})
+			if code != 0 || len(r.f.Calls()) != before {
+				failures = append(failures, fmt.Sprintf("%s %s: code %d, %d request(s) reached the fake", c.method, c.path, code, len(r.f.Calls())-before))
+			}
+		}
+		for _, c := range []struct{ method, path string }{
+			{"GET", "/v1/sprites"},
+			{"POST", "/v1/sprites/" + e.Sprite + "/checkpoint"},
+		} {
+			before := len(r.f.Calls())
+			e.API.Raw(ctx, c.method, c.path, nil, nil)
+			if len(r.f.Calls()) != before+1 {
+				failures = append(failures, fmt.Sprintf("%s %s: must reach the fake, calls %d -> %d", c.method, c.path, before, len(r.f.Calls())))
+			}
+		}
+		return fine(ctx, e)
+	})).Run(context.Background())
+	for _, f := range failures {
+		t.Errorf("guarded raw: %s", f)
+	}
+	if r.creates() != 1 {
+		t.Fatalf("%d creates reached the server, want 1", r.creates())
+	}
+	if rep.Exit != ExitOK {
+		t.Fatalf("exit %d", rep.Exit)
+	}
+}
+
 func TestRunnerRefusesANameOutsideItsPrefix(t *testing.T) {
 	r := newRig(t, nil)
 	var err1, err2 error
