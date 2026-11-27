@@ -18,16 +18,16 @@ func shq(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'
 // shreds the key at once, checks out and verifies commit, builds with the recipe in
 // buildrecipe.sh, and execs the result only if its sha256 equals sum, under umask 022 (the stub
 // itself runs under 077 for the key; the agent must create 0755 dirs the job user can traverse). BITC_STUB_DIR is for the
-// stub's own unit test only. BITC_DEPLOY_KEY is moved into an unexported shell variable and unset before the key file is written, and is given back only on the agent's exec line.
+// stub's own unit test only. BITC_DEPLOY_KEY and RUNPOD_API_KEY are moved into unexported shell variables and unset before the stub's first command, and are given back only on the agent's exec line.
 func StubBuild(cloneURL, ref, commit, sum string) string {
 	return fmt.Sprintf(`set -eu
+bitc_key=$BITC_DEPLOY_KEY; bitc_rk=${RUNPOD_API_KEY-}; unset BITC_DEPLOY_KEY RUNPOD_API_KEY
 PATH=$PATH:/usr/local/go/bin
 %[1]s
 d=${BITC_STUB_DIR:-/root/.bitc-agent}; mkdir -p "$d"; chmod 700 "$d"
 k=$d/k; src=$d/src; rm -rf "$k" "$src"; umask 077; mkdir -m 700 "$k" "$src"
 wipe() { { shred -u "$k/key" 2>/dev/null || rm -f "$k/key"; } || :; }
 trap wipe EXIT
-bitc_key=$BITC_DEPLOY_KEY; unset BITC_DEPLOY_KEY
 printf '%%s\n' "$bitc_key" > "$k/key"; chmod 600 "$k/key"
 printf '%%s\n' "$BITC_KNOWN_HOSTS" > "$k/known_hosts"
 cd "$src"; git init -q .
@@ -41,6 +41,6 @@ s=$(sha256sum "$d/bitc.new"); s=${s%%%% *}
 [ "$s" = %[5]s ] || { echo "bitc agent: build sha256 mismatch" >&2; exit 1; }
 cd "$d"; chmod -R u+w "$src" "$HOME" "$GOCACHE" "$GOMODCACHE" 2>/dev/null || :
 rm -rf "$src" "$HOME" "$GOCACHE" "$GOMODCACHE" "$k"
-mv "$d/bitc.new" "$d/bitc"; chmod 700 "$d/bitc"; umask 022; BITC_DEPLOY_KEY=$bitc_key exec "$d/bitc" __agent
+mv "$d/bitc.new" "$d/bitc"; chmod 700 "$d/bitc"; umask 022; BITC_DEPLOY_KEY=$bitc_key RUNPOD_API_KEY=$bitc_rk exec "$d/bitc" __agent
 `, buildRecipe, shq(cloneURL), shq(ref), shq(commit), shq(sum))
 }
