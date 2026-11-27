@@ -26,6 +26,30 @@ func TestRawSendsOnlyV1Paths(t *testing.T) {
 	}
 }
 
+func TestRawRefusesSemicolonPaths(t *testing.T) {
+	f, c := newFake(t, spritesfake.Options{})
+	ctx := context.Background()
+	for _, tc := range []struct{ method, path string }{
+		{"POST", "/v1/sprites;x"},
+		{"POST", "/v1/sprites;"},
+		{"GET", "/v1/sprites;x"},
+		{"GET", "/v1/;/sprites"},
+		{"DELETE", "/v1/sprites/bitc-a;x"},
+	} {
+		before := len(f.Calls())
+		code, _ := c.Raw(ctx, tc.method, tc.path, nil, nil)
+		if code != 0 {
+			t.Errorf("Raw %s %s answered %d, want 0", tc.method, tc.path, code)
+		}
+		if n := len(f.Calls()); n != before {
+			t.Errorf("Raw %s %s sent %d request(s)", tc.method, tc.path, n-before)
+		}
+	}
+	if code, _ := c.Raw(ctx, "GET", "/v1/sprites", nil, nil); code != 200 {
+		t.Errorf("Raw GET /v1/sprites = %d, want 200", code)
+	}
+}
+
 func TestRawRefusesNetworkPolicyWrites(t *testing.T) {
 	f, c := newFake(t, spritesfake.Options{})
 	ctx := context.Background()
