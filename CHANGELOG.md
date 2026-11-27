@@ -9,6 +9,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The build agent's start stub no longer leaves the deploy key in the environment of the checkout and the build: it unsets BITC_DEPLOY_KEY once the key file is written and gives it back only to the agent it execs ([#73](https://github.com/Exploded-views/bitc/issues/73)).
 - `status` on macOS says `memory: not used on macOS (no memory admission)` instead of `memory: unreadable (/proc/meminfo)`, and `status --json` gains `memory.applies` (false off Linux) ([#49](https://github.com/Exploded-views/bitc/issues/49)).
 - `bitc status` text prints each holder on one line: control characters in its command (a newline in a `bash -c` script, a tab, CR, ESC) are escaped as `\n`, `\t`, `\r`, `\x1b`, and a very long command is shortened with ` [truncated]`; `--json` keeps the exact argv ([#50](https://github.com/Exploded-views/bitc/issues/50)).
 - Every Sprites network policy bitc sets now ends in a catch-all deny rule
