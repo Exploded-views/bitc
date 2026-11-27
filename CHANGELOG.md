@@ -9,7 +9,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- The Sprites probe kit's fallback delete, used for a name the client refuses, now escapes the name once. It used to escape it twice, so the server could answer 404 for a Sprite that was still live and the kit took it as deleted.
+- The Sprites probe kit's fallback delete, used for a name the client refuses, now sends the name escaped once as a single path segment (including `;` and `,`) through its own request rather than the raw request. It used to escape it twice, so the server could answer 404 for a Sprite that was still live and the kit took it as deleted.
 - The Sprites probe kit's raw request now sends a path only when each segment after `/v1/` is plain letters, digits, `.`, `_`, `~` or `-`; anything else, such as `%`, a control byte or an empty segment, is refused and nothing is sent.
 - The Sprites probe kit's raw request refuses a path containing `;` and sends nothing, as it already does for `?` and `#`.
 - The Sprites probe kit's one-live-Sprite guard now cleans a raw request's path and ignores its case before refusing a create, so a spelling such as `/v1//sprites`, `/v1/./sprites` or `/v1/Sprites` is refused too ([#74](https://github.com/Exploded-views/bitc/issues/74)).

@@ -163,6 +163,10 @@ func (g guarded) DeleteSprite(ctx context.Context, name string) error {
 	return err
 }
 
+// RawDeleteSprite is refused: only deleteAny (which is handed the unguarded API) may raw-delete,
+// so a probe cannot skip confirmDeleted.
+func (g guarded) RawDeleteSprite(ctx context.Context, name string) (int, []byte) { return 0, nil }
+
 // deleteAny deletes name through the client; when the client refuses the name as invalid (the
 // server may still have accepted it, which is what probe 13 looks for) it sends a raw DELETE
 // that escapes the name once. 2xx and 404 both mean the Sprite is gone.

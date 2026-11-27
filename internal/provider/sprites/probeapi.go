@@ -63,14 +63,15 @@ func (c *Client) Raw(ctx context.Context, method, p string, q url.Values, body a
 }
 
 // RawDeleteSprite sends DELETE /v1/sprites/<name>, for a name the typed DeleteSprite refuses (the
-// server may still have accepted it). The name is escaped once, by the URL encoder. It answers 0
-// and sends nothing for an empty name, ".", ".." or a name containing "/" (a "/" would split the
-// segment).
+// server may still have accepted it). The name goes out escaped once with url.PathEscape, as one
+// path segment, so ";" and "," are escaped too and a server cannot read a path parameter out of
+// it. It does not use the raw request. It answers 0 and sends nothing for an empty name, ".", ".."
+// or a name containing "/" (a "/" would split the segment).
 func (c *Client) RawDeleteSprite(ctx context.Context, name string) (int, []byte) {
 	if name == "" || name == "." || name == ".." || strings.Contains(name, "/") {
 		return 0, nil
 	}
-	return c.do(ctx, "DELETE", "/v1/sprites/"+name, nil, nil)
+	return c.doEsc(ctx, "DELETE", "/v1/sprites/"+name, "/v1/sprites/"+url.PathEscape(name), nil, nil)
 }
 
 // Organization reads GET /v1/organization.

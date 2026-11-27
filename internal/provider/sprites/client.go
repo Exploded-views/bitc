@@ -191,6 +191,12 @@ func checkName(n string) error {
 
 // do sends one bounded REST request. code 0 means no answer (network error or timeout).
 func (c *Client) do(ctx context.Context, method, path string, q url.Values, body any) (int, []byte) {
+	return c.doEsc(ctx, method, path, "", q, body)
+}
+
+// doEsc is do with the escaped form of path: when rawPath is not empty it is the path the request
+// line carries, so a name can be escaped as one segment (";" and "," included).
+func (c *Client) doEsc(ctx context.Context, method, path, rawPath string, q url.Values, body any) (int, []byte) {
 	var rd io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -203,6 +209,9 @@ func (c *Client) do(ctx context.Context, method, path string, q url.Values, body
 	defer cancel()
 	u := *c.base
 	u.Path = path
+	if rawPath != "" {
+		u.RawPath = rawPath
+	}
 	u.RawQuery = q.Encode()
 	req, err := http.NewRequestWithContext(ctx, method, u.String(), rd)
 	if err != nil {

@@ -30,18 +30,21 @@ func TestRawSendsOnlyV1Paths(t *testing.T) {
 func TestRawDeleteSpriteEscapesOnce(t *testing.T) {
 	f, c := newFake(t, spritesfake.Options{})
 	ctx := context.Background()
-	f.AddSprite("a b%c", f.Org(), time.Now())
-	code, _ := c.RawDeleteSprite(ctx, "a b%c")
-	if code < 200 || code > 299 {
-		t.Fatalf("RawDeleteSprite answered %d, want 2xx", code)
-	}
-	calls := f.Calls()
-	if len(calls) == 0 {
-		t.Fatal("no request was recorded")
-	}
-	last := calls[len(calls)-1]
-	if last.Method != "DELETE" || last.Path != "/v1/sprites/a b%c" {
-		t.Fatalf("last call = %s %q, want DELETE \"/v1/sprites/a b%%c\"", last.Method, last.Path)
+	for _, name := range []string{"a b%c", "a;b", "a,b", "a+b", "a?b", "a#b", "a" + "\x01" + "b"} {
+		f.AddSprite(name, f.Org(), time.Now())
+		code, _ := c.RawDeleteSprite(ctx, name)
+		if code < 200 || code > 299 {
+			t.Errorf("RawDeleteSprite(%q) answered %d, want 2xx", name, code)
+			continue
+		}
+		calls := f.Calls()
+		last := calls[len(calls)-1]
+		if last.Method != "DELETE" || last.Path != "/v1/sprites/"+name {
+			t.Errorf("RawDeleteSprite(%q): last call = %s %q", name, last.Method, last.Path)
+		}
+		if want := "/v1/sprites/" + url.PathEscape(name); last.Escaped != want {
+			t.Errorf("RawDeleteSprite(%q): sent %q, want %q", name, last.Escaped, want)
+		}
 	}
 	for _, name := range []string{"", ".", "..", "a/b"} {
 		before := len(f.Calls())
