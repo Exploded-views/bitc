@@ -263,6 +263,7 @@ rows = [
   { id = "RB8", task = "2.2b", ported = "TestRB8_StubPassesTheURLLiterallyToCurl", desc = "the download stub hands the agent URL to curl exactly as configured: a $ or a backtick in it is not expanded by sh" },
   { id = "RB9", task = "2.2b", ported = "TestRB9_StubPassesTheURLLiterallyToWget", desc = "the download stub hands the agent URL to wget exactly as configured, on the wget path" },
   { id = "RB10", task = "2.2b", ported = "TestRB10_StubComparesTheSumLiterally", desc = "the download stub single-quotes the expected sha256, so a sum holding a shell variable is compared literally and never expands to the real sum" },
+  { id = "RB11", task = "2.2b", ported = "TestRB11_ToolURLWithWhitespaceOrControlCharactersIsRefused", desc = "a remote tool url holding whitespace or a control character is refused at config load (exit 78), as the agent url is" },
 
   # RE: pod side (one row per reference block)
   { id = "RE1", task = "2.2b", ported = "TestRE1_BootFetchCheckoutMarkers", desc = "the agent boots, fetches the ref, checks out the sha and brackets the command's output with BEGIN and EXIT markers" },

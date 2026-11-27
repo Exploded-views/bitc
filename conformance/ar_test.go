@@ -366,7 +366,7 @@ func TestAR14_AgentURLWithWhitespaceOrControlCharactersIsRefused(t *testing.T) {
 	// each escape is TOML basic-string syntax, decoded by the config loader
 	for name, esc := range map[string]string{
 		"space": ` `, "tab": `\t`, "newline": `\n`, "carriage return": `\r`,
-		"DEL": `\u007F`, "NEL": `\u0085`, "NBSP": ` `, "em space": ` `,
+		"DEL": `\u007F`, "NEL": `\u0085`, "NBSP": string(rune(0x00A0)), "em space": string(rune(0x2003)),
 	} {
 		h := harness.New(t)
 		h.HostConfig(arHostHead + `agent = { source = "url", url = "https://h.invalid/bitc` + esc + `x", path = "/a" }` + "\n")

@@ -204,6 +204,28 @@ func TestRB4_ToolsArePinned(t *testing.T) {
 	}
 }
 
+func TestRB11_ToolURLWithWhitespaceOrControlCharactersIsRefused(t *testing.T) {
+	// each escape is TOML basic-string syntax, decoded by the config loader
+	for name, esc := range map[string]string{
+		"space": " ", "tab": `\t`, "newline": `\n`, "DEL": `\u007F`, "NEL": `\u0085`,
+	} {
+		h := harness.New(t)
+		h.HostConfig("[pools.heavy]\n")
+		h.Cwd = h.Repo("app", map[string]string{".bitc.toml": "version = 1\n[remote]\ntools = [{ name = \"node\", url = \"https://x.invalid/n" + esc + ".tgz\", sha256 = \"" + strings.Repeat("a", 64) + "\" }]\n"})
+		r := h.Run("config", "check")
+		if r.Code != 78 || !strings.Contains(r.Stderr, "remote.tools[0].url must not contain whitespace or control characters") {
+			t.Errorf("%s: %+v", name, r)
+		}
+	}
+	// only whitespace and control characters are refused: shell metacharacters still pass
+	h := harness.New(t)
+	h.HostConfig("[pools.heavy]\n")
+	h.Cwd = h.Repo("app", map[string]string{".bitc.toml": "version = 1\n[remote]\ntools = [{ name = \"node\", url = \"https://x.invalid/a$b``c'd.tgz\", sha256 = \"" + strings.Repeat("a", 64) + "\" }]\n"})
+	if r := h.Run("config", "check"); r.Code != 0 {
+		t.Errorf("metacharacters: %+v", r)
+	}
+}
+
 func TestAG1_PrivilegedSuiteCompilesWithItsSixChecks(t *testing.T) {
 	out, err := exec.Command("go", "test", "-tags", "privileged", "-list", "^TestPrivilegedAgent$", "../internal/agent/").CombinedOutput()
 	if err != nil || !strings.Contains(string(out), "TestPrivilegedAgent") {
