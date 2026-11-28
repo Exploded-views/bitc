@@ -27,6 +27,7 @@ package execgate
 
 import (
 	"encoding/binary"
+	"errors"
 	"os"
 	"os/signal"
 	"strconv"
@@ -96,7 +97,7 @@ func run(args []string) {
 	var b [1]byte
 	for {
 		n, err := unix.Read(gatefd, b[:])
-		if err == syscall.EINTR {
+		if errors.Is(err, syscall.EINTR) {
 			continue
 		}
 		if n != 1 || err != nil {
@@ -112,9 +113,9 @@ func run(args []string) {
 			time.Sleep(time.Duration(ms) * time.Millisecond)
 		}
 	}
-	err := syscall.Exec(path, argv, env)
-	errno, ok := err.(syscall.Errno)
-	if !ok {
+	err := syscall.Exec(path, argv, env) //nolint:gosec // the gate execs the command the user asked bitc to run, resolved by the parent's exec.LookPath
+	var errno syscall.Errno
+	if !errors.As(err, &errno) {
 		errno = syscall.EINVAL
 	}
 	var e [4]byte
@@ -136,7 +137,7 @@ func withoutDelay(env []string) []string {
 func writeAll(fd int, b []byte) bool {
 	for len(b) > 0 {
 		n, err := unix.Write(fd, b)
-		if err == syscall.EINTR {
+		if errors.Is(err, syscall.EINTR) {
 			continue
 		}
 		if err != nil || n <= 0 {

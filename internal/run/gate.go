@@ -33,6 +33,10 @@ type gate struct {
 	result  chan gateResult // after the hello: the exec's outcome, sent when the status pipe ends
 }
 
+// selfExeFn is selfExe, a seam for a test that points the gate at a path that cannot run. A test
+// that sets it must not use t.Parallel.
+var selfExeFn = selfExe
+
 // setupError is a failure to set the gate up, as against a failure to start the command.
 type setupError struct{ error }
 
@@ -73,7 +77,7 @@ func startGate(lookup *exec.Cmd, s ExecSpec, setpgid bool) (*gate, error) {
 	if lookup.Err != nil { // today's answer, e.g. "executable file not found in $PATH"
 		return nil, lookup.Err
 	}
-	self, err := selfExe()
+	self, err := selfExeFn()
 	if err != nil {
 		return nil, setupError{fmt.Errorf("the exec gate: %w", err)}
 	}
@@ -128,8 +132,12 @@ func startGate(lookup *exec.Cmd, s ExecSpec, setpgid bool) (*gate, error) {
 	if err != nil {
 		closeAll(gateW, statR)
 		var pe *fs.PathError
-		if errors.As(err, &pe) && pe.Op == "fork/exec" { // name the command, never bitc
-			err = &fs.PathError{Op: "fork/exec", Path: lookup.Path, Err: pe.Err}
+		if errors.As(err, &pe) && pe.Op == "fork/exec" {
+			// The child names the gate binary for a chdir failure too, so a bad Dir is told apart first.
+			if pe.Path == self && dirUsable(s.Dir) { // the gate binary itself cannot run: bitc's failure, not the command's
+				return nil, setupError{fmt.Errorf("the exec gate: %w", err)}
+			}
+			err = &fs.PathError{Op: "fork/exec", Path: lookup.Path, Err: pe.Err} // name the command, never bitc
 		}
 		return nil, err
 	}
@@ -150,6 +158,15 @@ func startGate(lookup *exec.Cmd, s ExecSpec, setpgid bool) (*gate, error) {
 		gt.result <- gateResult{errno: syscall.Errno(binary.LittleEndian.Uint32(e[:]))}
 	})
 	return gt, nil
+}
+
+// dirUsable reports whether the command's working directory (empty: bitc's own) can be entered.
+func dirUsable(dir string) bool {
+	if dir == "" {
+		return true
+	}
+	fi, err := os.Stat(dir)
+	return err == nil && fi.IsDir() && unix.Access(dir, unix.X_OK) == nil
 }
 
 // releaseNow lets the gate exec the command; a gate that is already gone is not an error.

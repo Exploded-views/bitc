@@ -74,7 +74,7 @@ var handled = []os.Signal{syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, sysca
 // forwarded. SIGKILL is never held.
 func Exec(ctx context.Context, s ExecSpec) (ExecResult, error) {
 	tty := isTTY(s.Stdin)
-	lookup := exec.Command(s.Argv[0], s.Argv[1:]...) // the PATH lookup stays the parent's
+	resolved := exec.Command(s.Argv[0], s.Argv[1:]...) // the PATH lookup stays the parent's
 
 	hs := handled
 	if s.NoHangup {
@@ -108,7 +108,7 @@ func Exec(ctx context.Context, s ExecSpec) (ExecResult, error) {
 		// Pdeathsig belongs to the thread that forked the child: keep this goroutine on its
 		// thread until Wait returns, so the child is killed only when bitc itself dies.
 		runtime.LockOSThread()
-		g, err := startGate(lookup, s, !tty)
+		g, err := startGate(resolved, s, !tty)
 		if err == nil {
 			gt = g
 			if s.Started != nil {
@@ -136,7 +136,17 @@ func Exec(ctx context.Context, s ExecSpec) (ExecResult, error) {
 	}
 	cmd := gt.cmd
 	pid := cmd.Process.Pid
-	if !<-gt.hello { // the gate ended before it said hello: the command never ran
+	var hello bool
+	select {
+	case hello = <-gt.hello:
+	case <-ctx.Done(): // as a cancel does later: the gate has not released the command, so it just ends
+		_ = cmd.Process.Kill() // the gate, by its exact pid
+		_ = gt.release.Close()
+		<-done
+		return ExecResult{Code: 128 + int(syscall.SIGTERM), Interrupted: syscall.SIGTERM}, nil
+	}
+	if !hello { // the gate ended before it said hello: the command never ran
+		_ = gt.release.Close()
 		err := <-done
 		if ws, ok := cmd.ProcessState.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
 			return ExecResult{Code: codeOf(err, cmd.ProcessState)}, nil // a signal to the group, as the command would have died
@@ -214,7 +224,7 @@ func Exec(ctx context.Context, s ExecSpec) (ExecResult, error) {
 				execErr = (<-status).errno
 			}
 			if execErr != 0 {
-				perr := &fs.PathError{Op: "fork/exec", Path: lookup.Path, Err: execErr}
+				perr := &fs.PathError{Op: "fork/exec", Path: resolved.Path, Err: execErr}
 				return ExecResult{Code: startCode(perr), StartErr: perr}, nil
 			}
 			res := ExecResult{Code: codeOf(err, cmd.ProcessState), Interrupted: received}

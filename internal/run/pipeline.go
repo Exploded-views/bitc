@@ -385,11 +385,7 @@ func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Wri
 			fmt.Fprintf(stderr, "bitc: %s: post_run hook failed: %s\n", pool.Name, exit.As(err).Reason)
 		}
 	}
-	origin := "command"
-	if outcome == "interrupted" || res.TimedOut {
-		origin = "bitc"
-	}
-	return Outcome{Code: code, Result: Result{Origin: origin, Outcome: outcome, ExitCode: code, Pool: pool.Name,
+	return Outcome{Code: code, Result: Result{Origin: originOf(res), Outcome: outcome, ExitCode: code, Pool: pool.Name,
 		Slot: hold.Slot, Units: hold.Counts, Provider: "local", Job: p.Job, HoldStarted: hold.Started.UTC().Format(time.RFC3339Nano),
 		WaitMS: hold.WaitMS, RunMS: runMS, Head: head, TreeClean: treeClean, Cwd: eff.Cwd}}
 }
@@ -408,6 +404,16 @@ func outcomeOf(res ExecResult) string {
 		return "command-failed"
 	}
 	return "ok"
+}
+
+// originOf is who ended the run: bitc for an interrupt, the time limit or its own failure to run
+// the command (as resultOf says for every other unavailable result), else the command.
+func originOf(res ExecResult) string {
+	switch outcomeOf(res) {
+	case "interrupted", "timed-out", "unavailable":
+		return "bitc"
+	}
+	return "command"
 }
 
 func scaled(eff *config.Effective, hooks []config.Hook) []config.Hook {

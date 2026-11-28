@@ -10,9 +10,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/Exploded-views/bitc/internal/proc"
 )
@@ -294,6 +297,102 @@ func TestHelperInheritedFd(t *testing.T) {
 	r, err := Exec(context.Background(), spec(t, "sh", "-c", "echo hi >&3"))
 	if err != nil || r.Code != 0 {
 		t.Fatalf("%+v %v", r, err)
+	}
+}
+
+// T4c: inherited fds above a hole in the supervisor's own fd numbers reach the command at the same
+// numbers, and starting the gate does not hang. The helper has fds 3 up to the inherited one closed
+// except those the runtime and the test open, which is the layout where Go's child-side fd shuffle
+// could meet a copy bitc made.
+func TestInheritedFdAboveAHoleIsKept(t *testing.T) {
+	cases := []struct {
+		name  string
+		words map[int]string // inherited fd -> the word the command writes to it
+	}{
+		{"fd 9", map[int]string{9: "hi"}},
+		{"fd 20", map[int]string{20: "hi"}},
+		{"fds 9 and 20", map[int]string{9: "nine", 20: "twenty"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			top := 0
+			files := map[int]*os.File{}
+			var spec []string
+			for fd, w := range c.words {
+				f, err := os.Create(filepath.Join(t.TempDir(), "fd"+strconv.Itoa(fd)))
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer f.Close()
+				files[fd] = f
+				top = max(top, fd)
+				spec = append(spec, strconv.Itoa(fd)+":"+w)
+			}
+			extra := make([]*os.File, top-2) // slot i is descriptor 3+i; the rest stay nil (closed)
+			for fd, f := range files {
+				extra[fd-3] = f
+			}
+			out, err := os.Create(filepath.Join(t.TempDir(), "helper.out"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer out.Close()
+			h := exec.Command(os.Args[0], "-test.run=^TestHelperInheritedFdMulti$")
+			h.Env = append(os.Environ(), "BITC_GATE_HELPER=inherited-fd-multi", "BITC_GATE_FDS="+strings.Join(spec, ","))
+			h.ExtraFiles = extra
+			h.Stdout, h.Stderr = out, out
+			if err := h.Start(); err != nil {
+				t.Fatal(err)
+			}
+			var hung atomic.Bool
+			timer := time.AfterFunc(20*time.Second, func() {
+				hung.Store(true)
+				_ = h.Process.Kill() // the helper, by its exact pid
+			})
+			err = h.Wait()
+			timer.Stop()
+			if hung.Load() {
+				t.Fatal("hung")
+			}
+			if err != nil {
+				b, _ := os.ReadFile(out.Name())
+				t.Fatalf("the helper failed: %v\n%s", err, b)
+			}
+			for fd, w := range c.words {
+				b, _ := os.ReadFile(files[fd].Name())
+				if string(b) != w+"\n" {
+					t.Errorf("fd %d holds %q, want %q", fd, b, w+"\n")
+				}
+			}
+		})
+	}
+}
+
+// TestHelperInheritedFdMulti runs a command that writes a word to each inherited fd; it does
+// nothing in a normal run.
+func TestHelperInheritedFdMulti(t *testing.T) {
+	if os.Getenv("BITC_GATE_HELPER") != "inherited-fd-multi" {
+		return
+	}
+	var script strings.Builder
+	for _, e := range strings.Split(os.Getenv("BITC_GATE_FDS"), ",") {
+		fd, word, _ := strings.Cut(e, ":")
+		if n, _ := strconv.Atoi(fd); n > 9 { // dash cannot redirect to a two-digit fd
+			fmt.Fprintf(&script, "echo %s > /dev/fd/%s; ", word, fd)
+		} else {
+			fmt.Fprintf(&script, "echo %s >&%s; ", word, fd)
+		}
+	}
+	r, err := Exec(context.Background(), spec(t, "sh", "-c", script.String()))
+	if err != nil || r.Code != 0 {
+		t.Fatalf("%+v %v", r, err)
+	}
+	for _, e := range strings.Split(os.Getenv("BITC_GATE_FDS"), ",") { // bitc's own fds stay open
+		fd, _, _ := strings.Cut(e, ":")
+		n, _ := strconv.Atoi(fd)
+		if _, err := unix.FcntlInt(uintptr(n), unix.F_GETFD, 0); err != nil {
+			t.Errorf("inherited fd %d is closed after Exec: %v", n, err)
+		}
 	}
 }
 

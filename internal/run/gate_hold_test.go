@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -32,6 +33,9 @@ func TestFailClosedWhenTheRecordFails(t *testing.T) {
 	if got := outcomeOf(r); got != "unavailable" {
 		t.Errorf("outcome %q, want unavailable", got)
 	}
+	if got := originOf(r); got != "bitc" {
+		t.Errorf("origin %q, want bitc", got)
+	}
 	if appears(marker, 300*time.Millisecond) {
 		t.Error("the command ran although it was not recorded")
 	}
@@ -49,6 +53,42 @@ func TestFailClosedWhenTheRecordFails(t *testing.T) {
 	}
 	if len(left) != 0 {
 		t.Errorf("processes of group %d remain: %v", gotPgid, left)
+	}
+}
+
+// A gate binary that cannot be exec'd is bitc's failure: code 69, naming the exec gate and its
+// path, not the user's command.
+func TestUnrunnableGateBinaryIsASetupFailure(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "no-such-bitc")
+	selfExeFn = func() (string, error) { return missing, nil }
+	t.Cleanup(func() { selfExeFn = selfExe })
+	r, err := Exec(context.Background(), spec(t, "sh", "-c", "true"))
+	if err != nil || r.Code != exit.Unavailable || r.StartErr == nil {
+		t.Fatalf("%+v %v, want code 69", r, err)
+	}
+	msg := r.StartErr.Error()
+	if !strings.Contains(msg, "the exec gate") || !strings.Contains(msg, missing) || strings.Contains(msg, "/sh") {
+		t.Errorf("StartErr %q should name the exec gate and %s, not the command", msg, missing)
+	}
+	if got, want := originOf(r), "bitc"; got != want {
+		t.Errorf("origin %q, want %q", got, want)
+	}
+}
+
+// A context that is done before the gate says hello ends the run as a cancel would.
+func TestCancelBeforeTheHelloEndsTheRun(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	done := make(chan ExecResult, 1)
+	s := spec(t, "sleep", "30")
+	go func() { r, _ := Exec(ctx, s); done <- r }()
+	select {
+	case r := <-done:
+		if r.Code != 143 || r.Interrupted != syscall.SIGTERM {
+			t.Errorf("%+v, want 143 by SIGTERM", r)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Exec did not return")
 	}
 }
 
