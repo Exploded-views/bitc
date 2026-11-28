@@ -80,7 +80,7 @@ func TestASignalTakenButNotYetRecordedReachesExec(t *testing.T) {
 	var once sync.Once
 	free := func() { once.Do(func() { close(release) }) }
 	signalRecorded = func() { <-release }
-	beforeRecord = free // Exec has started: the check before it has passed
+	beforeRecord = func(int) { free() } // Exec has started: the check before it has passed
 	t.Cleanup(func() { signalRecorded, beforeRecord = nil, nil; free() })
 	devnull, _ := os.Open(os.DevNull)
 	t.Cleanup(func() { devnull.Close() })

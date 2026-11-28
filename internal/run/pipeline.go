@@ -353,9 +353,9 @@ func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Wri
 	res, err := Exec(parent, ExecSpec{
 		Argv: argv, Env: env, Dir: inv.Cwd, Stdin: inv.Stdin, Stdout: inv.Stdout, Stderr: inv.Stderr,
 		OnSignal: pool.OnSignal, Grace: eff.Scale(eff.Host.Grace), Timeout: eff.Scale(pool.Timeout), MaxSignalWait: eff.Scale(eff.Host.MaxSignalWait),
-		Started:  func(pid, pgid int, start uint64) { _ = hold.SetProcess(pid, pgid, start) },
-		Pending:  gap,          // Exec stops it once its own handler is registered
-		NoHangup: inv.Detached, // spec 7: a hangup neither escalates nor reaches the command
+		Started:  hold.SetProcess, // the command runs only once this has recorded it
+		Pending:  gap,             // Exec stops it once its own handler is registered
+		NoHangup: inv.Detached,    // spec 7: a hangup neither escalates nor reaches the command
 	})
 	if err != nil {
 		return failed(err)
@@ -368,15 +368,7 @@ func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Wri
 	}
 	runMS := time.Since(t0).Milliseconds()
 	code := res.Code
-	outcome := "ok"
-	switch {
-	case res.Interrupted != 0 && code == 128+int(res.Interrupted):
-		outcome = "interrupted"
-	case res.TimedOut:
-		outcome = "timed-out"
-	case code != 0:
-		outcome = "command-failed"
-	}
+	outcome := outcomeOf(res)
 	hist(state.Event{Event: "end", Slot: hold.Slot, Units: hold.Counts, Nested: hold.Nested, RunMS: &runMS, Exit: &code, Outcome: outcome})
 	postEnv := append(append([]string{}, env...), "BITC_EXIT="+strconv.Itoa(code))
 	// A signal during post_run cuts it short (the hook's group is killed); the command's own
@@ -393,13 +385,35 @@ func runLocal(parent context.Context, inv Invocation, p *Prepared, stderr io.Wri
 			fmt.Fprintf(stderr, "bitc: %s: post_run hook failed: %s\n", pool.Name, exit.As(err).Reason)
 		}
 	}
-	origin := "command"
-	if outcome == "interrupted" || res.TimedOut {
-		origin = "bitc"
-	}
-	return Outcome{Code: code, Result: Result{Origin: origin, Outcome: outcome, ExitCode: code, Pool: pool.Name,
+	return Outcome{Code: code, Result: Result{Origin: originOf(res), Outcome: outcome, ExitCode: code, Pool: pool.Name,
 		Slot: hold.Slot, Units: hold.Counts, Provider: "local", Job: p.Job, HoldStarted: hold.Started.UTC().Format(time.RFC3339Nano),
 		WaitMS: hold.WaitMS, RunMS: runMS, Head: head, TreeClean: treeClean, Cwd: eff.Cwd}}
+}
+
+// outcomeOf classifies how the command ended. A 69 with a StartErr is bitc's own failure to run
+// the command (it could not record it, or the exec gate failed), not a command that exited 69.
+func outcomeOf(res ExecResult) string {
+	switch {
+	case res.Interrupted != 0 && res.Code == 128+int(res.Interrupted):
+		return "interrupted"
+	case res.TimedOut:
+		return "timed-out"
+	case res.StartErr != nil && res.Code == exit.Unavailable:
+		return "unavailable"
+	case res.Code != 0:
+		return "command-failed"
+	}
+	return "ok"
+}
+
+// originOf is who ended the run: bitc for an interrupt, the time limit or its own failure to run
+// the command (as resultOf says for every other unavailable result), else the command.
+func originOf(res ExecResult) string {
+	switch outcomeOf(res) {
+	case "interrupted", "timed-out", "unavailable":
+		return "bitc"
+	}
+	return "command"
 }
 
 func scaled(eff *config.Effective, hooks []config.Hook) []config.Hook {

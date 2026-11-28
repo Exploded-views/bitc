@@ -33,7 +33,7 @@ func TestTTYStdinStartedWithoutAGroup(t *testing.T) {
 	s := spec(t, "true")
 	s.Stdin = sl
 	gotPgid := -1
-	s.Started = func(_, pgid int, _ uint64) { gotPgid = pgid }
+	s.Started = func(_, pgid int, _ uint64) error { gotPgid = pgid; return nil }
 	if _, err := Exec(context.Background(), s); err != nil {
 		t.Fatal(err)
 	}

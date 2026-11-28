@@ -9,6 +9,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A command run under a hold no longer outlives a supervisor killed before the hold recorded the command's process group: the command now starts only after it is recorded.
 - The agent refuses a slot account uid or gid above 2147483647, since it uses them as int.
 - The reference plugin's fake API refuses a job id that is not a plain id and serves only the result files it documents.
 - The manual `privileged` workflow now tests the commit of the branch it is dispatched on, and no longer takes a ref to check out.

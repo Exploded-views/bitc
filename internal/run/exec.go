@@ -29,9 +29,11 @@ type ExecSpec struct {
 	Grace         time.Duration
 	Timeout       time.Duration // > 0: terminate the command this long after it started (spec 6.4)
 	MaxSignalWait time.Duration
-	Started       func(pid, pgid int, leaderStart uint64)
-	Pending       chan os.Signal // optional: a channel the caller registered; Exec takes it over
-	NoHangup      bool           // detached supervisor (spec 7): SIGHUP is neither handled nor forwarded
+	// Started records the command's process. The command does not run until it returns: an error
+	// ends the run with code 69 and the command never executes.
+	Started  func(pid, pgid int, leaderStart uint64) error
+	Pending  chan os.Signal // optional: a channel the caller registered; Exec takes it over
+	NoHangup bool           // detached supervisor (spec 7): SIGHUP is neither handled nor forwarded
 }
 
 // ExecResult is how the command ended.
@@ -39,7 +41,7 @@ type ExecResult struct {
 	Code        int            // the command's code, 128+N if it died of signal N, or 128+N after terminate; 124 after the time limit
 	TimedOut    bool           // the time limit ended the command (Code is exit.TimedOut)
 	Interrupted syscall.Signal // the signal bitc received, 0 if none
-	StartErr    error          // the command could not start (Code 126 or 127)
+	StartErr    error          // the command could not start (Code 126 or 127), or bitc could not record it (Code 69)
 }
 
 func isTTY(f *os.File) bool {
@@ -50,21 +52,33 @@ func isTTY(f *os.File) bool {
 	return err == nil
 }
 
-// beforeRecord and afterWait are test seams: beforeRecord runs before Exec records the started
-// command (Started), afterWait once the command has been reaped. They are package globals read by
-// every Exec, so a test in internal/run that sets them must not use t.Parallel (nor run beside
-// one that does).
-var beforeRecord, afterWait func()
+// afterGateStart, beforeRecord, afterWait, onSignal and onForward are test seams. afterGateStart
+// runs, with the pid of the started process (the exec gate), as soon as it has started; beforeRecord
+// with the same pid before Exec records it (Started); afterWait once that process has been reaped;
+// onSignal each time the loop takes a signal off its channel; onForward each time Exec sends a
+// catchable signal to the command, with whether the exec had already happened. They are package
+// globals read by every Exec, so a test in internal/run that sets them must not use t.Parallel
+// (nor run beside one that does).
+var (
+	afterGateStart func(pid int)
+	beforeRecord   func(pid int)
+	afterWait      func()
+	onSignal       func(sig syscall.Signal)
+	onForward      func(sig syscall.Signal, execDone bool)
+)
 
 var handled = []os.Signal{syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT}
 
 // Exec runs the command as bitc's child and returns how it ended (spec 6.4).
+//
+// The command is started through an exec gate (gate.go): its process exists, in its own group,
+// but runs nothing until Started has recorded it. Signals bitc receives before the exec has
+// happened are queued and forwarded once it has, so the command sees each of them as without a
+// gate; the grace and max_signal_wait clocks start when the signal is received, not when it is
+// forwarded. SIGKILL is never held.
 func Exec(ctx context.Context, s ExecSpec) (ExecResult, error) {
 	tty := isTTY(s.Stdin)
-	cmd := exec.Command(s.Argv[0], s.Argv[1:]...)
-	cmd.Env, cmd.Dir = s.Env, s.Dir
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = s.Stdin, s.Stdout, s.Stderr
-	cmd.SysProcAttr = childAttr(!tty)
+	resolved := exec.Command(s.Argv[0], s.Argv[1:]...) // the PATH lookup stays the parent's
 
 	hs := handled
 	if s.NoHangup {
@@ -91,22 +105,26 @@ func Exec(ctx context.Context, s ExecSpec) (ExecResult, error) {
 
 	startErr := make(chan error, 1)
 	done := make(chan error, 1)
-	var leader proc.Stat // read before Wait can reap the command; published by the send on startErr
+	var gt *gate
+	var leader proc.Stat // read before Wait can reap the gate; published by the send on startErr
 	var leaderErr error
 	exit.Go(func() {
 		// Pdeathsig belongs to the thread that forked the child: keep this goroutine on its
 		// thread until Wait returns, so the child is killed only when bitc itself dies.
 		runtime.LockOSThread()
-		err := cmd.Start()
-		if err == nil && s.Started != nil {
-			leader, leaderErr = proc.ReadStat(cmd.Process.Pid)
+		g, err := startGate(resolved, s, !tty)
+		if err == nil {
+			gt = g
+			if s.Started != nil {
+				leader, leaderErr = proc.ReadStat(g.cmd.Process.Pid)
+			}
 		}
 		startErr <- err
 		if err != nil {
 			runtime.UnlockOSThread()
 			return
 		}
-		err = cmd.Wait()
+		err = g.cmd.Wait()
 		if afterWait != nil {
 			afterWait()
 		}
@@ -114,36 +132,82 @@ func Exec(ctx context.Context, s ExecSpec) (ExecResult, error) {
 		runtime.UnlockOSThread()
 	})
 	if err := <-startErr; err != nil {
-		code := 127
-		if errors.Is(err, fs.ErrPermission) || errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.ENOEXEC) {
-			code = 126
+		var se setupError
+		if errors.As(err, &se) {
+			return ExecResult{Code: exit.Unavailable, StartErr: se.error}, nil
 		}
-		return ExecResult{Code: code, StartErr: err}, nil
+		return ExecResult{Code: startCode(err), StartErr: err}, nil
+	}
+	cmd := gt.cmd
+	pid := cmd.Process.Pid
+	if afterGateStart != nil {
+		afterGateStart(pid)
+	}
+	var hello bool
+	select {
+	case hello = <-gt.hello:
+	case <-ctx.Done(): // as a cancel does later: the gate has not released the command, so it just ends
+		_ = cmd.Process.Kill() // the gate, by its exact pid
+		_ = gt.release.Close()
+		<-done
+		return ExecResult{Code: 128 + int(syscall.SIGTERM), Interrupted: syscall.SIGTERM}, nil
+	}
+	if !hello { // the gate ended before it said hello: the command never ran
+		_ = gt.release.Close()
+		err := <-done
+		if ws, ok := cmd.ProcessState.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+			return ExecResult{Code: codeOf(err, cmd.ProcessState)}, nil // a signal to the group, as the command would have died
+		}
+		return ExecResult{Code: exit.Unavailable, StartErr: errors.New("the exec gate did not start")}, nil
 	}
 	if beforeRecord != nil {
-		beforeRecord()
+		beforeRecord(pid)
 	}
-	pid := cmd.Process.Pid
 	pgid := pid
 	if tty {
 		pgid = 0 // the caller's group is not ours: record and signal the command alone
 	}
 	if s.Started != nil {
-		if leaderErr == nil {
-			s.Started(pid, pgid, leader.Start)
+		var err error
+		if leaderErr != nil {
+			err = leaderErr
+		} else {
+			err = s.Started(pid, pgid, leader.Start)
+		}
+		if err != nil { // fail closed: the command is not recorded, so it does not run
+			_ = cmd.Process.Kill() // the gate, by its exact pid
+			_ = gt.release.Close()
+			<-done
+			return ExecResult{Code: exit.Unavailable, StartErr: errors.New("could not record the command")}, nil
 		}
 	}
-	forward := func(sig syscall.Signal) {
+	gt.releaseNow()
+
+	execDone := false // the exec has happened (or failed): forwards go out
+	var held []syscall.Signal
+	var execErr syscall.Errno
+	status := gt.result
+	send := func(sig syscall.Signal) {
 		if tty {
 			_ = syscall.Kill(pid, sig) // leader only: the caller's group is not ours
 		} else {
 			_ = syscall.Kill(-pgid, sig)
 		}
+		if onForward != nil && sig != syscall.SIGKILL {
+			onForward(sig, execDone)
+		}
+	}
+	forward := func(sig syscall.Signal) {
+		if sig == syscall.SIGKILL || execDone {
+			send(sig)
+			return
+		}
+		held = append(held, sig) // until the exec: the gate would die of it, the command would not
 	}
 	var received syscall.Signal
 	terminating, timedOut := false, false
 	var killAt, giveUpAt, limitAt <-chan time.Time
-	if s.Timeout > 0 { // the clock starts with the command, after admission
+	if s.Timeout > 0 { // the clock starts with the command, after admission and the record
 		limit := time.NewTimer(s.Timeout)
 		defer limit.Stop()
 		limitAt = limit.C
@@ -151,7 +215,25 @@ func Exec(ctx context.Context, s ExecSpec) (ExecResult, error) {
 	ctxDone := ctx.Done() // set to nil once handled: a closed channel would spin the loop
 	for {
 		select {
+		case st := <-status:
+			status = nil
+			execDone, execErr = true, st.errno
+			if execErr != 0 { // the gate is leaving: nothing to forward to
+				held = nil
+				continue
+			}
+			for _, sig := range held {
+				send(sig)
+			}
+			held = nil
 		case err := <-done:
+			if status != nil { // the gate's exit ended the status pipe: the result is ready
+				execErr = (<-status).errno
+			}
+			if execErr != 0 {
+				perr := &fs.PathError{Op: "fork/exec", Path: resolved.Path, Err: execErr}
+				return ExecResult{Code: startCode(perr), StartErr: perr}, nil
+			}
 			res := ExecResult{Code: codeOf(err, cmd.ProcessState), Interrupted: received}
 			if !tty {
 				reapStragglers(pgid, s.Grace)
@@ -165,6 +247,9 @@ func Exec(ctx context.Context, s ExecSpec) (ExecResult, error) {
 			return res, nil
 		case sig := <-sigs:
 			n := sig.(syscall.Signal)
+			if onSignal != nil {
+				onSignal(n)
+			}
 			if received == 0 && s.OnSignal == "forward-and-wait" {
 				received = n
 				forward(n)

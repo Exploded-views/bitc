@@ -48,7 +48,7 @@ func TestNotFoundAndNotExecutable(t *testing.T) {
 func TestOwnGroupAndStartedCallback(t *testing.T) {
 	s := spec(t, "sh", "-c", "sleep 0.2")
 	var gotPid, gotPgid int
-	s.Started = func(pid, pgid int, _ uint64) { gotPid, gotPgid = pid, pgid }
+	s.Started = func(pid, pgid int, _ uint64) error { gotPid, gotPgid = pid, pgid; return nil }
 	if _, err := Exec(context.Background(), s); err != nil {
 		t.Fatal(err)
 	}
@@ -116,22 +116,37 @@ func TestCancelledContextDoesNotSpin(t *testing.T) {
 	}
 }
 
-// A command that exits at once is still recorded: Started reads the leader's stat before the
-// command is reaped. The seams hold the record back until the reap, the worst order a loaded
-// host can produce.
+// A process that is reaped before the record is still recorded: Started gets the pid and start
+// read before the reap. What is reaped now is the exec gate, which beforeRecord kills by its
+// exact pid; the seams hold the record back until the reap, the worst order a loaded host can
+// produce. The command never ran, so it leaves no marker.
 func TestStartedRecordsACommandReapedBeforeTheRecord(t *testing.T) {
 	reaped := make(chan struct{})
 	afterWait = func() { close(reaped) }
-	beforeRecord = func() { <-reaped }
+	var killed int
+	beforeRecord = func(pid int) {
+		killed = pid
+		_ = syscall.Kill(pid, syscall.SIGKILL)
+		<-reaped
+	}
 	t.Cleanup(func() { afterWait, beforeRecord = nil, nil })
-	s := spec(t, "true")
-	called := false
-	s.Started = func(pid, pgid int, start uint64) { called = pid > 0 && pgid == pid && start > 0 }
-	if _, err := Exec(context.Background(), s); err != nil {
+	marker := filepath.Join(t.TempDir(), "ran")
+	s := spec(t, "sh", "-c", `echo x > "$1"`, "sh", marker)
+	var gotPid, gotPgid int
+	var gotStart uint64
+	s.Started = func(pid, pgid int, start uint64) error { gotPid, gotPgid, gotStart = pid, pgid, start; return nil }
+	r, err := Exec(context.Background(), s)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if !called {
-		t.Fatal("Started was not called with the leader's pid, pgid and start")
+	if killed <= 0 || gotPid != killed || gotPgid != gotPid || gotStart == 0 {
+		t.Errorf("Started got pid %d pgid %d start %d, the reaped process was %d", gotPid, gotPgid, gotStart, killed)
+	}
+	if r.Code != 137 {
+		t.Errorf("code %d, want 137", r.Code)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Error("the command ran")
 	}
 }
 
