@@ -3,6 +3,7 @@ package run
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,27 +11,49 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"syscall"
 	"testing"
-	"time"
 
 	"golang.org/x/sys/unix"
 
+	"github.com/Exploded-views/bitc/internal/execgate"
 	"github.com/Exploded-views/bitc/internal/proc"
 )
 
-// appears polls for path for up to d and reports whether it showed up.
-func appears(path string, d time.Duration) bool {
-	for deadline := time.Now().Add(d); ; time.Sleep(10 * time.Millisecond) {
-		if _, err := os.Stat(path); err == nil {
-			return true
-		}
-		if time.Now().After(deadline) {
-			return false
-		}
-	}
+// -bypass-gate starts every command directly, as before the gate (bypassGate): the gate tests
+// must fail with it, which shows they fail without the fix.
+func init() {
+	flag.BoolVar(&bypassGate, "bypass-gate", false, "start commands without the exec gate (the gate tests must then fail)")
 }
+
+// hold is the FIFO a test gate blocks on (execgate.HoldEnv). The test keeps its own read-write
+// descriptor on it, so the gate's open never waits for a writer and never sees EOF; one byte
+// written by release lets the gate through its stage.
+type hold struct {
+	path string
+	f    *os.File
+}
+
+func newHold(t *testing.T) *hold {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "hold")
+	if err := unix.Mkfifo(p, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(p, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.Close() })
+	return &hold{path: p, f: f}
+}
+
+// env is the environment that makes the gate wait at stage.
+func (h *hold) env(stage string) []string {
+	return append(os.Environ(), execgate.HoldEnv+"="+h.path, execgate.HoldAtEnv+"="+stage)
+}
+
+func (h *hold) release() { _, _ = h.f.Write([]byte{1}) }
 
 // groupSurvivors lists the live (not zombie) processes of process group pgid that started at or
 // after start, the incarnation the pgid was recorded for.
@@ -45,14 +68,47 @@ func groupSurvivors(pgid int, start uint64) []int {
 	return out
 }
 
-// T1: nothing of the command runs before it is recorded (Started has returned).
+// stragglers lists the live processes of group pgid (started at or after start) that are not the
+// exec gate, once every gate left in the group has exited. A gate has no business outliving its
+// supervisor, but it may still be on its way out: it is waited for (a pidfd on Linux, a kqueue on
+// darwin), never slept on.
+func stragglers(t *testing.T, pgid int, start uint64) []int {
+	t.Helper()
+	for {
+		var gates, others []int
+		for _, p := range groupSurvivors(pgid, start) {
+			if isGate(p) {
+				gates = append(gates, p)
+				continue
+			}
+			// Not the gate: a process that exited since the scan reads as not the gate too.
+			if st, err := proc.ReadStat(p); err == nil && st.Pgrp == pgid && st.State != 'Z' {
+				others = append(others, p)
+			}
+		}
+		if len(gates) == 0 {
+			return others
+		}
+		for _, g := range gates {
+			if err := waitExit(g); err != nil {
+				t.Fatalf("waiting for the gate %d to exit: %v", g, err)
+			}
+		}
+	}
+}
+
+// T1: nothing of the command runs before it is recorded: when Started runs, the started process
+// is still the gate, not the command. After Exec returns the command has been reaped, so the
+// marker is read once.
 func TestExecRunsNothingBeforeTheCommandIsRecorded(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "ran")
 	s := spec(t, "sh", "-c", `echo x > "$1"`, "sh", marker)
-	var started, early bool
+	var started, atGate, early bool
 	s.Started = func(pid, pgid int, start uint64) error {
 		started = true
-		early = appears(marker, 2*time.Second)
+		atGate = isGate(pid)
+		_, err := os.Stat(marker)
+		early = err == nil
 		return nil
 	}
 	r, err := Exec(context.Background(), s)
@@ -61,6 +117,9 @@ func TestExecRunsNothingBeforeTheCommandIsRecorded(t *testing.T) {
 	}
 	if !started {
 		t.Fatal("Started was not called")
+	}
+	if !atGate {
+		t.Error("the started process was already the command when it was recorded")
 	}
 	if early {
 		t.Error("the command ran before it was recorded")
@@ -75,9 +134,11 @@ func TestExecRunsNothingBeforeTheCommandIsRecorded(t *testing.T) {
 func TestSignalToTheGroupBeforeReleaseEndsTheRun(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "ran")
 	s := spec(t, "sh", "-c", `echo x > "$1"`, "sh", marker)
-	var early bool
+	var atGate, early bool
 	s.Started = func(pid, pgid int, start uint64) error {
-		early = appears(marker, 2*time.Second)
+		atGate = isGate(pid)
+		_, err := os.Stat(marker)
+		early = err == nil
 		if pgid <= 0 { // never kill(-0): fail closed, which kills the gate by its pid
 			t.Errorf("pgid %d: the run has no group of its own", pgid)
 			return errors.New("no group")
@@ -89,28 +150,58 @@ func TestSignalToTheGroupBeforeReleaseEndsTheRun(t *testing.T) {
 	if err != nil || r.Code != 143 {
 		t.Errorf("%+v %v, want code 143", r, err)
 	}
+	if !atGate {
+		t.Error("the started process was already the command when its group was signalled")
+	}
 	if early {
 		t.Error("the command ran before it was recorded")
 	}
-	if _, err := os.Stat(marker); err == nil {
+	if _, err := os.Stat(marker); err == nil { // Exec has reaped the group's leader: final
 		t.Error("the command ran after its group was signalled")
 	}
 }
 
+// fifoUnwritten reports whether nothing was ever written to the FIFO at path and still waits to be
+// read: a non-blocking open for reading, then one read that gives 0 bytes (no writer) or EAGAIN
+// (a writer, no data).
+func fifoUnwritten(path string) (bool, error) {
+	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return false, err
+	}
+	defer unix.Close(fd)
+	var b [1]byte
+	n, err := unix.Read(fd, b[:])
+	if errors.Is(err, unix.EAGAIN) {
+		return true, nil
+	}
+	return n == 0 && err == nil, err
+}
+
 // T2: a supervisor that dies after the command started but before it recorded it leaves nothing
 // of the command running. A helper process (this test binary) is the supervisor and kills itself
-// in the beforeRecord seam, once the command has had every chance to fork.
+// in the beforeRecord seam. With the gate it does so at once, the started process being the gate.
+// Without it the started process is sh, and the helper waits until sh has forked its background
+// sleep: sh signals that by opening the FIFO, which the helper reads. That is a handshake, not a
+// timer.
 func TestAKilledSupervisorLeavesNoCommandRunning(t *testing.T) {
 	dir := t.TempDir()
-	marker := filepath.Join(dir, "ran")
+	fifo := filepath.Join(dir, "ran")
+	if err := unix.Mkfifo(fifo, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	kids := filepath.Join(dir, "kids")
 	out, err := os.Create(filepath.Join(dir, "helper.out"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer out.Close()
-	h := exec.Command(os.Args[0], "-test.run=^TestHelperKilledSupervisor$")
-	h.Env = append(os.Environ(), "BITC_GATE_HELPER=killed-supervisor", "BITC_GATE_MARKER="+marker, "BITC_GATE_KIDS="+kids)
+	args := []string{"-test.run=^TestHelperKilledSupervisor$"}
+	if bypassGate {
+		args = append(args, "-bypass-gate")
+	}
+	h := exec.Command(os.Args[0], args...)
+	h.Env = append(os.Environ(), "BITC_GATE_HELPER=killed-supervisor", "BITC_GATE_FIFO="+fifo, "BITC_GATE_KIDS="+kids)
 	h.Stdout, h.Stderr = out, out // files, so Wait does not wait for the command's children
 	err = h.Run()
 	var ee *exec.ExitError
@@ -119,39 +210,24 @@ func TestAKilledSupervisorLeavesNoCommandRunning(t *testing.T) {
 		t.Fatalf("the helper did not kill itself: %v\n%s", err, b)
 	}
 	b, _ := os.ReadFile(kids)
-	var pgid int
+	var pid, pgid int
 	var start uint64
-	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
-		f := strings.Fields(line)
-		if len(f) != 3 {
-			continue
-		}
-		pid, _ := strconv.Atoi(f[0])
-		pg, _ := strconv.Atoi(f[1])
-		if pid > 0 && pid == pg { // the group leader: sh at base, the exec gate with the fix
-			pgid = pid
-			start, _ = strconv.ParseUint(f[2], 10, 64)
-		}
+	if n, _ := fmt.Sscanf(string(b), "%d %d %d", &pid, &pgid, &start); n != 3 || pid <= 0 || pgid <= 0 {
+		t.Fatalf("the helper recorded no started process: %q", b)
 	}
-	if pgid <= 0 {
-		t.Fatalf("the helper recorded no group leader: %q", b)
-	}
+	left := stragglers(t, pgid, start)
 	defer func() {
-		for _, p := range groupSurvivors(pgid, start) {
-			_ = syscall.Kill(p, syscall.SIGKILL) // exact pids, never the group
+		for _, p := range left {
+			if p > 0 {
+				_ = syscall.Kill(p, syscall.SIGKILL) // exact pids, never the group
+			}
 		}
 	}()
-	var left []int
-	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
-		if left = groupSurvivors(pgid, start); len(left) == 0 || time.Now().After(deadline) {
-			break
-		}
-	}
 	if len(left) != 0 {
 		t.Errorf("processes of group %d outlived the killed supervisor: %v", pgid, left)
 	}
-	if _, err := os.Stat(marker); err == nil {
-		t.Error("the command ran although its supervisor died before recording it")
+	if unwritten, err := fifoUnwritten(fifo); err != nil || !unwritten {
+		t.Errorf("the command wrote to the FIFO although its supervisor died before recording it (%v)", err)
 	}
 }
 
@@ -160,21 +236,21 @@ func TestHelperKilledSupervisor(t *testing.T) {
 	if os.Getenv("BITC_GATE_HELPER") != "killed-supervisor" {
 		return
 	}
-	marker, kids := os.Getenv("BITC_GATE_MARKER"), os.Getenv("BITC_GATE_KIDS")
-	beforeRecord = func(int) {
-		appears(marker, 3*time.Second)
-		me := os.Getpid()
-		var b strings.Builder
-		for _, p := range proc.Pids() {
-			if st, err := proc.ReadStat(p); err == nil && st.PPid == me {
-				fmt.Fprintf(&b, "%d %d %d\n", st.Pid, st.Pgrp, st.Start)
+	fifo, kids := os.Getenv("BITC_GATE_FIFO"), os.Getenv("BITC_GATE_KIDS")
+	beforeRecord = func(pid int) {
+		if st, err := proc.ReadStat(pid); err == nil {
+			_ = os.WriteFile(kids, []byte(fmt.Sprintf("%d %d %d\n", st.Pid, st.Pgrp, st.Start)), 0o600)
+		}
+		if !isGate(pid) { // the command itself: let it fork its background sleep first
+			if f, err := os.Open(fifo); err == nil { // blocks until sh opens the FIFO for writing
+				var b [1]byte
+				_, _ = f.Read(b[:])
 			}
 		}
-		_ = os.WriteFile(kids, []byte(b.String()), 0o600)
-		_ = syscall.Kill(me, syscall.SIGKILL)
-		time.Sleep(time.Minute)
+		_ = syscall.Kill(os.Getpid(), syscall.SIGKILL)
+		select {} // not reached: the kill ends this process
 	}
-	s := spec(t, "sh", "-c", `sleep 30 & echo x > "$1"; wait`, "sh", marker)
+	s := spec(t, "sh", "-c", `sleep 3600 & echo x > "$1"; wait`, "sh", fifo)
 	s.Started = func(pid, pgid int, start uint64) error { return nil }
 	_, _ = Exec(context.Background(), s)
 	t.Fatal("the helper outlived its own SIGKILL")
@@ -344,16 +420,13 @@ func TestInheritedFdAboveAHoleIsKept(t *testing.T) {
 			if err := h.Start(); err != nil {
 				t.Fatal(err)
 			}
-			var hung atomic.Bool
-			timer := time.AfterFunc(20*time.Second, func() {
-				hung.Store(true)
-				_ = h.Process.Kill() // the helper, by its exact pid
+			t.Cleanup(func() {
+				if h.ProcessState == nil { // still running: by its exact pid
+					_ = h.Process.Kill()
+				}
 			})
+			// A gate that hangs on these descriptors hangs here: go test's -timeout reports it.
 			err = h.Wait()
-			timer.Stop()
-			if hung.Load() {
-				t.Fatal("hung")
-			}
 			if err != nil {
 				b, _ := os.ReadFile(out.Name())
 				t.Fatalf("the helper failed: %v\n%s", err, b)

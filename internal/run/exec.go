@@ -52,15 +52,19 @@ func isTTY(f *os.File) bool {
 	return err == nil
 }
 
-// beforeRecord, afterWait and onForward are test seams. beforeRecord runs, with the pid of the
-// started process (the exec gate), before Exec records it (Started); afterWait once that process
-// has been reaped; onForward each time Exec sends a catchable signal to the command, with whether
-// the exec had already happened. They are package globals read by every Exec, so a test in
-// internal/run that sets them must not use t.Parallel (nor run beside one that does).
+// afterGateStart, beforeRecord, afterWait, onSignal and onForward are test seams. afterGateStart
+// runs, with the pid of the started process (the exec gate), as soon as it has started; beforeRecord
+// with the same pid before Exec records it (Started); afterWait once that process has been reaped;
+// onSignal each time the loop takes a signal off its channel; onForward each time Exec sends a
+// catchable signal to the command, with whether the exec had already happened. They are package
+// globals read by every Exec, so a test in internal/run that sets them must not use t.Parallel
+// (nor run beside one that does).
 var (
-	beforeRecord func(pid int)
-	afterWait    func()
-	onForward    func(sig syscall.Signal, execDone bool)
+	afterGateStart func(pid int)
+	beforeRecord   func(pid int)
+	afterWait      func()
+	onSignal       func(sig syscall.Signal)
+	onForward      func(sig syscall.Signal, execDone bool)
 )
 
 var handled = []os.Signal{syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT}
@@ -136,6 +140,9 @@ func Exec(ctx context.Context, s ExecSpec) (ExecResult, error) {
 	}
 	cmd := gt.cmd
 	pid := cmd.Process.Pid
+	if afterGateStart != nil {
+		afterGateStart(pid)
+	}
 	var hello bool
 	select {
 	case hello = <-gt.hello:
@@ -240,6 +247,9 @@ func Exec(ctx context.Context, s ExecSpec) (ExecResult, error) {
 			return res, nil
 		case sig := <-sigs:
 			n := sig.(syscall.Signal)
+			if onSignal != nil {
+				onSignal(n)
+			}
 			if received == 0 && s.OnSignal == "forward-and-wait" {
 				received = n
 				forward(n)

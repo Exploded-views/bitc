@@ -9,6 +9,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 // gateProc is a gate run directly: this test binary re-executed with the verb, whose init runs
@@ -138,10 +140,24 @@ func TestGateQuitBeforeTheReleaseExits131(t *testing.T) {
 	}
 }
 
-func TestGateDelayIsStrippedFromTheCommandEnvironment(t *testing.T) {
+// The hold is honoured at the stage it names (one byte is read from the FIFO there) and is not
+// passed on to the command.
+func TestGateHoldIsStrippedFromTheCommandEnvironment(t *testing.T) {
 	dir := t.TempDir()
+	fifo := filepath.Join(dir, "hold")
+	if err := unix.Mkfifo(fifo, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	hf, err := os.OpenFile(fifo, os.O_RDWR, 0) // this test is a writer, so the gate's open never waits
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hf.Close()
+	if _, err := hf.Write([]byte{1}); err != nil { // the hold byte the gate reads before its exec
+		t.Fatal(err)
+	}
 	out := filepath.Join(dir, "env")
-	g := startGate(t, []string{DelayEnv + "=50"}, "/bin/sh", "sh", "-c", `env > "$1"`, "sh", out)
+	g := startGate(t, []string{HoldEnv + "=" + fifo, HoldAtEnv + "=" + HoldExec}, "/bin/sh", "sh", "-c", `env > "$1"`, "sh", out)
 	if _, err := g.release.Write([]byte{1}); err != nil {
 		t.Fatal(err)
 	}
@@ -149,8 +165,18 @@ func TestGateDelayIsStrippedFromTheCommandEnvironment(t *testing.T) {
 		t.Fatalf("exit %d", code)
 	}
 	b, _ := os.ReadFile(out)
-	if len(b) == 0 || containsLine(string(b), DelayEnv+"=") {
-		t.Errorf("the command's environment has the test delay: %q", b)
+	if len(b) == 0 || containsLine(string(b), HoldEnv+"=") || containsLine(string(b), HoldAtEnv+"=") {
+		t.Errorf("the command's environment has the test hold: %q", b)
+	}
+	// The gate read the hold byte: the FIFO is empty now.
+	fd, err := unix.Open(fifo, unix.O_RDONLY|unix.O_NONBLOCK|unix.O_CLOEXEC, 0) // hf is a writer: EAGAIN, not EOF
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(fd)
+	var left [1]byte
+	if n, err := unix.Read(fd, left[:]); !errors.Is(err, unix.EAGAIN) {
+		t.Errorf("the hold byte was not consumed: read %d, %v", n, err)
 	}
 }
 

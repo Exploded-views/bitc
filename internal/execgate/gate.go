@@ -34,7 +34,6 @@ import (
 	"strings"
 	"syscall"
 	"testing"
-	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -48,9 +47,20 @@ const Verb = "__exec-gate-1"
 // Hello is the first byte the gate writes to statusfd.
 const Hello byte = 'H'
 
-// DelayEnv names a test-only delay in milliseconds between the release and the exec. It is
-// honoured, and stripped from the command's environment, only in a test binary.
-const DelayEnv = "BITC_EXECGATE_TEST_DELAY_MS"
+// HoldEnv and HoldAtEnv are a test-only hold. HoldEnv names a FIFO; HoldAtEnv names the stage at
+// which the gate blocks reading one byte from it: HoldHello (before it writes the hello byte) or
+// HoldExec (after the release byte, before the exec). A test writes a byte to let the gate go on.
+// Both are honoured, and stripped from the command's environment, only in a test binary.
+const (
+	HoldEnv   = "BITC_EXECGATE_TEST_HOLD"
+	HoldAtEnv = "BITC_EXECGATE_TEST_HOLD_AT"
+)
+
+// The stages HoldAtEnv names.
+const (
+	HoldHello = "hello"
+	HoldExec  = "exec"
+)
 
 // Exit codes of the gate itself; none of them is the command's.
 const (
@@ -91,6 +101,11 @@ func run(args []string) {
 		syscall.Exit(exitQuit)
 	})
 
+	var hold, holdAt string
+	if testing.Testing() {
+		hold, holdAt = os.Getenv(HoldEnv), os.Getenv(HoldAtEnv)
+	}
+	holdStage(hold, holdAt, HoldHello)
 	if !writeAll(statusfd, []byte{Hello}) {
 		syscall.Exit(exitNotReleased)
 	}
@@ -108,12 +123,10 @@ func run(args []string) {
 
 	env := os.Environ()
 	if testing.Testing() {
-		env = withoutDelay(env)
-		if ms, err := strconv.Atoi(os.Getenv(DelayEnv)); err == nil && ms > 0 {
-			time.Sleep(time.Duration(ms) * time.Millisecond)
-		}
+		env = withoutHold(env)
 	}
-	err := syscall.Exec(path, argv, env) //nolint:gosec // the gate execs the command the user asked bitc to run, resolved by the parent's exec.LookPath
+	holdStage(hold, holdAt, HoldExec)
+	err := syscall.Exec(path, argv, env) //nolint:gosec // G702: the gate execs the command the user asked bitc to run, resolved by the parent's exec.LookPath
 	var errno syscall.Errno
 	if !errors.As(err, &errno) {
 		errno = syscall.EINVAL
@@ -124,10 +137,41 @@ func run(args []string) {
 	syscall.Exit(exitExecFailed)
 }
 
-func withoutDelay(env []string) []string {
+// holdStage blocks reading one byte from the FIFO hold when at names stage; a hold that cannot be
+// read ends the gate as not released.
+func holdStage(hold, at, stage string) {
+	if hold == "" || at != stage {
+		return
+	}
+	var fd int
+	var err error
+	for { // blocks until a writer has the FIFO open
+		fd, err = unix.Open(hold, unix.O_RDONLY|unix.O_CLOEXEC, 0)
+		if !errors.Is(err, syscall.EINTR) {
+			break
+		}
+	}
+	if err != nil {
+		syscall.Exit(exitNotReleased)
+	}
+	var b [1]byte
+	for {
+		n, err := unix.Read(fd, b[:])
+		if errors.Is(err, syscall.EINTR) {
+			continue
+		}
+		if n != 1 || err != nil {
+			syscall.Exit(exitNotReleased)
+		}
+		break
+	}
+	_ = unix.Close(fd)
+}
+
+func withoutHold(env []string) []string {
 	out := make([]string, 0, len(env))
 	for _, kv := range env {
-		if !strings.HasPrefix(kv, DelayEnv+"=") {
+		if !strings.HasPrefix(kv, HoldEnv+"=") && !strings.HasPrefix(kv, HoldAtEnv+"=") {
 			out = append(out, kv)
 		}
 	}
