@@ -149,6 +149,12 @@ var (
 	instPath  = regexp.MustCompile(`^/v1/instances/([^/]+)$`)
 )
 
+// jobIDRE is a copy of jobIDRE in internal/agent/exec.go: the job ids the agent itself accepts.
+var jobIDRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+
+// servedFiles are the result files the fake API documents (api.go).
+var servedFiles = map[string]bool{"out.log": true, "err.log": true, "result.json": true, "state.json": true, "artifacts.tar.gz": true}
+
 func (f *fake) serve(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(r.URL.Path, "/__bitc/") {
 		f.control(w, r)
@@ -395,6 +401,10 @@ func (f *fake) logs(w http.ResponseWriter, r *http.Request, id string) {
 
 // file serves a result file of the agent from an offset: out.log and err.log while they grow.
 func (f *fake) file(w http.ResponseWriter, r *http.Request, id, name string) {
+	if !servedFiles[name] { // only the names api.go documents; checked before any path is built
+		w.WriteHeader(404)
+		return
+	}
 	f.mu.Lock()
 	in := f.find(id)
 	var dir string
@@ -483,6 +493,10 @@ func (f *fake) startJob(w http.ResponseWriter, id string, body []byte) {
 		return
 	}
 	j := req.Job
+	if !jobIDRE.MatchString(j.Job) { // the id names a directory under the run root: refuse before anything uses it
+		writeJSON(w, 400, map[string]string{"error": "bad job id"})
+		return
+	}
 	f.mu.Lock()
 	in := f.find(id)
 	if in == nil {
