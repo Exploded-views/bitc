@@ -22,6 +22,15 @@ type gateProc struct {
 	marker  string
 }
 
+// gateCommand is this test binary run with args. On Linux it dies with the test process
+// (dieWithTest), so a -timeout panic, which runs no Cleanup, leaves no gate behind; on darwin it
+// may be left running.
+func gateCommand(args ...string) *exec.Cmd {
+	c := exec.Command(os.Args[0], args...)
+	dieWithTest(c)
+	return c
+}
+
 func startGate(t *testing.T, env []string, path string, argv ...string) *gateProc {
 	t.Helper()
 	gr, gw, err := os.Pipe()
@@ -34,7 +43,7 @@ func startGate(t *testing.T, env []string, path string, argv ...string) *gatePro
 	}
 	g := &gateProc{release: gw, status: sr}
 	args := append([]string{Verb, "3", "4", path}, argv...)
-	g.cmd = exec.Command(os.Args[0], args...)
+	g.cmd = gateCommand(args...)
 	g.cmd.Env = append(os.Environ(), env...)
 	g.cmd.ExtraFiles = []*os.File{gr, sw}
 	if err := g.cmd.Start(); err != nil {
@@ -42,7 +51,7 @@ func startGate(t *testing.T, env []string, path string, argv ...string) *gatePro
 	}
 	gr.Close()
 	sw.Close()
-	t.Cleanup(func() {
+	t.Cleanup(func() { // not run by a -timeout panic: see gateCommand
 		gw.Close()
 		sr.Close()
 		_ = g.cmd.Process.Kill()
@@ -200,7 +209,7 @@ func TestGateRefusesAGateFdThatIsNotAPipe(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer sr.Close()
-	c := exec.Command(os.Args[0], Verb, "3", "4", "/bin/sh", "sh", "-c", "true")
+	c := gateCommand(Verb, "3", "4", "/bin/sh", "sh", "-c", "true")
 	c.ExtraFiles = []*os.File{f, sw}
 	if err := c.Start(); err != nil {
 		t.Fatal(err)

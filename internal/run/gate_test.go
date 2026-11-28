@@ -3,7 +3,6 @@ package run
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -19,12 +18,6 @@ import (
 	"github.com/Exploded-views/bitc/internal/execgate"
 	"github.com/Exploded-views/bitc/internal/proc"
 )
-
-// -bypass-gate starts every command directly, as before the gate (bypassGate): the gate tests
-// must fail with it, which shows they fail without the fix.
-func init() {
-	flag.BoolVar(&bypassGate, "bypass-gate", false, "start commands without the exec gate (the gate tests must then fail)")
-}
 
 // hold is the FIFO a test gate blocks on (execgate.HoldEnv). The test keeps its own read-write
 // descriptor on it, so the gate's open never waits for a writer and never sees EOF; one byte
@@ -161,10 +154,11 @@ func TestSignalToTheGroupBeforeReleaseEndsTheRun(t *testing.T) {
 	}
 }
 
-// fifoUnwritten reports whether nothing was ever written to the FIFO at path and still waits to be
-// read: a non-blocking open for reading, then one read that gives 0 bytes (no writer) or EAGAIN
-// (a writer, no data).
-func fifoUnwritten(path string) (bool, error) {
+// fifoDrained reports whether the FIFO at path holds no data left unread and has no writer blocked
+// on it: a non-blocking open for reading, then one read that gives 0 bytes (no writer) or EAGAIN
+// (a writer, no data). It does not say that nothing was ever written: a byte a reader has already
+// taken leaves the FIFO drained too, so the verdict on a surviving command comes from stragglers.
+func fifoDrained(path string) (bool, error) {
 	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return false, err
@@ -183,7 +177,9 @@ func fifoUnwritten(path string) (bool, error) {
 // in the beforeRecord seam. With the gate it does so at once, the started process being the gate.
 // Without it the started process is sh, and the helper waits until sh has forked its background
 // sleep: sh signals that by opening the FIFO, which the helper reads. That is a handshake, not a
-// timer.
+// timer. A -timeout panic runs no Cleanup, so a helper left blocked (for one, if isGate gave a false
+// negative under the gate, the helper would wait in os.Open(fifo) for ever) is not killed by this
+// test: on Linux it dies with this process (dieWithTest), on darwin it may be left running.
 func TestAKilledSupervisorLeavesNoCommandRunning(t *testing.T) {
 	dir := t.TempDir()
 	fifo := filepath.Join(dir, "ran")
@@ -203,6 +199,7 @@ func TestAKilledSupervisorLeavesNoCommandRunning(t *testing.T) {
 	h := exec.Command(os.Args[0], args...)
 	h.Env = append(os.Environ(), "BITC_GATE_HELPER=killed-supervisor", "BITC_GATE_FIFO="+fifo, "BITC_GATE_KIDS="+kids)
 	h.Stdout, h.Stderr = out, out // files, so Wait does not wait for the command's children
+	dieWithTest(h)
 	err = h.Run()
 	var ee *exec.ExitError
 	if !errors.As(err, &ee) || ee.Sys().(syscall.WaitStatus).Signal() != syscall.SIGKILL {
@@ -226,8 +223,8 @@ func TestAKilledSupervisorLeavesNoCommandRunning(t *testing.T) {
 	if len(left) != 0 {
 		t.Errorf("processes of group %d outlived the killed supervisor: %v", pgid, left)
 	}
-	if unwritten, err := fifoUnwritten(fifo); err != nil || !unwritten {
-		t.Errorf("the command wrote to the FIFO although its supervisor died before recording it (%v)", err)
+	if drained, err := fifoDrained(fifo); err != nil || !drained {
+		t.Errorf("the FIFO holds data or a blocked writer although the supervisor died before recording the command (%v)", err)
 	}
 }
 
@@ -356,6 +353,7 @@ func TestInheritedFdIsKept(t *testing.T) {
 	h := exec.Command(os.Args[0], "-test.run=^TestHelperInheritedFd$")
 	h.Env = append(os.Environ(), "BITC_GATE_HELPER=inherited-fd")
 	h.ExtraFiles = []*os.File{f}
+	dieWithTest(h)
 	if out, err := h.CombinedOutput(); err != nil {
 		t.Fatalf("the helper failed: %v\n%s", err, out)
 	}
@@ -417,15 +415,13 @@ func TestInheritedFdAboveAHoleIsKept(t *testing.T) {
 			h.Env = append(os.Environ(), "BITC_GATE_HELPER=inherited-fd-multi", "BITC_GATE_FDS="+strings.Join(spec, ","))
 			h.ExtraFiles = extra
 			h.Stdout, h.Stderr = out, out
+			dieWithTest(h)
 			if err := h.Start(); err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(func() {
-				if h.ProcessState == nil { // still running: by its exact pid
-					_ = h.Process.Kill()
-				}
-			})
-			// A gate that hangs on these descriptors hangs here: go test's -timeout reports it.
+			// A gate that hangs on these descriptors hangs here: go test's -timeout reports it. A
+			// -timeout panic runs no Cleanup, so nothing here kills the helper: on Linux it dies with
+			// this process (Pdeathsig), on darwin it may be left running.
 			err = h.Wait()
 			if err != nil {
 				b, _ := os.ReadFile(out.Name())

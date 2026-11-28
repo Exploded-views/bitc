@@ -3,7 +3,9 @@ package run
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"testing"
 
 	"golang.org/x/sys/unix"
 )
@@ -12,6 +14,10 @@ import (
 // command it execs: its p_comm is the test binary's base name, cut to the 16 bytes the kernel
 // keeps. It is read once, with no poll: Go's cmd.Start returns only after the exec has succeeded,
 // so without a gate the started process is already the command.
+//
+// A false negative (the gate not recognised) fails T1, T6 and T8, which is the safe direction, but
+// would hang T2's helper in os.Open(fifo); it cannot happen under go test, because the gate is this
+// test binary and its p_comm is the base name of os.Executable.
 func isGate(pid int) bool {
 	self, err := os.Executable()
 	if err != nil {
@@ -34,6 +40,13 @@ func isGate(pid int) bool {
 	}
 	return string(comm) == want
 }
+
+// dieWithTest is a no-op on darwin, which has no Pdeathsig: a helper process that a test starts
+// from this test binary may be left running if a hang ends in a -timeout panic.
+func dieWithTest(c *exec.Cmd) {}
+
+// openFds lists this process's open descriptors, without the one the listing itself uses.
+func openFds(t *testing.T) map[int]fdInfo { return listFds(t, "/dev/fd") }
 
 // waitExit blocks until the process pid has exited, through a kqueue EVFILT_PROC NOTE_EXIT with no
 // timeout. A process that is already gone is not an error.

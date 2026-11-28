@@ -1,5 +1,6 @@
 // Package spritesfake is a strict fake of the Fly Sprites API for tests (sprites-provider.md 8.1):
-// an httptest REST server plus a WSS exec endpoint. A Sprite is a directory <root>/_<id>/overlay, named by the Sprite's id (never its name);
+// an httptest REST server plus a WSS exec endpoint. A Sprite is a directory <root>/_<id>/overlay,
+// named by the Sprite's id (never its name); a listed-only Sprite (AddSprite) has no directory.
 // exec runs `bitc __agent ...` as a local unprivileged process in its own process group with
 // TestRoot = the overlay. The fake never contacts any host, accepts only loopback clients, and
 // rejects what the real API would: unknown JSON fields, unknown query parameters, a wrong token.

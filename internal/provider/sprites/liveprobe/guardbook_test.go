@@ -134,6 +134,16 @@ func TestGuardedDeleteSpriteRefusesANameOutsideTheBook(t *testing.T) {
 	})
 }
 
+// A Sprite of another run exists in the org under a NamePrefix name that this run never registered:
+// the delete is refused and nothing is sent. The gate does not read the run id, so this is the same
+// branch as a name outside the book; the row states the intent.
+func TestGuardedDeleteSpriteRefusesAnotherRunsName(t *testing.T) {
+	del := typedCall{"DeleteSprite", func(ctx context.Context, e *Env, n string) error {
+		return e.API.DeleteSprite(ctx, n)
+	}}
+	runTypedCase(t, del, tOther, false)
+}
+
 // ---- a failed create of a re-used name
 
 // A name the run created and deleted is created again and the create fails with a 4xx that is not
