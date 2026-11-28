@@ -154,10 +154,11 @@ func TestSignalToTheGroupBeforeReleaseEndsTheRun(t *testing.T) {
 	}
 }
 
-// fifoDrained reports whether the FIFO at path holds no data left unread and has no writer blocked
-// on it: a non-blocking open for reading, then one read that gives 0 bytes (no writer) or EAGAIN
-// (a writer, no data). It does not say that nothing was ever written: a byte a reader has already
-// taken leaves the FIFO drained too, so the verdict on a surviving command comes from stragglers.
+// fifoDrained reports whether the FIFO at path holds no unread data: a non-blocking open for
+// reading, then one read that gives 0 bytes (no writer) or EAGAIN (a writer, no data). It does not
+// detect a blocked writer, and it does not say that nothing was ever written: a byte a reader has
+// already taken leaves the FIFO drained too, so the verdict on a surviving command comes from
+// stragglers.
 func fifoDrained(path string) (bool, error) {
 	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
 	if err != nil {
@@ -224,7 +225,7 @@ func TestAKilledSupervisorLeavesNoCommandRunning(t *testing.T) {
 		t.Errorf("processes of group %d outlived the killed supervisor: %v", pgid, left)
 	}
 	if drained, err := fifoDrained(fifo); err != nil || !drained {
-		t.Errorf("the FIFO holds data or a blocked writer although the supervisor died before recording the command (%v)", err)
+		t.Errorf("the FIFO holds unread data although the supervisor died before recording the command (%v)", err)
 	}
 }
 

@@ -12,7 +12,9 @@ import (
 // The tests that must fail with it set are exactly these four:
 // TestExecRunsNothingBeforeTheCommandIsRecorded (T1), TestAKilledSupervisorLeavesNoCommandRunning
 // (T2), TestSignalToTheGroupBeforeReleaseEndsTheRun (T6) and TestFailClosedWhenTheRecordFails (T8).
-// The others are not claimed: some pass under it, and two race (T9, TestCancelBeforeTheHello).
+// No other test is claimed. Some pass under it; some may also fail under it, among them
+// TestCancelBeforeTheHelloEndsTheRun, TestForwardsWaitForTheExec (T9) and
+// TestDispositionsMatchADirectStart (whose blocked-mask comparison is a sample of direct starts).
 // TestUnrunnableGateBinaryIsASetupFailure also fails under it, as it must (there is no gate binary
 // to be unrunnable), but it is no proof of the gate's hold, so it is not in the named set.
 var bypassGate bool

@@ -45,6 +45,10 @@ func isGate(pid int) bool {
 // from this test binary may be left running if a hang ends in a -timeout panic.
 func dieWithTest(c *exec.Cmd) {}
 
+// ownProcessHandles is how many non-pipe descriptors startGate may add: none on darwin, where
+// os/exec keeps no handle for the process it started.
+const ownProcessHandles = 0
+
 // openFds lists this process's open descriptors, without the one the listing itself uses.
 func openFds(t *testing.T) map[int]fdInfo { return listFds(t, "/dev/fd") }
 

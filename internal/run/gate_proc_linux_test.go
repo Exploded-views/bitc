@@ -25,11 +25,16 @@ func isGate(pid int) bool {
 
 // dieWithTest makes a helper process that a test starts from this test binary die with the test
 // process (Pdeathsig SIGKILL), so a hang that ends in a -timeout panic does not leave it running.
-// Pdeathsig is tied to the thread that starts the helper, which the Go runtime keeps for a test
-// goroutine unless it locks it and exits.
+// Pdeathsig fires when the thread that started the child exits. In this package only Exec's
+// goroutine locks its thread, and it unlocks on every path, so the runtime does not end a helper's
+// starting thread early.
 func dieWithTest(c *exec.Cmd) {
 	c.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
 }
+
+// ownProcessHandles is how many non-pipe descriptors startGate may add: Go's os/exec keeps a pidfd
+// for the process it started on Linux.
+const ownProcessHandles = 1
 
 // openFds lists this process's open descriptors, without the one the listing itself uses.
 func openFds(t *testing.T) map[int]fdInfo { return listFds(t, "/proc/self/fd") }

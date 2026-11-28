@@ -182,6 +182,17 @@ func TestStartGateAddsOnlyItsOwnFds(t *testing.T) {
 		r.Close()
 		w.Close()
 	}
+	// One inherited descriptor (3 or above, no FD_CLOEXEC), so that startGate has a dup to make and
+	// to close; it is closed at the end. Without one, a mutant that leaves the dups open would pass.
+	ir, iw, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ir.Close()
+	defer iw.Close()
+	if _, err := unix.FcntlInt(ir.Fd(), unix.F_SETFD, 0); err != nil {
+		t.Fatal(err)
+	}
 	s := spec(t, "sh", "-c", "true")
 	s.Env = h.env(execgate.HoldHello)
 	lookup := exec.Command(s.Argv[0], s.Argv[1:]...)
@@ -190,15 +201,16 @@ func TestStartGateAddsOnlyItsOwnFds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	after := openFds(t)
 	release := int(gt.release.Fd())
 	defer func() { // the gate, by its exact pid; never waits for the status reader, which a leak would keep
 		_ = gt.cmd.Process.Kill()
 		_ = gt.release.Close()
 		_ = gt.cmd.Wait()
 	}()
+	after := openFds(t)
 	// Go's os/exec keeps a pidfd (not a pipe) for the process it started on Linux: it is the Cmd's
-	// own handle, closed by Wait, and is set apart from the pipes.
+	// own handle, closed by Wait, and is set apart from the pipes (ownProcessHandles: 1 on Linux,
+	// 0 on darwin).
 	added := map[int]fdInfo{}
 	var handles []int
 	for k, v := range after {
@@ -211,8 +223,8 @@ func TestStartGateAddsOnlyItsOwnFds(t *testing.T) {
 		}
 		added[k] = v
 	}
-	if len(handles) > 1 {
-		t.Errorf("startGate left %d new descriptors that are not pipes, want at most the process handle: %v", len(handles), handles)
+	if len(handles) > ownProcessHandles {
+		t.Errorf("startGate left %d new descriptors that are not pipes, want at most %d (the process handle): %v", len(handles), ownProcessHandles, handles)
 	}
 	if len(added) != 2 {
 		t.Fatalf("startGate left %d new pipe descriptors open, want 2 (the release end and the status read end): %v", len(added), added)
