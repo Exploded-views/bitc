@@ -85,7 +85,7 @@ func TestTryRestoreRecreatesTheSpriteInTheBook(t *testing.T) {
 		if got := rn.spentSeconds() - before; got != 10 {
 			t.Errorf("spend grew by %v s in 10 s, want 10", got)
 		}
-		if err := rn.register(NamePrefix + "t1-50"); !errors.Is(err, ErrSecondSprite) {
+		if _, err := rn.registerRec(NamePrefix + "t1-50"); !errors.Is(err, ErrSecondSprite) {
 			t.Errorf("a second Sprite while the recreated one is live: %v, want ErrSecondSprite", err)
 		}
 	})

@@ -81,13 +81,8 @@ func (r *Runner) nextName() string {
 
 // ---- the Sprite book
 
-func (r *Runner) register(name string) error {
-	_, err := r.registerRec(name)
-	return err
-}
-
-// registerRec is register that hands back the record it appended, so the caller can undo exactly
-// that record (unregisterRec) and no other.
+// registerRec adds name to the book and hands back the record it appended, so the caller can undo
+// exactly that record (unregisterRec) and no other. It is the book's one entry point.
 func (r *Runner) registerRec(name string) (*SpriteRec, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -255,6 +250,10 @@ func (g guarded) CreateSprite(ctx context.Context, name string, labels map[strin
 // DeleteSprite needs a name the run knows, live or deleted (a delete of a deleted name is a probe
 // asking what the API says to it). A name the run never registered is refused: it could be any
 // Sprite of the org.
+//
+// Residual: a known but deleted name is let through to a real DELETE, so a Sprite that another
+// actor made under that exact name after the run deleted it could be deleted. The names carry
+// NamePrefix, RunID and a counter, which makes that very unlikely, and probe 25 needs the known gate.
 func (g guarded) DeleteSprite(ctx context.Context, name string) error {
 	if err := g.r.gate("DeleteSprite", name, false); err != nil {
 		return err

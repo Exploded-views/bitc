@@ -112,7 +112,7 @@ func Exec(ctx context.Context, s ExecSpec) (ExecResult, error) {
 		// Pdeathsig belongs to the thread that forked the child: keep this goroutine on its
 		// thread until Wait returns, so the child is killed only when bitc itself dies.
 		runtime.LockOSThread()
-		g, err := startGate(resolved, s, !tty)
+		g, err := startFn(resolved, s, !tty)
 		if err == nil {
 			gt = g
 			if s.Started != nil {

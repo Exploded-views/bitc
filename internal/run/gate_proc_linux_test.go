@@ -3,7 +3,10 @@ package run
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"strconv"
+	"syscall"
+	"testing"
 
 	"golang.org/x/sys/unix"
 )
@@ -19,6 +22,22 @@ func isGate(pid int) bool {
 	exe, err := os.Readlink("/proc/" + strconv.Itoa(pid) + "/exe")
 	return err == nil && exe == self
 }
+
+// dieWithTest makes a helper process that a test starts from this test binary die with the test
+// process (Pdeathsig SIGKILL), so a hang that ends in a -timeout panic does not leave it running.
+// Pdeathsig fires when the thread that started the child exits. In this package only Exec's
+// goroutine locks its thread, and it unlocks on every path, so the runtime does not end a helper's
+// starting thread early.
+func dieWithTest(c *exec.Cmd) {
+	c.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
+}
+
+// ownProcessHandles is how many non-pipe descriptors startGate may add: Go's os/exec keeps a pidfd
+// for the process it started on Linux.
+const ownProcessHandles = 1
+
+// openFds lists this process's open descriptors, without the one the listing itself uses.
+func openFds(t *testing.T) map[int]fdInfo { return listFds(t, "/proc/self/fd") }
 
 // waitExit blocks until the process pid has exited (it may still be a zombie), through a pidfd and
 // a poll with no timeout. A process that is already gone is not an error.

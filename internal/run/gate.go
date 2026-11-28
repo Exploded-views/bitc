@@ -37,30 +37,9 @@ type gate struct {
 // that sets it must not use t.Parallel.
 var selfExeFn = selfExe
 
-// bypassGate, set only by a test (the -bypass-gate test flag), starts the command directly, as
-// before the gate existed: no gate, no release, no hold. The gate tests must fail with it set;
-// that is how they are shown to fail without the fix.
-var bypassGate bool
-
-// startDirect is startGate with bypassGate: the command is the started process, already past its
-// hello and its exec.
-func startDirect(lookup *exec.Cmd, s ExecSpec, setpgid bool) (*gate, error) {
-	c := &exec.Cmd{Path: lookup.Path, Args: s.Argv, Env: s.Env, Dir: s.Dir, SysProcAttr: childAttr(setpgid)}
-	c.Stdin, c.Stdout, c.Stderr = s.Stdin, s.Stdout, s.Stderr
-	if err := c.Start(); err != nil {
-		return nil, err
-	}
-	null, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0) // the release has nowhere to go
-	if err != nil {
-		_ = c.Process.Kill()
-		_ = c.Wait()
-		return nil, err
-	}
-	gt := &gate{cmd: c, release: null, hello: make(chan bool, 1), result: make(chan gateResult, 1)}
-	gt.hello <- true
-	gt.result <- gateResult{}
-	return gt, nil
-}
+// startFn starts the command's process for Exec. It is a seam: a test of this package may set it
+// (in TestMain) to start the command without a gate, to show the gate tests fail without one.
+var startFn = startGate
 
 // setupError is a failure to set the gate up, as against a failure to start the command.
 type setupError struct{ error }
@@ -101,9 +80,6 @@ func inheritedFds() ([]int, error) {
 func startGate(lookup *exec.Cmd, s ExecSpec, setpgid bool) (*gate, error) {
 	if lookup.Err != nil { // today's answer, e.g. "executable file not found in $PATH"
 		return nil, lookup.Err
-	}
-	if bypassGate {
-		return startDirect(lookup, s, setpgid)
 	}
 	self, err := selfExeFn()
 	if err != nil {

@@ -6,9 +6,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/Exploded-views/bitc/internal/execgate"
 	"github.com/Exploded-views/bitc/internal/exit"
@@ -127,8 +130,118 @@ func TestOutcomeOf(t *testing.T) {
 	}
 }
 
+// fdInfo is what the descriptor tests need to tell one open file from another.
+type fdInfo struct {
+	mode uint64 // st_mode & S_IFMT (uint64: st_mode is 16 bits on darwin, 32 on Linux)
+	acc  int    // the F_GETFL access mode: O_RDONLY, O_WRONLY or O_RDWR
+}
+
+// listFds lists the open descriptors the directory dir names, without the one the listing itself
+// opened (it is closed before the descriptors are probed).
+func listFds(t *testing.T, dir string) map[int]fdInfo {
+	t.Helper()
+	d, err := os.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names, err := d.Readdirnames(-1)
+	d.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[int]fdInfo{}
+	for _, n := range names {
+		k, err := strconv.Atoi(n)
+		if err != nil {
+			continue
+		}
+		var st unix.Stat_t
+		if unix.Fstat(k, &st) != nil { // the listing's own descriptor, closed above
+			continue
+		}
+		fl, err := unix.FcntlInt(uintptr(k), unix.F_GETFL, 0)
+		if err != nil {
+			continue
+		}
+		out[k] = fdInfo{mode: uint64(st.Mode) & unix.S_IFMT, acc: fl & unix.O_ACCMODE}
+	}
+	return out
+}
+
+// TestStartGateAddsOnlyItsOwnFds: startGate leaves exactly two descriptors open in the parent while
+// the gate waits for its hello:
+// the release end of the gate pipe and the read end of the status pipe. The child's ends and every
+// dup of an inherited descriptor are closed by then; a copy left open (for one, of the status
+// pipe's write end) would keep the status pipe from ever ending, and a quick command would hang
+// Exec. The gate is held before its hello, so the status reader is certainly still running.
+func TestStartGateAddsOnlyItsOwnFds(t *testing.T) {
+	h := newHold(t)
+	if r, w, err := os.Pipe(); err != nil { // the first pipe starts the runtime's poller, which opens descriptors of its own
+		t.Fatal(err)
+	} else {
+		r.Close()
+		w.Close()
+	}
+	// One inherited descriptor (3 or above, no FD_CLOEXEC), so that startGate has a dup to make and
+	// to close; it is closed at the end. Without one, a mutant that leaves the dups open would pass.
+	ir, iw, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ir.Close()
+	defer iw.Close()
+	if _, err := unix.FcntlInt(ir.Fd(), unix.F_SETFD, 0); err != nil {
+		t.Fatal(err)
+	}
+	s := spec(t, "sh", "-c", "true")
+	s.Env = h.env(execgate.HoldHello)
+	lookup := exec.Command(s.Argv[0], s.Argv[1:]...)
+	before := openFds(t)
+	gt, err := startGate(lookup, s, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release := int(gt.release.Fd())
+	defer func() { // the gate, by its exact pid; never waits for the status reader, which a leak would keep
+		_ = gt.cmd.Process.Kill()
+		_ = gt.release.Close()
+		_ = gt.cmd.Wait()
+	}()
+	after := openFds(t)
+	// Go's os/exec keeps a pidfd (not a pipe) for the process it started on Linux: it is the Cmd's
+	// own handle, closed by Wait, and is set apart from the pipes (ownProcessHandles: 1 on Linux,
+	// 0 on darwin).
+	added := map[int]fdInfo{}
+	var handles []int
+	for k, v := range after {
+		if _, ok := before[k]; ok {
+			continue
+		}
+		if v.mode != unix.S_IFIFO {
+			handles = append(handles, k)
+			continue
+		}
+		added[k] = v
+	}
+	if len(handles) > ownProcessHandles {
+		t.Errorf("startGate left %d new descriptors that are not pipes, want at most %d (the process handle): %v", len(handles), ownProcessHandles, handles)
+	}
+	if len(added) != 2 {
+		t.Fatalf("startGate left %d new pipe descriptors open, want 2 (the release end and the status read end): %v", len(added), added)
+	}
+	if got, ok := added[release]; !ok || got.mode != unix.S_IFIFO || got.acc != unix.O_WRONLY {
+		t.Errorf("the gate's release end (fd %d) is not among the new descriptors as a write-only pipe: %v", release, added)
+	}
+	for k, v := range added {
+		if k != release && (v.mode != unix.S_IFIFO || v.acc != unix.O_RDONLY) {
+			t.Errorf("the other new descriptor %d is %+v, want the status pipe's read end (a read-only pipe)", k, v)
+		}
+	}
+}
+
 // A run whose status pipe never ended would hang: a command that exits at once returns. A hang is
-// reported by go test's -timeout.
+// reported by go test's -timeout; TestStartGateAddsOnlyItsOwnFds catches the usual cause, a copy of
+// the status pipe's write end left open in the parent, without one.
 func TestExecOfAQuickCommandReturns(t *testing.T) {
 	r, err := Exec(context.Background(), spec(t, "true"))
 	if err != nil || r.Code != 0 {
