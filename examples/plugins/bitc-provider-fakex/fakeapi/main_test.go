@@ -127,3 +127,55 @@ func TestFileServesOnlyTheDocumentedNames(t *testing.T) {
 		}
 	}
 }
+
+func TestFileNeverReadsOutsideTheRunDir(t *testing.T) {
+	f, root := newTestFake(t)
+	iid := createInstance(t, f)
+	testRoot := filepath.Join(root, "tr")
+	for _, d := range []string{filepath.Join(testRoot, "run", "other"), filepath.Join(testRoot, "outside")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, n := range []string{"out.log", "result.json"} {
+		if err := os.WriteFile(filepath.Join(testRoot, "outside", n), []byte("outside "+n), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The job id is set directly, bypassing startJob and its id check.
+	f.mu.Lock()
+	f.insts[iid].testRoot, f.insts[iid].jobID = testRoot, "../outside"
+	f.mu.Unlock()
+	for _, n := range []string{"out.log", "result.json"} {
+		w := do(f, "GET", "/v1/instances/"+iid+"/files/"+n, "")
+		if w.Code != 404 || strings.Contains(w.Body.String(), "outside") {
+			t.Errorf("%s: status %d body %q, want 404 and not the outside file", n, w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestFileServesTheJobsOwnRunDir(t *testing.T) {
+	f, root := newTestFake(t)
+	iid := createInstance(t, f)
+	testRoot := filepath.Join(root, "tr")
+	for _, j := range []string{"j1", "j2"} {
+		d := filepath.Join(testRoot, "run", j)
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for _, n := range []string{"out.log", "result.json"} {
+			if err := os.WriteFile(filepath.Join(d, n), []byte(j+" "+n), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	f.mu.Lock()
+	f.insts[iid].testRoot, f.insts[iid].jobID = testRoot, "j2"
+	f.mu.Unlock()
+	for _, n := range []string{"out.log", "result.json"} {
+		w := do(f, "GET", "/v1/instances/"+iid+"/files/"+n, "")
+		if w.Code != 200 || w.Body.String() != "j2 "+n {
+			t.Errorf("%s: status %d body %q, want j2's bytes", n, w.Code, w.Body.String())
+		}
+	}
+}

@@ -153,7 +153,8 @@ var (
 var jobIDRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
 // servedFiles are the result files the fake API documents (api.go).
-var servedFiles = map[string]bool{"out.log": true, "err.log": true, "result.json": true, "state.json": true, "artifacts.tar.gz": true}
+// Each name maps to itself so a read uses the table's string, never the request's.
+var servedFiles = map[string]string{"out.log": "out.log", "err.log": "err.log", "result.json": "result.json", "state.json": "state.json", "artifacts.tar.gz": "artifacts.tar.gz"}
 
 func (f *fake) serve(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(r.URL.Path, "/__bitc/") {
@@ -401,23 +402,24 @@ func (f *fake) logs(w http.ResponseWriter, r *http.Request, id string) {
 
 // file serves a result file of the agent from an offset: out.log and err.log while they grow.
 func (f *fake) file(w http.ResponseWriter, r *http.Request, id, name string) {
-	if !servedFiles[name] { // only the names api.go documents; checked before any path is built
+	served, ok := servedFiles[name] // only the names api.go documents; checked before any path is built
+	if !ok {
 		w.WriteHeader(404)
 		return
 	}
 	f.mu.Lock()
 	in := f.find(id)
-	var dir string
+	var testRoot, jobID string
 	withheld := false
 	if in != nil {
-		dir = filepath.Join(in.testRoot, "run", in.jobID)
-		if name == "result.json" {
+		testRoot, jobID = in.testRoot, in.jobID
+		if served == "result.json" {
 			in.resultServed = true
 		}
-		withheld = in.dropTail && !in.resultServed && (name == "out.log" || name == "err.log")
+		withheld = in.dropTail && !in.resultServed && (served == "out.log" || served == "err.log")
 	}
 	f.mu.Unlock()
-	if in == nil || in.testRoot == "" {
+	if in == nil || testRoot == "" {
 		w.WriteHeader(404)
 		return
 	}
@@ -425,15 +427,31 @@ func (f *fake) file(w http.ResponseWriter, r *http.Request, id, name string) {
 		w.WriteHeader(503)
 		return
 	}
+	// The run dir is the directory entry whose name is the job id, so no request string is joined into a path.
+	entries, err := os.ReadDir(filepath.Join(testRoot, "run"))
+	if err != nil {
+		w.WriteHeader(404)
+		return
+	}
+	dir := ""
+	for _, e := range entries {
+		if e.IsDir() && e.Name() == jobID {
+			dir = filepath.Join(testRoot, "run", e.Name())
+			break
+		}
+	}
+	if dir == "" {
+		w.WriteHeader(404)
+		return
+	}
 	offset, _ := strconv.ParseInt(r.URL.Query().Get("offset"), 10, 64)
 	var b []byte
-	var err error
-	if name == "out.log" || name == "err.log" {
-		if b, err = os.ReadFile(filepath.Join(dir, name+".part")); err != nil {
-			b, err = os.ReadFile(filepath.Join(dir, name))
+	if served == "out.log" || served == "err.log" {
+		if b, err = os.ReadFile(filepath.Join(dir, served+".part")); err != nil {
+			b, err = os.ReadFile(filepath.Join(dir, served))
 		}
 	} else {
-		b, err = os.ReadFile(filepath.Join(dir, name))
+		b, err = os.ReadFile(filepath.Join(dir, served))
 	}
 	if err != nil {
 		w.WriteHeader(404)
