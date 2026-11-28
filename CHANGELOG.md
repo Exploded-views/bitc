@@ -9,6 +9,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The agent refuses a slot account uid or gid above 2147483647, since it uses them as int.
 - The reference plugin's fake API refuses a job id that is not a plain id and serves only the result files it documents.
 - The manual `privileged` workflow now tests the commit of the branch it is dispatched on, and no longer takes a ref to check out.
 - The Sprites probe kit's typed calls now go through the run's Sprite book: a typed write, GetSprite or FSRead needs a live Sprite of the run, ListCheckpoints and GetCheckpoint need a Sprite the run created, Run and Exec refuse a MaxRunAfterDisconnect above 30 seconds, a restore after the kit deleted its Sprite is counted as a live Sprite again, and a raw table write's body may carry only the keys and values the probes use.

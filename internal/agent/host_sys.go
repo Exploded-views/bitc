@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -60,12 +61,13 @@ func lookupIDs(name string) (uint32, uint32, error) {
 	return parseIDs(name, u.Uid, u.Gid)
 }
 
-// parseIDs parses an unprivileged account's ids: decimal, 1 to 4294967294 (0 is root, and
-// 4294967295 is (uid_t)-1, "no change"). A bad id is an error, never a fallback to 0.
+// parseIDs parses an unprivileged account's ids: decimal, 1 to 2147483647 (0 is root, 4294967295
+// is (uid_t)-1, "no change", and the ids are used as int). A bad id is an error, never a fallback
+// to 0.
 func parseIDs(name, uid, gid string) (uint32, uint32, error) {
 	u, e1 := strconv.ParseUint(uid, 10, 32)
 	g, e2 := strconv.ParseUint(gid, 10, 32)
-	if e1 != nil || e2 != nil || u == 0 || g == 0 || u == 1<<32-1 || g == 1<<32-1 {
+	if e1 != nil || e2 != nil || u == 0 || g == 0 || u == 1<<32-1 || g == 1<<32-1 || u > math.MaxInt32 || g > math.MaxInt32 {
 		return 0, 0, fmt.Errorf("%s: bad ids %q:%q", name, uid, gid)
 	}
 	return uint32(u), uint32(g), nil
