@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -113,19 +114,6 @@ func (r *Runner) unregisterRec(rec *SpriteRec) {
 	}
 	for i, x := range r.recs {
 		if x == rec {
-			r.recs = append(r.recs[:i], r.recs[i+1:]...)
-			return
-		}
-	}
-}
-
-// unregister drops a Sprite that was definitely not created.
-func (r *Runner) unregister(name string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	delete(r.live, name)
-	for i, rec := range r.recs {
-		if rec.Name == name {
 			r.recs = append(r.recs[:i], r.recs[i+1:]...)
 			return
 		}
@@ -249,20 +237,28 @@ type guarded struct {
 }
 
 func (g guarded) CreateSprite(ctx context.Context, name string, labels map[string]string) (sprites.Sprite, error) {
-	if err := g.r.register(name); err != nil {
+	rec, err := g.r.registerRec(name)
+	if err != nil {
 		return sprites.Sprite{}, err
 	}
 	s, err := g.API.CreateSprite(ctx, name, labels)
 	if err != nil {
 		var pa *provider.ErrPreAttach
 		if !errors.As(err, &pa) {
-			g.r.unregister(name)
+			// only the record this create added: an earlier record of a re-used name stays
+			g.r.unregisterRec(rec)
 		}
 	}
 	return s, err
 }
 
+// DeleteSprite needs a name the run knows, live or deleted (a delete of a deleted name is a probe
+// asking what the API says to it). A name the run never registered is refused: it could be any
+// Sprite of the org.
 func (g guarded) DeleteSprite(ctx context.Context, name string) error {
+	if err := g.r.gate("DeleteSprite", name, false); err != nil {
+		return err
+	}
 	err := deleteAny(ctx, g.API, name)
 	if err == nil {
 		g.r.confirmDeleted(name)
@@ -283,6 +279,11 @@ func (g guarded) RawDeleteSprite(ctx context.Context, name string) (int, []byte)
 func (g guarded) ApplyBuildPolicies(ctx context.Context, name string, build sprites.NetworkPolicy, res sprites.Resources) error {
 	if err := g.r.gate("ApplyBuildPolicies", name, true); err != nil {
 		return err
+	}
+	// Resources carries LimitMB and nothing else: the same 1..MaxLimitMB bounds as Raw's resources body
+	if res.LimitMB < 1 || res.LimitMB > MaxLimitMB {
+		g.r.refuse("ApplyBuildPolicies " + name + " (LimitMB outside 1.." + strconv.Itoa(MaxLimitMB) + ")")
+		return &provider.ErrIneligible{Why: "guard: ApplyBuildPolicies with LimitMB outside 1.." + strconv.Itoa(MaxLimitMB)}
 	}
 	return g.API.ApplyBuildPolicies(ctx, name, build, res)
 }
@@ -526,7 +527,8 @@ func (r *Runner) rawWriteRoute(method, p string, q url.Values) string {
 }
 
 func (r *Runner) tryCreate(ctx context.Context, name string, labels map[string]string) (int, []byte) {
-	if err := r.register(name); err != nil {
+	rec, err := r.registerRec(name)
+	if err != nil {
 		return -1, []byte(err.Error())
 	}
 	body := map[string]any{"name": name}
@@ -535,7 +537,7 @@ func (r *Runner) tryCreate(ctx context.Context, name string, labels map[string]s
 	}
 	code, b := r.api.Raw(ctx, "POST", "/v1/sprites", nil, body)
 	if code >= 400 && code < 500 {
-		r.unregister(name)
+		r.unregisterRec(rec)
 	}
 	return code, b
 }

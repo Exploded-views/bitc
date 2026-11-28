@@ -1,5 +1,5 @@
 // Package spritesfake is a strict fake of the Fly Sprites API for tests (sprites-provider.md 8.1):
-// an httptest REST server plus a WSS exec endpoint. A Sprite is a directory <root>/<name>/overlay;
+// an httptest REST server plus a WSS exec endpoint. A Sprite is a directory <root>/_<id>/overlay, named by the Sprite's id (never its name);
 // exec runs `bitc __agent ...` as a local unprivileged process in its own process group with
 // TestRoot = the overlay. The fake never contacts any host, accepts only loopback clients, and
 // rejects what the real API would: unknown JSON fields, unknown query parameters, a wrong token.
@@ -369,6 +369,15 @@ func (f *Fake) Status(name string) string {
 	}
 	return ""
 }
+
+// spriteDir is the directory of a Sprite: named by the fake-made id, never by the name (the name is
+// request data, and under lax-names it can be anything). The "_" prefix is one nameRE cannot
+// produce, so a Sprite named like another's id ("sp3") never shares its directory.
+func (f *Fake) spriteDir(s *sprite) string { return filepath.Join(f.root, "_"+s.id) }
+
+// Root is the directory that holds every Sprite directory of the fake (a test helper: a test checks
+// that nothing is made outside it, or named from a request).
+func (f *Fake) Root() string { return f.root }
 
 // Overlay is the Sprite's disk root ("" when it does not exist).
 func (f *Fake) Overlay(name string) string {
@@ -863,7 +872,7 @@ func (f *Fake) create(w http.ResponseWriter, body []byte) {
 	f.seq++
 	s := &sprite{id: fmt.Sprintf("sp%d", f.seq), name: req.Name, org: f.o.Org, created: time.Now().UTC(), status: "running",
 		labels: req.Labels, tasks: map[string]task{}, lastActive: time.Now()}
-	s.dir = filepath.Join(f.root, s.name)
+	s.dir = f.spriteDir(s)
 	s.overlay = filepath.Join(s.dir, "overlay")
 	if err := os.MkdirAll(filepath.Join(s.overlay, ".sprite"), 0o755); err != nil {
 		f.mu.Unlock()
@@ -1192,8 +1201,7 @@ func (f *Fake) recreate(name string) *sprite {
 	f.seq++
 	s := &sprite{id: fmt.Sprintf("sp%d", f.seq), name: name, org: f.o.Org, created: time.Now().UTC(), status: "running",
 		tasks: map[string]task{}, lastActive: time.Now()}
-	// the directory is named by the fake-made id, never by name: the name is request data
-	s.dir = filepath.Join(f.root, s.id)
+	s.dir = f.spriteDir(s)
 	s.overlay = filepath.Join(s.dir, "overlay")
 	if err := os.MkdirAll(filepath.Join(s.overlay, ".sprite"), 0o755); err != nil {
 		return nil
